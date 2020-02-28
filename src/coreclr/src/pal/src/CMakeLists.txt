@@ -267,6 +267,7 @@ if(CLR_CMAKE_TARGET_DARWIN)
     ${CORESERVICES}
     ${SECURITY}
     ${SYSTEM}
+    dl
   )
 endif(CLR_CMAKE_TARGET_DARWIN)
 
