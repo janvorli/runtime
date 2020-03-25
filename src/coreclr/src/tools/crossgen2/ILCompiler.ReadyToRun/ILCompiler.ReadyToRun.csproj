@@ -110,6 +110,7 @@
     <Compile Include="Compiler\DependencyAnalysis\ReadyToRun\CopiedCorHeaderNode.cs" />
     <Compile Include="Compiler\DependencyAnalysis\ReadyToRun\CopiedStrongNameSignatureNode.cs" />
     <Compile Include="Compiler\DependencyAnalysis\ReadyToRun\DelayLoadHelperMethodImport.cs" />
+    <Compile Include="Compiler\DependencyAnalysis\ReadyToRun\DelayLoadMethodCallThunksNode.cs" />
     <Compile Include="Compiler\DependencyAnalysis\ReadyToRun\ExceptionInfoLookupTableNode.cs" />
     <Compile Include="Compiler\DependencyAnalysis\ReadyToRunCodegenNodeFactory.cs" />
     <Compile Include="Compiler\DependencyAnalysis\ReadyToRun\ByteArrayComparer.cs" />

@@ -4,6 +4,8 @@
 
 using Internal.Text;
 using Internal.ReadyToRunConstants;
+using System.Collections.Generic;
+using System;
 
 namespace ILCompiler.DependencyAnalysis.ReadyToRun
 {
@@ -54,6 +56,8 @@ namespace ILCompiler.DependencyAnalysis.ReadyToRun
             {
                 _thunkKind = Kind.Eager;
             }
+
+            factory.DelayLoadMethodCallThunks.AddEmbeddedObject(this);
         }
 
         public override void AppendMangledName(NameMangler nameMangler, Utf8StringBuilder sb)
@@ -83,6 +87,25 @@ namespace ILCompiler.DependencyAnalysis.ReadyToRun
                 return result;
 
             return comparer.Compare(_instanceCell, otherNode._instanceCell);
+        }
+
+        public override IEnumerable<DependencyListEntry> GetStaticDependencies(NodeFactory context)
+        {
+            if (_helperCell is ExternalMethodImport emi && emi.Method != null && emi.Method.ToString().Contains("Kernel32.GetMessage"))
+            {
+                Console.WriteLine($"ImportThunk.GetStaticDependencies for {emi.Method.ToString()}");
+            }
+
+            if (_instanceCell is ExternalMethodImport emi2 && emi2.Method != null && emi2.Method.ToString().Contains("Kernel32.GetMessage"))
+            {
+                Console.WriteLine($"ImportThunk.GetStaticDependencies for {emi2.Method.ToString()}");
+            }
+
+            return new DependencyListEntry[]
+            {
+                new DependencyListEntry(_helperCell, "R2R delay load helper import cell"),
+                new DependencyListEntry(_instanceCell, "R2R target import cell")
+            };
         }
     }
 }

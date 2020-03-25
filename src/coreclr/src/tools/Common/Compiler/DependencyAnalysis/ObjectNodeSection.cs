@@ -10,7 +10,8 @@ namespace ILCompiler.DependencyAnalysis
     {
         ReadOnly,
         Writeable,
-        Executable
+        Executable,
+        DelayLoadMethodThunk
     }
 
     /// <summary>
@@ -39,7 +40,7 @@ namespace ILCompiler.DependencyAnalysis
         {
             get
             {
-                return this == DataSection || this == ReadOnlyDataSection || this == FoldableReadOnlyDataSection || this == TextSection || this == XDataSection;
+                return this == DataSection || this == ReadOnlyDataSection || this == FoldableReadOnlyDataSection || this == TextSection || this == XDataSection || this == DelayLoadMethodThunkSection;
             }
         }
                
@@ -48,6 +49,7 @@ namespace ILCompiler.DependencyAnalysis
         public static readonly ObjectNodeSection ReadOnlyDataSection = new ObjectNodeSection("rdata", SectionType.ReadOnly);
         public static readonly ObjectNodeSection FoldableReadOnlyDataSection = new ObjectNodeSection("rdata$F", SectionType.ReadOnly);
         public static readonly ObjectNodeSection TextSection = new ObjectNodeSection("text", SectionType.Executable);
+        public static readonly ObjectNodeSection DelayLoadMethodThunkSection = new ObjectNodeSection("text", SectionType.DelayLoadMethodThunk);
         public static readonly ObjectNodeSection TLSSection = new ObjectNodeSection("TLS", SectionType.Writeable);
         public static readonly ObjectNodeSection ManagedCodeWindowsContentSection = new ObjectNodeSection(".managedcode$I", SectionType.Executable);
         public static readonly ObjectNodeSection FoldableManagedCodeWindowsContentSection = new ObjectNodeSection(".managedcode$I", SectionType.Executable);

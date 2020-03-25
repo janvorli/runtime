@@ -9,9 +9,9 @@ namespace ILCompiler.DependencyAnalysis.ARM
 {
     public struct ARMEmitter
     {
-        public ARMEmitter(NodeFactory factory, bool relocsOnly)
+        public ARMEmitter(ObjectDataBuilder builder, NodeFactory factory, bool relocsOnly)
         {
-            Builder = new ObjectDataBuilder(factory, relocsOnly);
+            Builder = builder; // new ObjectDataBuilder(factory, relocsOnly);
             TargetRegister = new TargetRegisterMap(factory.Target.OperatingSystem);
         }
 

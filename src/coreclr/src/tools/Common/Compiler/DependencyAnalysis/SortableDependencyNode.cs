@@ -63,7 +63,7 @@ namespace ILCompiler.DependencyAnalysis
             ImportSectionsTableNode,
             ImportSectionNode,
             MethodEntrypointTableNode,
-
+            DelayLoadMethodCallThunksNode,
 
             //
             // CoreRT Nodes

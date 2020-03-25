@@ -6,6 +6,7 @@
 using Internal.JitInterface;
 using Internal.TypeSystem;
 using Internal.ReadyToRunConstants;
+using System;
 
 namespace ILCompiler.DependencyAnalysis.ReadyToRun
 {
@@ -30,6 +31,10 @@ namespace ILCompiler.DependencyAnalysis.ReadyToRun
                       isInstantiatingStub))
         {
             _method = method;
+            if (method != null && method.Method.ToString().Contains("Kernel32.GetMessage"))
+            {
+                Console.WriteLine($"ExternalMethodImport for {method.Method.ToString()}");
+            }
         }
 
         public MethodDesc Method => _method.Method;

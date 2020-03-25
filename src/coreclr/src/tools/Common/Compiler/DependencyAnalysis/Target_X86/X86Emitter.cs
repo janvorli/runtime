@@ -9,9 +9,9 @@ namespace ILCompiler.DependencyAnalysis.X86
 {
     public struct X86Emitter
     {
-        public X86Emitter(NodeFactory factory, bool relocsOnly)
+        public X86Emitter(ObjectDataBuilder builder, NodeFactory factory, bool relocsOnly)
         {
-            Builder = new ObjectDataBuilder(factory, relocsOnly);
+            Builder = builder;// new ObjectDataBuilder(factory, relocsOnly);
             TargetRegister = new TargetRegisterMap(factory.Target.OperatingSystem);
         }
 

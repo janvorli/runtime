@@ -9,9 +9,9 @@ namespace ILCompiler.DependencyAnalysis.ARM64
 {
     public struct ARM64Emitter
     {
-        public ARM64Emitter(NodeFactory factory, bool relocsOnly)
+        public ARM64Emitter(ObjectDataBuilder builder, NodeFactory factory, bool relocsOnly)
         {
-            Builder = new ObjectDataBuilder(factory, relocsOnly);
+            Builder = builder;// new ObjectDataBuilder(factory, relocsOnly);
             TargetRegister = new TargetRegisterMap(factory.Target.OperatingSystem);
         }
 

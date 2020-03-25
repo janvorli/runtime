@@ -18,6 +18,7 @@ using Internal.Text;
 using Internal.TypeSystem.Ecma;
 using Internal.CorConstants;
 using Internal.ReadyToRunConstants;
+using ILCompiler.ReadyToRun.Compiler.DependencyAnalysis.ReadyToRun;
 
 namespace ILCompiler.DependencyAnalysis
 {
@@ -330,6 +331,8 @@ namespace ILCompiler.DependencyAnalysis
 
         public ImportSectionsTableNode ImportSectionsTable;
 
+        public DelayLoadMethodCallThunksNode DelayLoadMethodCallThunks;
+
         public Import ModuleImport;
 
         public ISymbolNode PersonalityRoutine;
@@ -412,7 +415,7 @@ namespace ILCompiler.DependencyAnalysis
         {
             Debug.Assert(CompilationModuleGroup.ContainsMethodBody(targetMethod.Method, false));
 
-            MethodDesc localMethod = targetMethod.Method.GetCanonMethodTarget(CanonicalFormKind.Specific);
+            MethodDesc localMethod = targetMethod.Method;
             return _localMethodCache.GetOrAdd(localMethod);
         }
 
@@ -526,6 +529,9 @@ namespace ILCompiler.DependencyAnalysis
             ProfileDataSection = new ProfileDataSectionNode();
             Header.Add(Internal.Runtime.ReadyToRunSectionType.ProfileDataInfo, ProfileDataSection, ProfileDataSection.StartSymbol);
 
+            DelayLoadMethodCallThunks = new DelayLoadMethodCallThunksNode();
+            Header.Add(Internal.Runtime.ReadyToRunSectionType.DelayLoadMethodCallThunks, DelayLoadMethodCallThunks, DelayLoadMethodCallThunks.StartSymbol);
+
             ExceptionInfoLookupTableNode exceptionInfoLookupTableNode = new ExceptionInfoLookupTableNode(this);
             Header.Add(Internal.Runtime.ReadyToRunSectionType.ExceptionInfo, exceptionInfoLookupTableNode, exceptionInfoLookupTableNode);
             graph.AddRoot(exceptionInfoLookupTableNode, "ExceptionInfoLookupTable is always generated");
@@ -594,20 +600,17 @@ namespace ILCompiler.DependencyAnalysis
             ImportSectionsTable.AddEmbeddedObject(EagerImports);
 
             // All ready-to-run images have a module import helper which gets patched by the runtime on image load
-            ModuleImport = new Import(EagerImports, new ReadyToRunHelperSignature(
-                ReadyToRunHelper.Module));
+            ModuleImport = _constructedHelpers.GetOrAdd(ReadyToRunHelper.Module);
             graph.AddRoot(ModuleImport, "Module import is required by the R2R format spec");
 
             if (Target.Architecture != TargetArchitecture.X86)
             {
-                Import personalityRoutineImport = new Import(EagerImports, new ReadyToRunHelperSignature(
-                    ReadyToRunHelper.PersonalityRoutine));
+                Import personalityRoutineImport = _constructedHelpers.GetOrAdd(ReadyToRunHelper.PersonalityRoutine);
                 PersonalityRoutine = new ImportThunk(
                     ReadyToRunHelper.PersonalityRoutine, this, personalityRoutineImport, useVirtualCall: false);
                 graph.AddRoot(PersonalityRoutine, "Personality routine is faster to root early rather than referencing it from each unwind info");
 
-                Import filterFuncletPersonalityRoutineImport = new Import(EagerImports, new ReadyToRunHelperSignature(
-                    ReadyToRunHelper.PersonalityRoutineFilterFunclet));
+                Import filterFuncletPersonalityRoutineImport = _constructedHelpers.GetOrAdd(ReadyToRunHelper.PersonalityRoutineFilterFunclet);
                 FilterFuncletPersonalityRoutine = new ImportThunk(
                     ReadyToRunHelper.PersonalityRoutineFilterFunclet, this, filterFuncletPersonalityRoutineImport, useVirtualCall: false);
                 graph.AddRoot(FilterFuncletPersonalityRoutine, "Filter funclet personality routine is faster to root early rather than referencing it from each unwind info");

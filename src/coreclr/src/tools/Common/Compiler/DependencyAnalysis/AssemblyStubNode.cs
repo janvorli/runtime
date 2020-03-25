@@ -2,15 +2,14 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-using System;
-
 using Internal.TypeSystem;
-
 using Internal.Text;
+using System;
+using System.Collections.Generic;
 
 namespace ILCompiler.DependencyAnalysis
 {
-    public abstract class AssemblyStubNode : ObjectNode, ISymbolDefinitionNode
+    public abstract class AssemblyStubNode : EmbeddedObjectNode, ISymbolDefinitionNode
     {
         public AssemblyStubNode()
         {
@@ -22,7 +21,7 @@ namespace ILCompiler.DependencyAnalysis
         /// </summary>
         protected virtual bool IsVisibleFromManagedCode => true;
 
-        public override ObjectNodeSection Section => ObjectNodeSection.TextSection;
+        //public override ObjectNodeSection Section => ObjectNodeSection.DelayLoadMethodThunkSection;
 
         public override bool StaticDependenciesAreComputed => true;
 
@@ -30,6 +29,7 @@ namespace ILCompiler.DependencyAnalysis
         public int Offset => 0;
         public override bool IsShareable => false;
 
+        /*
         public override ObjectData GetData(NodeFactory factory, bool relocsOnly)
         {
             // If the address is expected to be visible from managed code, we need to align
@@ -68,6 +68,55 @@ namespace ILCompiler.DependencyAnalysis
                     arm64Emitter.Builder.RequireInitialAlignment(alignment);
                     arm64Emitter.Builder.AddSymbol(this);
                     return arm64Emitter.Builder.ToObjectData();
+
+                default:
+                    throw new NotImplementedException();
+            }
+        }
+        */
+
+        public override void EncodeData(ref ObjectDataBuilder dataBuilder, NodeFactory factory, bool relocsOnly)
+        {
+            // If the address is expected to be visible from managed code, we need to align
+            // at the managed code boundaries to prevent the stub from being confused with
+            // a fat fuction pointer. Otherwise we can align tighter.
+            int alignment = IsVisibleFromManagedCode ?
+                factory.Target.MinimumFunctionAlignment :
+                factory.Target.MinimumCodeAlignment;
+
+            switch (factory.Target.Architecture)
+            {
+                case TargetArchitecture.X64:
+                    X64.X64Emitter x64Emitter = new X64.X64Emitter(dataBuilder, factory, relocsOnly);
+                    EmitCode(factory, ref x64Emitter, relocsOnly);
+                    x64Emitter.Builder.RequireInitialAlignment(alignment);
+                    x64Emitter.Builder.AddSymbol(this);
+                    break;
+                    //return x64Emitter.Builder.ToObjectData();
+
+                case TargetArchitecture.X86:
+                    X86.X86Emitter x86Emitter = new X86.X86Emitter(dataBuilder, factory, relocsOnly);
+                    EmitCode(factory, ref x86Emitter, relocsOnly);
+                    x86Emitter.Builder.RequireInitialAlignment(alignment);
+                    x86Emitter.Builder.AddSymbol(this);
+                    break;
+                    //return x86Emitter.Builder.ToObjectData();
+
+                case TargetArchitecture.ARM:
+                    ARM.ARMEmitter armEmitter = new ARM.ARMEmitter(dataBuilder, factory, relocsOnly);
+                    EmitCode(factory, ref armEmitter, relocsOnly);
+                    armEmitter.Builder.RequireInitialAlignment(alignment);
+                    armEmitter.Builder.AddSymbol(this);
+                    break;
+                    //return armEmitter.Builder.ToObjectData();
+
+                case TargetArchitecture.ARM64:
+                    ARM64.ARM64Emitter arm64Emitter = new ARM64.ARM64Emitter(dataBuilder, factory, relocsOnly);
+                    EmitCode(factory, ref arm64Emitter, relocsOnly);
+                    arm64Emitter.Builder.RequireInitialAlignment(alignment);
+                    arm64Emitter.Builder.AddSymbol(this);
+                    break;
+                    //return arm64Emitter.Builder.ToObjectData();
 
                 default:
                     throw new NotImplementedException();

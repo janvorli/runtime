@@ -138,6 +138,8 @@ namespace ILCompiler.PEWriter
         /// </summary>
         private readonly int _textSectionIndex;
 
+        private readonly int _delayLoadMethodThunkSectionIndex;
+
         /// <summary>
         /// Zero-based index of the CPAOT-generated read-write data section
         /// </summary>
@@ -169,6 +171,9 @@ namespace ILCompiler.PEWriter
             _sectionBuilder = new SectionBuilder(target);
 
             _textSectionIndex = _sectionBuilder.AddSection(TextSectionName, SectionCharacteristics.ContainsCode | SectionCharacteristics.MemExecute | SectionCharacteristics.MemRead, 512);
+
+            _delayLoadMethodThunkSectionIndex = _sectionBuilder.AddSection(TextSectionName, SectionCharacteristics.ContainsCode | SectionCharacteristics.MemExecute | SectionCharacteristics.MemRead, 512);
+
             _dataSectionIndex = _sectionBuilder.AddSection(DataSectionName, SectionCharacteristics.ContainsInitializedData | SectionCharacteristics.MemWrite | SectionCharacteristics.MemRead, 512);
 
             if (r2rHeaderExportSymbol != null)
@@ -238,6 +243,10 @@ namespace ILCompiler.PEWriter
                     // We put ReadOnly data into the text section to limit the number of sections.
                 case SectionType.Executable:
                     targetSectionIndex = _textSectionIndex;
+                    break;
+
+                case SectionType.DelayLoadMethodThunk:
+                    targetSectionIndex = _delayLoadMethodThunkSectionIndex;
                     break;
 
                 case SectionType.Writeable:
