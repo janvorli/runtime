@@ -390,3 +390,13 @@ interface ISOSDacInterface7 : IUnknown
     HRESULT GetProfilerModifiedILInformation(CLRDATA_ADDRESS methodDesc, struct DacpProfilerILData *pILData);
     HRESULT GetMethodsWithProfilerModifiedIL(CLRDATA_ADDRESS mod, CLRDATA_ADDRESS *methodDescs, int cMethodDescs, int *pcMethodDescs);
 };
+
+[
+    object,
+    local,
+    uuid(3f5f88ae-a312-42c1-affa-ecedfaf248c0)
+]
+interface ISOSDacInterface8 : IUnknown
+{
+    HRESULT GetAssemblyLoadContext(CLRDATA_ADDRESS methodTable, CLRDATA_ADDRESS* assemblyLoadContext);
+};

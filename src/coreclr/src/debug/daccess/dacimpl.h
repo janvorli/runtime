@@ -840,7 +840,8 @@ class ClrDataAccess
       public ISOSDacInterface4,
       public ISOSDacInterface5,
       public ISOSDacInterface6,
-      public ISOSDacInterface7
+      public ISOSDacInterface7,
+      public ISOSDacInterface8
 {
 public:
     ClrDataAccess(ICorDebugDataTarget * pTarget, ICLRDataTarget * pLegacyTarget=0);
@@ -1194,6 +1195,9 @@ public:
     virtual HRESULT STDMETHODCALLTYPE GetReJITInformation(CLRDATA_ADDRESS methodDesc, int rejitId, struct DacpReJitData2 *pReJitData);
     virtual HRESULT STDMETHODCALLTYPE GetProfilerModifiedILInformation(CLRDATA_ADDRESS methodDesc, struct DacpProfilerILData *pILData);
     virtual HRESULT STDMETHODCALLTYPE GetMethodsWithProfilerModifiedIL(CLRDATA_ADDRESS mod, CLRDATA_ADDRESS *methodDescs, int cMethodDescs, int *pcMethodDescs);
+
+    // ISOSDacInterface8
+    virtual HRESULT STDMETHODCALLTYPE GetAssemblyLoadContext(CLRDATA_ADDRESS methodTable, CLRDATA_ADDRESS* assemblyLoadContext);
 
     //
     // ClrDataAccess.

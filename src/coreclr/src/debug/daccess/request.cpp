@@ -4500,3 +4500,29 @@ HRESULT ClrDataAccess::GetMethodsWithProfilerModifiedIL(CLRDATA_ADDRESS mod, CLR
 
     return hr;
 }
+
+HRESULT ClrDataAccess::GetAssemblyLoadContext(CLRDATA_ADDRESS methodTable, CLRDATA_ADDRESS* assemblyLoadContext)
+{
+    if (methodTable == 0 || assemblyLoadContext == NULL)
+        return E_INVALIDARG;
+
+    SOSDacEnter();
+    PTR_MethodTable pMT = PTR_MethodTable(TO_TADDR(methodTable));
+    PTR_Module pModule = pMT->GetModule();
+
+    PTR_PEFile pPEFile = pModule->GetFile();
+    PTR_AssemblyLoadContext pAssemblyLoadContext = pPEFile->GetAssemblyLoadContext();
+
+    INT_PTR managedAssemblyLoadContextHandle = pAssemblyLoadContext->GetManagedAssemblyLoadContext();
+
+    TADDR managedAssemblyLoadContextAddr = 0;
+    if (managedAssemblyLoadContextHandle != 0)
+    {
+        DacReadAll(managedAssemblyLoadContextHandle,&managedAssemblyLoadContextAddr,sizeof(TADDR),true);
+    }
+
+    *assemblyLoadContext = TO_CDADDR(managedAssemblyLoadContextAddr);
+
+    SOSDacLeave();
+    return hr;
+}

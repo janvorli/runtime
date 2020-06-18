@@ -122,6 +122,13 @@ typedef interface ISOSDacInterface7 ISOSDacInterface7;
 #endif  /* __ISOSDacInterface7_FWD_DEFINED__ */
 
 
+#ifndef __ISOSDacInterface8_FWD_DEFINED__
+#define __ISOSDacInterface8_FWD_DEFINED__
+typedef interface ISOSDacInterface8 ISOSDacInterface8;
+
+#endif 	/* __ISOSDacInterface8_FWD_DEFINED__ */
+
+
 /* header files for imported files */
 #include "unknwn.h"
 #include "xclrdata.h"
@@ -2499,6 +2506,87 @@ EXTERN_C const IID IID_ISOSDacInterface7;
 
 
 #endif  /* __ISOSDacInterface7_INTERFACE_DEFINED__ */
+
+
+#ifndef __ISOSDacInterface8_INTERFACE_DEFINED__
+#define __ISOSDacInterface8_INTERFACE_DEFINED__
+
+/* interface ISOSDacInterface8 */
+/* [uuid][local][object] */ 
+
+
+EXTERN_C const IID IID_ISOSDacInterface8;
+
+#if defined(__cplusplus) && !defined(CINTERFACE)
+    
+    MIDL_INTERFACE("3f5f88ae-a312-42c1-affa-ecedfaf248c0")
+    ISOSDacInterface8 : public IUnknown
+    {
+    public:
+        virtual HRESULT STDMETHODCALLTYPE GetAssemblyLoadContext(
+            CLRDATA_ADDRESS methodTable,
+            CLRDATA_ADDRESS* assemblyLoadContext) = 0;
+    };
+    
+    
+#else 	/* C style interface */
+
+    typedef struct ISOSDacInterface8Vtbl
+    {
+        BEGIN_INTERFACE
+        
+        HRESULT ( STDMETHODCALLTYPE *QueryInterface )( 
+            ISOSDacInterface8 * This,
+            /* [in] */ REFIID riid,
+            /* [annotation][iid_is][out] */ 
+            _COM_Outptr_  void **ppvObject);
+        
+        ULONG ( STDMETHODCALLTYPE *AddRef )( 
+            ISOSDacInterface8 * This);
+        
+        ULONG ( STDMETHODCALLTYPE *Release )( 
+            ISOSDacInterface8 * This);
+        
+        HRESULT ( STDMETHODCALLTYPE *GetAssemblyLoadContext )(
+            ISOSDacInterface8 * This,
+            CLRDATA_ADDRESS methodTable,
+            CLRDATA_ADDRESS *assemblyLoadContext);
+
+        END_INTERFACE
+    } ISOSDacInterface8Vtbl;
+
+    interface ISOSDacInterface8
+    {
+        CONST_VTBL struct ISOSDacInterface8Vtbl *lpVtbl;
+    };
+
+    
+
+#ifdef COBJMACROS
+
+
+#define ISOSDacInterface8_QueryInterface(This,riid,ppvObject)	\
+    ( (This)->lpVtbl -> QueryInterface(This,riid,ppvObject) ) 
+
+#define ISOSDacInterface8_AddRef(This)	\
+    ( (This)->lpVtbl -> AddRef(This) )
+
+#define ISOSDacInterface8_Release(This)	\
+    ( (This)->lpVtbl -> Release(This) )
+
+
+#define ISOSDacInterface8_GetAssemblyLoadContext(This,methodTable,assemblyLoadContext)	\
+    ( (This)->lpVtbl -> GetAssemblyLoadContext(This,methodTable,assemblyLoadContext) )
+
+#endif /* COBJMACROS */
+
+
+#endif 	/* C style interface */
+
+
+
+
+#endif 	/* __ISOSDacInterface8_INTERFACE_DEFINED__ */
 
 
 /* Additional Prototypes for ALL interfaces */
