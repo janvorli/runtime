@@ -67,6 +67,7 @@ namespace ReadyToRun.SuperIlc
             {
                 processParameters.TimeoutMilliseconds = ProcessParameters.DefaultIlcTimeout;
             }
+
             processParameters.LogPath = outputFileName + ".ilc.log";
             processParameters.InputFileNames = inputAssemblyFileNames;
             processParameters.OutputFileName = outputFileName;

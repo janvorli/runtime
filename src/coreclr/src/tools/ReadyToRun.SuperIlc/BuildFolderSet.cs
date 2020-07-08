@@ -311,7 +311,11 @@ namespace ReadyToRun.SuperIlc
                             _frameworkExclusions[exclusion.SimpleName] = exclusion.Reason;
                             continue;
                         }
-                        var compilationProcess = new ProcessInfo(new CompilationProcessConstructor(runner, _options.CoreRootDirectory.FullName, new string[] { frameworkDll }));
+                        var compilationProcess = new ProcessInfo(new CompilationProcessConstructor(
+                                runner,
+                                Path.Combine(runner.GetOutputPath(_options.CoreRootDirectory.FullName), Path.GetFileName(frameworkDll)),
+                                new string[] { frameworkDll }));
+
                         compilationsToRun.Add(compilationProcess);
                         processes[(int)runner.Index] = compilationProcess;
                     }
