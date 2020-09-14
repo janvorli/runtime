@@ -18,7 +18,7 @@
   <Import Project="$(RepositoryEngineeringDir)DiaSymReaderNative.targets" />
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.NETCore.CoreDisTools">
+    <PackageReference Include="Microsoft.NETCore.CoreDisTools" GeneratePathProperty="True">
       <Version>1.0.1-prerelease-00005</Version>
     </PackageReference>
     <PackageReference Include="System.CommandLine">
@@ -26,4 +26,19 @@
     </PackageReference>
     <ProjectReference Include="..\aot\ILCompiler.Reflection.ReadyToRun\ILCompiler.Reflection.ReadyToRun.csproj" />
   </ItemGroup>
+
+  <Target Name="CopyCoreDisToolsBinary" AfterTargets="Build">
+    <Error Condition="'$(PkgMicrosoft_NETCore_CoreDisTools)' == ''" Text="CoreDisTools package path not found!" />
+
+    <PropertyGroup>
+      <CoreDisToolsPackageVersion>$([System.IO.Path]::GetFileName('$(PkgMicrosoft_NETCore_CoreDisTools)'))</CoreDisToolsPackageVersion>
+      <!-- The CoreDisTools package's rid-specific assets are an older, pinned version for non-Windows platforms. So we hardcode that here so we avoid parsing JSON in MSBuild. -->
+      <CoreDisToolsPackageVersion Condition="!$([MSBuild]::IsOSPlatform(Windows))">1.0.1-prerelease-00002</CoreDisToolsPackageVersion>
+      <CoreDisToolsPackagePath>$([MSBuild]::NormalizePath($(PkgMicrosoft_NETCore_CoreDisTools),../../,runtime.$(__DistroRid).microsoft.netcore.coredistools,$(CoreDisToolsPackageVersion)))</CoreDisToolsPackagePath>
+    </PropertyGroup>
+
+    <Error Condition="!Exists('$(CoreDisToolsPackagePath)')" Text="Unable to locate restored CoreDisTools package. Maybe the platform-specific package naming changed or there is not a version available for rid $(RuntimeIdentifier)?" />
+
+    <Copy SourceFiles="$(CoreDisToolsPackagePath)/runtimes/$(__DistroRid)/native/coredistools.dll" DestinationFolder="$(BinDir)/R2RDump" />
+  </Target>
 </Project>
