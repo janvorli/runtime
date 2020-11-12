@@ -67,10 +67,6 @@ SET_DEFAULT_DEBUG_CHANNEL(DEBUG); // some headers have code with asserts, so do 
 #include <mach/mach_vm.h>
 #endif // __APPLE__
 
-#if HAVE_MACH_EXCEPTIONS
-#include "../exception/machexception.h"
-#endif // HAVE_MACH_EXCEPTIONS
-
 using namespace CorUnix;
 
 extern "C" void DBG_DebugBreak_End();

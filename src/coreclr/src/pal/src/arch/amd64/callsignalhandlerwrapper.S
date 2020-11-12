@@ -3,7 +3,15 @@
 
 .intel_syntax noprefix
 #include "unixasmmacros.inc"
-#include "asmconstants.h"
+/*
+.globl C_FUNC(SignalHandlerWorkerReturnOffset0)
+C_FUNC(SignalHandlerWorkerReturnOffset0):
+    .int LOCAL_LABEL(SignalHandlerWorkerReturn0)-C_FUNC(CallSignalHandlerWrapper0)
+
+.globl C_FUNC(SignalHandlerWorkerReturnOffset8)
+C_FUNC(SignalHandlerWorkerReturnOffset8):
+    .int LOCAL_LABEL(SignalHandlerWorkerReturn8)-C_FUNC(CallSignalHandlerWrapper8)
+*/
 
 .macro CALL_SIGNAL_HANDLER_WRAPPER Alignment
 

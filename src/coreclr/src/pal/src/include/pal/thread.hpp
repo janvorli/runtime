@@ -25,9 +25,6 @@ Abstract:
 
 #include <pthread.h>
 #include <sys/syscall.h>
-#if HAVE_MACH_EXCEPTIONS
-#include <mach/mach.h>
-#endif // HAVE_MACH_EXCEPTIONS
 
 #include "threadsusp.hpp"
 #include "threadinfo.hpp"
@@ -115,49 +112,6 @@ namespace CorUnix
         IN HANDLE hThread,
         OUT LPFILETIME lpKernelTime,
         OUT LPFILETIME lpUserTime);
-
-#if HAVE_MACH_EXCEPTIONS
-
-    // Structure used to return data about a single handler to a caller.
-    struct MachExceptionHandler
-    {
-        exception_mask_t m_mask;
-        exception_handler_t m_handler;
-        exception_behavior_t m_behavior;
-        thread_state_flavor_t m_flavor;
-    };
-
-    // Class abstracting previously registered Mach exception handlers for a thread.
-    struct CThreadMachExceptionHandlers
-    {
-    public:
-        // Maximum number of exception ports we hook.  Must be the count
-        // of all bits set in the exception masks defined in machexception.h.
-        static const int s_nPortsMax = 6;
-
-        // Saved exception ports, exactly as returned by
-        // thread_swap_exception_ports.
-        mach_msg_type_number_t m_nPorts;
-        exception_mask_t m_masks[s_nPortsMax];
-        exception_handler_t m_handlers[s_nPortsMax];
-        exception_behavior_t m_behaviors[s_nPortsMax];
-        thread_state_flavor_t m_flavors[s_nPortsMax];
-
-        CThreadMachExceptionHandlers() :
-            m_nPorts(-1)
-        {
-        }
-
-        // Get handler details for a given type of exception. If successful the structure pointed at by
-        // pHandler is filled in and true is returned. Otherwise false is returned.
-        bool GetHandler(exception_type_t eException, MachExceptionHandler *pHandler);
-
-    private:
-        // Look for a handler for the given exception within the given handler node. Return its index if
-        // successful or -1 otherwise.
-        int GetIndexOfHandler(exception_mask_t bmExceptionMask);
-    };
-#endif // HAVE_MACH_EXCEPTIONS
 
     class CThreadCRTInfo : public CThreadInfoInitializer
     {
@@ -313,13 +267,6 @@ namespace CorUnix
         //
         // Data for PAL side-by-side support
         //
-
-    private:
-#if HAVE_MACH_EXCEPTIONS
-        // Record of Mach exception handlers that were already registered when we register our own CoreCLR
-        // specific handlers.
-        CThreadMachExceptionHandlers m_sMachExceptionHandlers;
-#endif // HAVE_MACH_EXCEPTIONS
 
     public:
 
@@ -602,7 +549,6 @@ namespace CorUnix
             m_pNext = pNext;
         };
 
-#if !HAVE_MACH_EXCEPTIONS
         BOOL
         EnsureSignalAlternateStack(
             void
@@ -612,7 +558,6 @@ namespace CorUnix
         FreeSignalAlternateStack(
             void
             );
-#endif // !HAVE_MACH_EXCEPTIONS
 
         void
         AddThreadReference(
@@ -652,29 +597,6 @@ namespace CorUnix
             void
             );
 
-#if HAVE_MACH_EXCEPTIONS
-        // Hook Mach exceptions, i.e., call thread_swap_exception_ports
-        // to replace the thread's current exception ports with our own.
-        // The previously active exception ports are saved.  Called when
-        // this thread enters a region of code that depends on this PAL.
-        // Should only fail on internal errors.
-        PAL_ERROR EnableMachExceptions();
-
-        // Unhook Mach exceptions, i.e., call thread_set_exception_ports
-        // to restore the thread's exception ports with those we saved
-        // in EnableMachExceptions.  Called when this thread leaves a
-        // region of code that depends on this PAL.  Should only fail
-        // on internal errors.
-        PAL_ERROR DisableMachExceptions();
-
-        // The exception handling thread needs to be able to get at the list of handlers that installing our
-        // own handler on a thread has displaced (in case we need to forward an exception that we don't want
-        // to handle).
-        CThreadMachExceptionHandlers *GetSavedMachHandlers()
-        {
-            return &m_sMachExceptionHandlers;
-        }
-#endif // HAVE_MACH_EXCEPTIONS
     };
 
     extern "C" CPalThread *CreateCurrentThreadData();

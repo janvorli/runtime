@@ -22,6 +22,7 @@
         .long 0x04000000 # DWARF
         .quad 0
         .quad 0
+        .text
 #endif
 .endm
 

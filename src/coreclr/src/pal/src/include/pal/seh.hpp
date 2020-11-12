@@ -87,7 +87,6 @@ Parameters:
 VOID
 AllocateExceptionRecords(EXCEPTION_RECORD** exceptionRecord, CONTEXT** contextRecord);
 
-#if !HAVE_MACH_EXCEPTIONS
 // TODO: Implement for Mach exceptions.  Not in CoreCLR surface area.
 /*++
 Function :
@@ -108,7 +107,6 @@ Notes :
     installed), the default behavior is to call ExitProcess
 --*/
 void SEHHandleControlEvent(DWORD event, LPVOID eip);
-#endif // !HAVE_MACH_EXCEPTIONS
 
 extern "C"
 {

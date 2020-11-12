@@ -44,10 +44,6 @@ SET_DEFAULT_DEBUG_CHANNEL(PAL); // some headers have code with asserts, so do th
 #include "pal/stackstring.hpp"
 #include "pal/cgroup.h"
 
-#if HAVE_MACH_EXCEPTIONS
-#include "../exception/machexception.h"
-#endif
-
 #include <stdlib.h>
 #include <unistd.h>
 #include <pwd.h>
@@ -474,17 +470,6 @@ Initialize(
             ERROR("Unable to initialize process data\n");
             goto CLEANUP1;
         }
-
-#if HAVE_MACH_EXCEPTIONS
-        // Mach exception port needs to be set up before the thread
-        // data or threads are set up.
-        if (!SEHInitializeMachExceptions(flags))
-        {
-            ERROR("SEHInitializeMachExceptions failed!\n");
-            palError = ERROR_PALINIT_INITIALIZE_MACH_EXCEPTION;
-            goto CLEANUP1;
-        }
-#endif // HAVE_MACH_EXCEPTIONS
 
         //
         // Allocate the initial thread data

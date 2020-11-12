@@ -61,11 +61,11 @@ if(CLR_CMAKE_TARGET_OSX)
     add_definitions(-DXSTATE_SUPPORTED)
   endif()
   set(PLATFORM_SOURCES
-    arch/${PAL_ARCH_SOURCES_DIR}/activationhandlerwrapper.S
+    #arch/${PAL_ARCH_SOURCES_DIR}/activationhandlerwrapper.S
     arch/${PAL_ARCH_SOURCES_DIR}/context.S
-    arch/${PAL_ARCH_SOURCES_DIR}/dispatchexceptionwrapper.S
-    exception/machexception.cpp
-    exception/machmessage.cpp
+    #arch/${PAL_ARCH_SOURCES_DIR}/dispatchexceptionwrapper.S
+    #exception/machexception.cpp
+    #exception/machmessage.cpp
   )
 endif(CLR_CMAKE_TARGET_OSX)
 
@@ -98,12 +98,12 @@ set(ARCH_SOURCES
   arch/${PAL_ARCH_SOURCES_DIR}/debugbreak.S
   arch/${PAL_ARCH_SOURCES_DIR}/exceptionhelper.S
   arch/${PAL_ARCH_SOURCES_DIR}/processor.cpp
+  arch/${PAL_ARCH_SOURCES_DIR}/signalhandlerhelper.cpp
+  arch/${PAL_ARCH_SOURCES_DIR}/callsignalhandlerwrapper.S
 )
 
 if(NOT CLR_CMAKE_TARGET_OSX)
   list(APPEND PLATFORM_SOURCES
-    arch/${PAL_ARCH_SOURCES_DIR}/callsignalhandlerwrapper.S
-    arch/${PAL_ARCH_SOURCES_DIR}/signalhandlerhelper.cpp
   )
 endif(NOT CLR_CMAKE_TARGET_OSX)
 

@@ -35,9 +35,7 @@ Abstract:
 #include "pal/printfcpp.hpp"
 #include "pal/mutex.hpp"
 #include "pal/init.h"
-#if !HAVE_MACH_EXCEPTIONS
 #include <signal.h>
-#endif // !HAVE_MACH_EXCEPTIONS
 #include <semaphore.h>
 #include <sched.h>
 

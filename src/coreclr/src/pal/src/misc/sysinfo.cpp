@@ -71,6 +71,8 @@ Revision History:
 #include <mach/mach_types.h>
 #include <mach/mach_init.h>
 #include <mach/mach_host.h>
+#include <mach/kern_return.h>
+#include <mach/mach_port.h>
 #endif // defined(TARGET_OSX)
 
 // On some platforms sys/user.h ends up defining _DEBUG; if so

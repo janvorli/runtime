@@ -34,7 +34,6 @@ SET_DEFAULT_DEBUG_CHANNEL(EXCEPT); // some headers have code with asserts, so do
 #include <errno.h>
 #include <signal.h>
 
-#if !HAVE_MACH_EXCEPTIONS
 #include "pal/init.h"
 #include "pal/debug.h"
 #include "pal/virtual.h"
@@ -50,12 +49,20 @@ SET_DEFAULT_DEBUG_CHANNEL(EXCEPT); // some headers have code with asserts, so do
 
 #ifdef SIGRTMIN
 #define INJECT_ACTIVATION_SIGNAL SIGRTMIN
+#else
+#define INJECT_ACTIVATION_SIGNAL SIGUSR1
 #endif
 
 #if !defined(INJECT_ACTIVATION_SIGNAL) && defined(FEATURE_HIJACK)
 #error FEATURE_HIJACK requires INJECT_ACTIVATION_SIGNAL to be defined
 #endif
-#endif // !HAVE_MACH_EXCEPTIONS
+
+#ifdef __APPLE__
+#include <mach/mach.h>
+#include <mach/mach_error.h>
+#include <mach/exception.h>
+#include <mach/task.h>
+#endif 
 
 using namespace CorUnix;
 
@@ -66,7 +73,6 @@ typedef void (*SIGFUNC)(int, siginfo_t *, void *);
 /* internal function declarations *********************************************/
 
 static void sigterm_handler(int code, siginfo_t *siginfo, void *context);
-#if !HAVE_MACH_EXCEPTIONS
 static void sigill_handler(int code, siginfo_t *siginfo, void *context);
 static void sigfpe_handler(int code, siginfo_t *siginfo, void *context);
 static void sigsegv_handler(int code, siginfo_t *siginfo, void *context);
@@ -80,7 +86,6 @@ static bool common_signal_handler(int code, siginfo_t *siginfo, void *sigcontext
 #ifdef INJECT_ACTIVATION_SIGNAL
 static void inject_activation_handler(int code, siginfo_t *siginfo, void *context);
 #endif
-#endif // !HAVE_MACH_EXCEPTIONS
 
 static void handle_signal(int signal_id, SIGFUNC sigfunc, struct sigaction *previousAction, int additionalFlags = 0, bool skipIgnored = false);
 static void restore_signal(int signal_id, struct sigaction *previousAction);
@@ -88,15 +93,12 @@ static void restore_signal_and_resend(int code, struct sigaction* action);
 
 /* internal data declarations *********************************************/
 
-#if !HAVE_MACH_EXCEPTIONS
 bool g_registered_signal_handlers = false;
 bool g_enable_alternate_stack_check = false;
-#endif // !HAVE_MACH_EXCEPTIONS
 
 static bool g_registered_sigterm_handler = false;
 
 struct sigaction g_previous_sigterm;
-#if !HAVE_MACH_EXCEPTIONS
 struct sigaction g_previous_sigill;
 struct sigaction g_previous_sigtrap;
 struct sigaction g_previous_sigfpe;
@@ -119,8 +121,6 @@ volatile void* g_stackOverflowHandlerStack = NULL;
 // Flag that is or-ed with SIGSEGV to indicate that the SIGSEGV was a stack overflow
 const int StackOverflowFlag = 0x40000000;
 
-#endif // !HAVE_MACH_EXCEPTIONS
-
 /* public function definitions ************************************************/
 
 /*++
@@ -139,14 +139,22 @@ BOOL SEHInitializeSignals(CorUnix::CPalThread *pthrCurrent, DWORD flags)
 {
     TRACE("Initializing signal handlers\n");
 
-#if !HAVE_MACH_EXCEPTIONS
-
     char* enableAlternateStackCheck = getenv("COMPlus_EnableAlternateStackCheck");
 
     g_enable_alternate_stack_check = enableAlternateStackCheck && (strtoul(enableAlternateStackCheck, NULL, 10) != 0);
 
     if (flags & PAL_INITIALIZE_REGISTER_SIGNALS)
     {
+
+#ifdef __APPLE__
+    kern_return_t kr = task_set_exception_ports (
+		mach_task_self (),
+		EXC_MASK_BAD_ACCESS | EXC_MASK_ARITHMETIC, /* SIGSEGV, SIGFPE */
+		MACH_PORT_NULL,
+		EXCEPTION_STATE_IDENTITY,
+		MACHINE_THREAD_STATE);
+	    _ASSERTE(kr == KERN_SUCCESS);
+#endif        
         g_registered_signal_handlers = true;
 
         /* we call handle_signal for every possible signal, even
@@ -167,7 +175,7 @@ BOOL SEHInitializeSignals(CorUnix::CPalThread *pthrCurrent, DWORD flags)
         handle_signal(SIGFPE, sigfpe_handler, &g_previous_sigfpe);
         handle_signal(SIGBUS, sigbus_handler, &g_previous_sigbus);
         // SIGSEGV handler runs on a separate stack so that we can handle stack overflow
-        handle_signal(SIGSEGV, sigsegv_handler, &g_previous_sigsegv, SA_ONSTACK);
+        handle_signal(SIGSEGV, sigsegv_handler, &g_previous_sigsegv);//, SA_ONSTACK);
         // We don't setup a handler for SIGINT/SIGQUIT when those signals are ignored.
         // Otherwise our child processes would reset to the default on exec causing them
         // to terminate on these signals.
@@ -216,7 +224,6 @@ BOOL SEHInitializeSignals(CorUnix::CPalThread *pthrCurrent, DWORD flags)
        issued a SIGPIPE will, instead, report an error and set errno to EPIPE.
     */
     signal(SIGPIPE, SIG_IGN);
-#endif // !HAVE_MACH_EXCEPTIONS
 
     if (flags & PAL_INITIALIZE_REGISTER_SIGTERM_HANDLER)
     {
@@ -247,7 +254,6 @@ void SEHCleanupSignals()
 {
     TRACE("Restoring default signal handlers\n");
 
-#if !HAVE_MACH_EXCEPTIONS
     if (g_registered_signal_handlers)
     {
         restore_signal(SIGILL, &g_previous_sigill);
@@ -261,7 +267,6 @@ void SEHCleanupSignals()
         restore_signal(INJECT_ACTIVATION_SIGNAL, &g_previous_activation);
 #endif
     }
-#endif // !HAVE_MACH_EXCEPTIONS
 
     if (g_registered_sigterm_handler)
     {
@@ -271,7 +276,6 @@ void SEHCleanupSignals()
 
 /* internal function definitions **********************************************/
 
-#if !HAVE_MACH_EXCEPTIONS
 /*++
 Function :
     invoke_previous_action
@@ -658,7 +662,6 @@ static void sigquit_handler(int code, siginfo_t *siginfo, void *context)
 
     restore_signal_and_resend(code, &g_previous_sigquit);
 }
-#endif // !HAVE_MACH_EXCEPTIONS
 
 /*++
 Function :
@@ -686,7 +689,6 @@ static void sigterm_handler(int code, siginfo_t *siginfo, void *context)
     }
 }
 
-#if !HAVE_MACH_EXCEPTIONS
 #ifdef INJECT_ACTIVATION_SIGNAL
 /*++
 Function :
@@ -797,7 +799,6 @@ static void signal_ignore_handler(int code, siginfo_t *siginfo, void *context)
 
 void PAL_IgnoreProfileSignal(int signalNum)
 {
-#if !HAVE_MACH_EXCEPTIONS
     // Add a signal handler which will ignore signals
     // This will allow signal to be used as a marker in perf recording.
     // This will be used as an aid to synchronize recorded profile with
@@ -811,7 +812,6 @@ void PAL_IgnoreProfileSignal(int signalNum)
     // Since this is only used in rare circumstances no attempt to
     // restore the old handler will be made
     handle_signal(signalNum, signal_ignore_handler, 0);
-#endif
 }
 
 
@@ -904,7 +904,6 @@ static bool common_signal_handler(int code, siginfo_t *siginfo, void *sigcontext
 
     return false;
 }
-#endif // !HAVE_MACH_EXCEPTIONS
 
 /*++
 Function :

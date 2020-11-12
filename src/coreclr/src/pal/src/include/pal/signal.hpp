@@ -19,8 +19,6 @@ Abstract:
 #ifndef _PAL_SIGNAL_HPP_
 #define _PAL_SIGNAL_HPP_
 
-#if !HAVE_MACH_EXCEPTIONS
-
 // Return context and status for the signal_handler_worker.
 struct SignalHandlerWorkerReturnPoint
 {
@@ -90,8 +88,6 @@ Parameters :
     (no return value)
 --*/
 void ExecuteHandlerOnCustomStack(int code, siginfo_t *siginfo, void *context, size_t sp, SignalHandlerWorkerReturnPoint* returnPoint);
-
-#endif // !HAVE_MACH_EXCEPTIONS
 
 /*++
 Function :

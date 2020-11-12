@@ -29,11 +29,7 @@ Abstract:
 #include "pal/signal.hpp"
 #include "pal/virtual.h"
 
-#if HAVE_MACH_EXCEPTIONS
-#include "machexception.h"
-#else
 #include <signal.h>
-#endif
 
 #include <string.h>
 #include <unistd.h>
@@ -301,13 +297,11 @@ Return value :
 extern "C"
 PAL_ERROR SEHEnable(CPalThread *pthrCurrent)
 {
-#if HAVE_MACH_EXCEPTIONS
-    return pthrCurrent->EnableMachExceptions();
-#elif defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__sun)
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__sun) || defined(__APPLE__)
     return NO_ERROR;
-#else// HAVE_MACH_EXCEPTIONS
+#else
 #error not yet implemented
-#endif // HAVE_MACH_EXCEPTIONS
+#endif
 }
 
 /*++
@@ -326,13 +320,11 @@ Return value :
 extern "C"
 PAL_ERROR SEHDisable(CPalThread *pthrCurrent)
 {
-#if HAVE_MACH_EXCEPTIONS
-    return pthrCurrent->DisableMachExceptions();
-#elif defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__sun)
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__sun) || defined(__APPLE__)
     return NO_ERROR;
-#else // HAVE_MACH_EXCEPTIONS
+#else
 #error not yet implemented
-#endif // HAVE_MACH_EXCEPTIONS
+#endif
 }
 
 /*++
