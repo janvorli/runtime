@@ -175,7 +175,7 @@ BOOL SEHInitializeSignals(CorUnix::CPalThread *pthrCurrent, DWORD flags)
         handle_signal(SIGFPE, sigfpe_handler, &g_previous_sigfpe);
         handle_signal(SIGBUS, sigbus_handler, &g_previous_sigbus);
         // SIGSEGV handler runs on a separate stack so that we can handle stack overflow
-        handle_signal(SIGSEGV, sigsegv_handler, &g_previous_sigsegv);//, SA_ONSTACK);
+        handle_signal(SIGSEGV, sigsegv_handler, &g_previous_sigsegv, SA_ONSTACK);
         // We don't setup a handler for SIGINT/SIGQUIT when those signals are ignored.
         // Otherwise our child processes would reset to the default on exec causing them
         // to terminate on these signals.
@@ -838,6 +838,9 @@ static bool common_signal_handler(int code, siginfo_t *siginfo, void *sigcontext
 {
     sigset_t signal_set;
     CONTEXT signalContextRecord;
+    CONTEXT returnContextRecord;
+    volatile bool hasReturned = false;
+
     EXCEPTION_RECORD exceptionRecord;
     native_context_t *ucontext;
 
@@ -881,6 +884,61 @@ static bool common_signal_handler(int code, siginfo_t *siginfo, void *sigcontext
     // PEXCEPTION_POINTERS will contain at least the CONTEXT_CONTROL registers.
     CONTEXTFromNativeContext(ucontext, &signalContextRecord, contextFlags);
 
+/*
+    // TODO: it would be nice to have a version of RtlCaptureContext working with ucontext
+    // so that we can avoid the conversion and the need for more stack space here
+    RtlCaptureContext(&returnContextRecord);
+    CONTEXTToNativeContext(&returnContextRecord, ucontext);
+    if (!hasReturned)
+    {
+        // TODO: will this work for the stack overflow handling too?
+        // it seems we would need to switch back to the alternate stack or
+        // execute this before switching off the alternate stack
+        // Maybe we can just skip this when handling stack overflow since
+        // we won't come here ever again.
+        // But maybe it would just work due to the switch-back to the alternate stack if we ever return!
+
+        // ********** Problem *****************
+        // * we need a trampoline for unwinding
+        // * We cannot really expect the frame of this method to be preserved
+        //      - the code on our way back could have overwritten it
+        //      - there could have been a signal during the return
+        // New idea:
+        // * patch just PC, maybe SP (and frame pointer?) so that we return to an asm helper expecting
+        //   nothing. Use volatile registers to save the original PC, SP and maybe some more info needed
+        // * let that helper enable unwinding into the faulting location
+        // * Make this a bit higher so that the common_signal_handler is called after returning from the signal handler
+        // * Problem - modifying some registers in the GC stress / activation injection cases - can we somehow prevent usage of other registers. Especially LR on ARM might be a problem
+        // * Ha! Red zone could save us! However, what if we were running in a 3rd party library that was using red zone? Bummer.
+        // * What if I allocated a storage, put some register values there and then stored the pointer to that memory to one of the saved registers? I wonder if unwind info would be capable of extracting that register. 
+        // * But maybe that's fine, debugger cannot see volatile registers in caller frames anyways.
+        // * So, how can we allocate a block of memory without using malloc? Maybe allocating it at new thread creation and adding it to a linked list?
+        // * Can we use the alternate stack memory for that? We know its range from ((native_context_t *)context)->uc_stack, so we could just always use the topmost page / number of slots for that!
+        //
+        // Another idea:
+        // Use setjmp / longjmp. On macOS, it clears the alternate stack flags! Hmm, it doesn't unless the setjmp was called out of the signal handler, which is not practical as it would unwind the stack
+        // 
+        // Yet another idea:
+        // What if the HandleHardwareException always returned, but for the cases when we want to handle the exception without returning back from the signal, it would actually be the time when we would
+        // patch the context so that returning from the handler would end up in our helper. That way, we are free to modify registers to carry extra info and the stack would look as if the hardware exception
+        // called directly. We would need to save the original failure context though. It seems that at that point, we could use TLS or even malloc.
+        // This seems to be the cleanest solution.
+        //
+        // One more idea:
+        // * return from the signal handler immediatelly, redirected to a helper, except for stack overflow. Well, actually, even for stack overflow, but in that case, redirecting it to the stack overflow handling stack.
+        //
+        // Yet one more simple idea:
+        // * use signal just for the activation injection and nothing else. That actually sounds like a good thing to backport that would solve the rosetta issue too.
+        // 
+        // And yet one more: NO 
+        // Switch off the alt stack by calling sigaction to set the same handler without the flag to use alt stack and returning. The sigsegv will come back on the main stack and we can call sigaction again to re-arm the alt stack
+        // That won't work - we cannot set the sigaction per thread, so we would effectively cause sigsegvs in the meanwhile to happen on the regular stack.
+
+        hasReturned = true;
+        // Return from the signal handler. We will come back right away 
+        return true;
+    }
+*/
     /* Unmask signal so we can receive it again */
     sigemptyset(&signal_set);
     sigaddset(&signal_set, code);
