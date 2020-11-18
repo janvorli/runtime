@@ -66,6 +66,8 @@ typedef int __ptrace_request;
 #include <asm/ptrace.h>
 #endif  // HAVE_PT_REGS
 
+#endif // !HAVE_MACH_EXCEPTIONS
+
 #ifdef HOST_AMD64
 #define ASSIGN_CONTROL_REGS \
         ASSIGN_REG(Rbp)     \
@@ -89,7 +91,7 @@ typedef int __ptrace_request;
         ASSIGN_REG(R13)     \
         ASSIGN_REG(R14)     \
         ASSIGN_REG(R15)     \
-
+        
 #elif defined(HOST_X86)
 #define ASSIGN_CONTROL_REGS \
         ASSIGN_REG(Ebp)     \
@@ -174,6 +176,8 @@ typedef int __ptrace_request;
 #define ASSIGN_ALL_REGS     \
         ASSIGN_CONTROL_REGS \
         ASSIGN_INTEGER_REGS \
+
+#if !HAVE_MACH_EXCEPTIONS
 
 /*++
 Function:
@@ -399,253 +403,6 @@ CONTEXT_SetThreadContext(
     ret = TRUE;
    EXIT:
      return ret;
-}
-
-/*++
-Function :
-    CONTEXTToNativeContext
-
-    Converts a CONTEXT record to a native context.
-
-Parameters :
-    CONST CONTEXT *lpContext : CONTEXT to convert
-    native_context_t *native : native context to fill in
-
-Return value :
-    None
-
---*/
-void CONTEXTToNativeContext(CONST CONTEXT *lpContext, native_context_t *native)
-{
-#define ASSIGN_REG(reg) MCREG_##reg(native->uc_mcontext) = lpContext->reg;
-    if ((lpContext->ContextFlags & CONTEXT_CONTROL) == CONTEXT_CONTROL)
-    {
-        ASSIGN_CONTROL_REGS
-    }
-
-    if ((lpContext->ContextFlags & CONTEXT_INTEGER) == CONTEXT_INTEGER)
-    {
-        ASSIGN_INTEGER_REGS
-    }
-#undef ASSIGN_REG
-
-#if !HAVE_FPREGS_WITH_CW
-#if HAVE_GREGSET_T || HAVE_GREGSET_T
-#if HAVE_GREGSET_T
-    if (native->uc_mcontext.fpregs == nullptr)
-#elif HAVE___GREGSET_T
-    if (native->uc_mcontext.__fpregs == nullptr)
-#endif // HAVE_GREGSET_T
-    {
-        // If the pointer to the floating point state in the native context
-        // is not valid, we can't copy floating point registers regardless of
-        // whether CONTEXT_FLOATING_POINT is set in the CONTEXT's flags.
-        return;
-    }
-#endif // HAVE_GREGSET_T || HAVE_GREGSET_T
-#endif // !HAVE_FPREGS_WITH_CW
-
-    if ((lpContext->ContextFlags & CONTEXT_FLOATING_POINT) == CONTEXT_FLOATING_POINT)
-    {
-#ifdef HOST_AMD64
-        FPREG_ControlWord(native) = lpContext->FltSave.ControlWord;
-        FPREG_StatusWord(native) = lpContext->FltSave.StatusWord;
-#if HAVE_FPREGS_WITH_CW
-        FPREG_TagWord1(native) = lpContext->FltSave.TagWord >> 8;
-        FPREG_TagWord2(native) = lpContext->FltSave.TagWord & 0xff;
-#else
-        FPREG_TagWord(native) = lpContext->FltSave.TagWord;
-#endif
-        FPREG_ErrorOffset(native) = lpContext->FltSave.ErrorOffset;
-        FPREG_ErrorSelector(native) = lpContext->FltSave.ErrorSelector;
-        FPREG_DataOffset(native) = lpContext->FltSave.DataOffset;
-        FPREG_DataSelector(native) = lpContext->FltSave.DataSelector;
-        FPREG_MxCsr(native) = lpContext->FltSave.MxCsr;
-        FPREG_MxCsr_Mask(native) = lpContext->FltSave.MxCsr_Mask;
-
-        for (int i = 0; i < 8; i++)
-        {
-            FPREG_St(native, i) = lpContext->FltSave.FloatRegisters[i];
-        }
-
-        for (int i = 0; i < 16; i++)
-        {
-            FPREG_Xmm(native, i) = lpContext->FltSave.XmmRegisters[i];
-        }
-#elif defined(HOST_ARM64)
-        fpsimd_context* fp = GetNativeSigSimdContext(native);
-        if (fp)
-        {
-            fp->fpsr = lpContext->Fpsr;
-            fp->fpcr = lpContext->Fpcr;
-            for (int i = 0; i < 32; i++)
-            {
-                *(NEON128*) &fp->vregs[i] = lpContext->V[i];
-            }
-        }
-#elif defined(HOST_ARM)
-        VfpSigFrame* fp = GetNativeSigSimdContext(native);
-        if (fp)
-        {
-            fp->Fpscr = lpContext->Fpscr;
-            for (int i = 0; i < 32; i++)
-            {
-                fp->D[i] = lpContext->D[i];
-            }
-        }
-#endif
-    }
-
-    // TODO: Enable for all Unix systems
-#if defined(HOST_AMD64) && defined(XSTATE_SUPPORTED)
-    if ((lpContext->ContextFlags & CONTEXT_XSTATE) == CONTEXT_XSTATE)
-    {
-        _ASSERTE(FPREG_HasYmmRegisters(native));
-        memcpy_s(FPREG_Xstate_Ymmh(native), sizeof(M128A) * 16, lpContext->VectorRegister, sizeof(M128A) * 16);
-    }
-#endif //HOST_AMD64 && XSTATE_SUPPORTED
-}
-
-/*++
-Function :
-    CONTEXTFromNativeContext
-
-    Converts a native context to a CONTEXT record.
-
-Parameters :
-    const native_context_t *native : native context to convert
-    LPCONTEXT lpContext : CONTEXT to fill in
-    ULONG contextFlags : flags that determine which registers are valid in
-                         native and which ones to set in lpContext
-
-Return value :
-    None
-
---*/
-void CONTEXTFromNativeContext(const native_context_t *native, LPCONTEXT lpContext,
-                              ULONG contextFlags)
-{
-    lpContext->ContextFlags = contextFlags;
-
-#define ASSIGN_REG(reg) lpContext->reg = MCREG_##reg(native->uc_mcontext);
-    if ((contextFlags & CONTEXT_CONTROL) == CONTEXT_CONTROL)
-    {
-        ASSIGN_CONTROL_REGS
-#if defined(HOST_ARM)
-        // WinContext assumes that the least bit of Pc is always 1 (denoting thumb)
-        // although the pc value retrived from native context might not have set the least bit.
-        // This becomes especially problematic if the context is on the JIT_WRITEBARRIER.
-        lpContext->Pc |= 0x1;
-#endif
-    }
-
-    if ((contextFlags & CONTEXT_INTEGER) == CONTEXT_INTEGER)
-    {
-        ASSIGN_INTEGER_REGS
-    }
-#undef ASSIGN_REG
-
-#if !HAVE_FPREGS_WITH_CW
-#if HAVE_GREGSET_T || HAVE___GREGSET_T
-#if HAVE_GREGSET_T
-    if (native->uc_mcontext.fpregs == nullptr)
-#elif HAVE___GREGSET_T
-    if (native->uc_mcontext.__fpregs == nullptr)
-#endif // HAVE_GREGSET_T
-    {
-        // Reset the CONTEXT_FLOATING_POINT bit(s) and the CONTEXT_XSTATE bit(s) so it's
-        // clear that the floating point and extended state data in the CONTEXT is not
-        // valid. Since these flags are defined as the architecture bit(s) OR'd with one
-        // or more other bits, we first get the bits that are unique to each by resetting
-        // the architecture bits. We determine what those are by inverting the union of
-        // CONTEXT_CONTROL and CONTEXT_INTEGER, both of which should also have the
-        // architecture bit(s) set.
-        const ULONG floatingPointFlags = CONTEXT_FLOATING_POINT & ~(CONTEXT_CONTROL & CONTEXT_INTEGER);
-        const ULONG xstateFlags = CONTEXT_XSTATE & ~(CONTEXT_CONTROL & CONTEXT_INTEGER);
-
-        lpContext->ContextFlags &= ~(floatingPointFlags | xstateFlags);
-
-        // Bail out regardless of whether the caller wanted CONTEXT_FLOATING_POINT or CONTEXT_XSTATE
-        return;
-    }
-#endif // HAVE_GREGSET_T || HAVE___GREGSET_T
-#endif // !HAVE_FPREGS_WITH_CW
-
-    if ((contextFlags & CONTEXT_FLOATING_POINT) == CONTEXT_FLOATING_POINT)
-    {
-#ifdef HOST_AMD64
-        lpContext->FltSave.ControlWord = FPREG_ControlWord(native);
-        lpContext->FltSave.StatusWord = FPREG_StatusWord(native);
-#if HAVE_FPREGS_WITH_CW
-        lpContext->FltSave.TagWord = ((DWORD)FPREG_TagWord1(native) << 8) | FPREG_TagWord2(native);
-#else
-        lpContext->FltSave.TagWord = FPREG_TagWord(native);
-#endif
-        lpContext->FltSave.ErrorOffset = FPREG_ErrorOffset(native);
-        lpContext->FltSave.ErrorSelector = FPREG_ErrorSelector(native);
-        lpContext->FltSave.DataOffset = FPREG_DataOffset(native);
-        lpContext->FltSave.DataSelector = FPREG_DataSelector(native);
-        lpContext->FltSave.MxCsr = FPREG_MxCsr(native);
-        lpContext->FltSave.MxCsr_Mask = FPREG_MxCsr_Mask(native);
-
-        for (int i = 0; i < 8; i++)
-        {
-            lpContext->FltSave.FloatRegisters[i] = FPREG_St(native, i);
-        }
-
-        for (int i = 0; i < 16; i++)
-        {
-            lpContext->FltSave.XmmRegisters[i] = FPREG_Xmm(native, i);
-        }
-#elif defined(HOST_ARM64)
-        const fpsimd_context* fp = GetConstNativeSigSimdContext(native);
-        if (fp)
-        {
-            lpContext->Fpsr = fp->fpsr;
-            lpContext->Fpcr = fp->fpcr;
-            for (int i = 0; i < 32; i++)
-            {
-                lpContext->V[i] = *(NEON128*) &fp->vregs[i];
-            }
-        }
-#elif defined(HOST_ARM)
-        const VfpSigFrame* fp = GetConstNativeSigSimdContext(native);
-        if (fp)
-        {
-            lpContext->Fpscr = fp->Fpscr;
-            for (int i = 0; i < 32; i++)
-            {
-                lpContext->D[i] = fp->D[i];
-            }
-        }
-        else
-        {
-            // Floating point state is not valid
-            // Mark the context correctly
-            lpContext->ContextFlags &= ~(ULONG)CONTEXT_FLOATING_POINT;
-        }
-#endif
-    }
-
-#ifdef HOST_AMD64
-    if ((contextFlags & CONTEXT_XSTATE) == CONTEXT_XSTATE)
-    {
-    // TODO: Enable for all Unix systems
-#if XSTATE_SUPPORTED
-        if (FPREG_HasYmmRegisters(native))
-        {
-            memcpy_s(lpContext->VectorRegister, sizeof(M128A) * 16, FPREG_Xstate_Ymmh(native), sizeof(M128A) * 16);
-        }
-        else
-#endif // XSTATE_SUPPORTED
-        {
-            // Reset the CONTEXT_XSTATE bit(s) so it's clear that the extended state data in
-            // the CONTEXT is not valid.
-            const ULONG xstateFlags = CONTEXT_XSTATE & ~(CONTEXT_CONTROL & CONTEXT_INTEGER);
-            lpContext->ContextFlags &= ~xstateFlags;
-        }
-    }
-#endif // HOST_AMD64
 }
 
 /*++
@@ -1446,6 +1203,254 @@ EXIT:
 }
 
 #endif // !HAVE_MACH_EXCEPTIONS
+
+/*++
+Function :
+    CONTEXTToNativeContext
+
+    Converts a CONTEXT record to a native context.
+
+Parameters :
+    CONST CONTEXT *lpContext : CONTEXT to convert
+    native_context_t *native : native context to fill in
+
+Return value :
+    None
+
+--*/
+void CONTEXTToNativeContext(CONST CONTEXT *lpContext, native_context_t *native)
+{
+#define ASSIGN_REG(reg) MCREG_##reg(native->uc_mcontext) = lpContext->reg;
+    if ((lpContext->ContextFlags & CONTEXT_CONTROL) == CONTEXT_CONTROL)
+    {
+        ASSIGN_CONTROL_REGS
+    }
+
+    if ((lpContext->ContextFlags & CONTEXT_INTEGER) == CONTEXT_INTEGER)
+    {
+        ASSIGN_INTEGER_REGS
+    }
+#undef ASSIGN_REG
+
+#if !HAVE_FPREGS_WITH_CW
+#if HAVE_GREGSET_T || HAVE_GREGSET_T
+#if HAVE_GREGSET_T
+    if (native->uc_mcontext.fpregs == nullptr)
+#elif HAVE___GREGSET_T
+    if (native->uc_mcontext.__fpregs == nullptr)
+#endif // HAVE_GREGSET_T
+    {
+        // If the pointer to the floating point state in the native context
+        // is not valid, we can't copy floating point registers regardless of
+        // whether CONTEXT_FLOATING_POINT is set in the CONTEXT's flags.
+        return;
+    }
+#endif // HAVE_GREGSET_T || HAVE_GREGSET_T
+#endif // !HAVE_FPREGS_WITH_CW
+
+    if ((lpContext->ContextFlags & CONTEXT_FLOATING_POINT) == CONTEXT_FLOATING_POINT)
+    {
+#ifdef HOST_AMD64
+        FPREG_ControlWord(native) = lpContext->FltSave.ControlWord;
+        FPREG_StatusWord(native) = lpContext->FltSave.StatusWord;
+#if HAVE_FPREGS_WITH_CW
+        FPREG_TagWord1(native) = lpContext->FltSave.TagWord >> 8;
+        FPREG_TagWord2(native) = lpContext->FltSave.TagWord & 0xff;
+#else
+        FPREG_TagWord(native) = lpContext->FltSave.TagWord;
+#endif
+        FPREG_ErrorOffset(native) = lpContext->FltSave.ErrorOffset;
+        FPREG_ErrorSelector(native) = lpContext->FltSave.ErrorSelector;
+        FPREG_DataOffset(native) = lpContext->FltSave.DataOffset;
+        FPREG_DataSelector(native) = lpContext->FltSave.DataSelector;
+        FPREG_MxCsr(native) = lpContext->FltSave.MxCsr;
+        FPREG_MxCsr_Mask(native) = lpContext->FltSave.MxCsr_Mask;
+
+        for (int i = 0; i < 8; i++)
+        {
+            FPREG_St(native, i) = lpContext->FltSave.FloatRegisters[i];
+        }
+
+        for (int i = 0; i < 16; i++)
+        {
+            FPREG_Xmm(native, i) = lpContext->FltSave.XmmRegisters[i];
+        }
+#elif defined(HOST_ARM64)
+        fpsimd_context* fp = GetNativeSigSimdContext(native);
+        if (fp)
+        {
+            fp->fpsr = lpContext->Fpsr;
+            fp->fpcr = lpContext->Fpcr;
+            for (int i = 0; i < 32; i++)
+            {
+                *(NEON128*) &fp->vregs[i] = lpContext->V[i];
+            }
+        }
+#elif defined(HOST_ARM)
+        VfpSigFrame* fp = GetNativeSigSimdContext(native);
+        if (fp)
+        {
+            fp->Fpscr = lpContext->Fpscr;
+            for (int i = 0; i < 32; i++)
+            {
+                fp->D[i] = lpContext->D[i];
+            }
+        }
+#endif
+    }
+
+    // TODO: Enable for all Unix systems
+#if defined(HOST_AMD64) && defined(XSTATE_SUPPORTED)
+    if ((lpContext->ContextFlags & CONTEXT_XSTATE) == CONTEXT_XSTATE)
+    {
+        _ASSERTE(FPREG_HasYmmRegisters(native));
+        memcpy_s(FPREG_Xstate_Ymmh(native), sizeof(M128A) * 16, lpContext->VectorRegister, sizeof(M128A) * 16);
+    }
+#endif //HOST_AMD64 && XSTATE_SUPPORTED
+}
+
+/*++
+Function :
+    CONTEXTFromNativeContext
+
+    Converts a native context to a CONTEXT record.
+
+Parameters :
+    const native_context_t *native : native context to convert
+    LPCONTEXT lpContext : CONTEXT to fill in
+    ULONG contextFlags : flags that determine which registers are valid in
+                         native and which ones to set in lpContext
+
+Return value :
+    None
+
+--*/
+void CONTEXTFromNativeContext(const native_context_t *native, LPCONTEXT lpContext,
+                              ULONG contextFlags)
+{
+    lpContext->ContextFlags = contextFlags;
+
+#define ASSIGN_REG(reg) lpContext->reg = MCREG_##reg(native->uc_mcontext);
+    if ((contextFlags & CONTEXT_CONTROL) == CONTEXT_CONTROL)
+    {
+        ASSIGN_CONTROL_REGS
+#if defined(HOST_ARM)
+        // WinContext assumes that the least bit of Pc is always 1 (denoting thumb)
+        // although the pc value retrived from native context might not have set the least bit.
+        // This becomes especially problematic if the context is on the JIT_WRITEBARRIER.
+        lpContext->Pc |= 0x1;
+#endif
+    }
+
+    if ((contextFlags & CONTEXT_INTEGER) == CONTEXT_INTEGER)
+    {
+        ASSIGN_INTEGER_REGS
+    }
+#undef ASSIGN_REG
+
+#if !HAVE_FPREGS_WITH_CW
+#if HAVE_GREGSET_T || HAVE___GREGSET_T
+#if HAVE_GREGSET_T
+    if (native->uc_mcontext.fpregs == nullptr)
+#elif HAVE___GREGSET_T
+    if (native->uc_mcontext.__fpregs == nullptr)
+#endif // HAVE_GREGSET_T
+    {
+        // Reset the CONTEXT_FLOATING_POINT bit(s) and the CONTEXT_XSTATE bit(s) so it's
+        // clear that the floating point and extended state data in the CONTEXT is not
+        // valid. Since these flags are defined as the architecture bit(s) OR'd with one
+        // or more other bits, we first get the bits that are unique to each by resetting
+        // the architecture bits. We determine what those are by inverting the union of
+        // CONTEXT_CONTROL and CONTEXT_INTEGER, both of which should also have the
+        // architecture bit(s) set.
+        const ULONG floatingPointFlags = CONTEXT_FLOATING_POINT & ~(CONTEXT_CONTROL & CONTEXT_INTEGER);
+        const ULONG xstateFlags = CONTEXT_XSTATE & ~(CONTEXT_CONTROL & CONTEXT_INTEGER);
+
+        lpContext->ContextFlags &= ~(floatingPointFlags | xstateFlags);
+
+        // Bail out regardless of whether the caller wanted CONTEXT_FLOATING_POINT or CONTEXT_XSTATE
+        return;
+    }
+#endif // HAVE_GREGSET_T || HAVE___GREGSET_T
+#endif // !HAVE_FPREGS_WITH_CW
+
+    if ((contextFlags & CONTEXT_FLOATING_POINT) == CONTEXT_FLOATING_POINT)
+    {
+#ifdef HOST_AMD64
+        lpContext->FltSave.ControlWord = FPREG_ControlWord(native);
+        lpContext->FltSave.StatusWord = FPREG_StatusWord(native);
+#if HAVE_FPREGS_WITH_CW
+        lpContext->FltSave.TagWord = ((DWORD)FPREG_TagWord1(native) << 8) | FPREG_TagWord2(native);
+#else
+        lpContext->FltSave.TagWord = FPREG_TagWord(native);
+#endif
+        lpContext->FltSave.ErrorOffset = FPREG_ErrorOffset(native);
+        lpContext->FltSave.ErrorSelector = FPREG_ErrorSelector(native);
+        lpContext->FltSave.DataOffset = FPREG_DataOffset(native);
+        lpContext->FltSave.DataSelector = FPREG_DataSelector(native);
+        lpContext->FltSave.MxCsr = FPREG_MxCsr(native);
+        lpContext->FltSave.MxCsr_Mask = FPREG_MxCsr_Mask(native);
+
+        for (int i = 0; i < 8; i++)
+        {
+            lpContext->FltSave.FloatRegisters[i] = FPREG_St(native, i);
+        }
+
+        for (int i = 0; i < 16; i++)
+        {
+            lpContext->FltSave.XmmRegisters[i] = FPREG_Xmm(native, i);
+        }
+#elif defined(HOST_ARM64)
+        const fpsimd_context* fp = GetConstNativeSigSimdContext(native);
+        if (fp)
+        {
+            lpContext->Fpsr = fp->fpsr;
+            lpContext->Fpcr = fp->fpcr;
+            for (int i = 0; i < 32; i++)
+            {
+                lpContext->V[i] = *(NEON128*) &fp->vregs[i];
+            }
+        }
+#elif defined(HOST_ARM)
+        const VfpSigFrame* fp = GetConstNativeSigSimdContext(native);
+        if (fp)
+        {
+            lpContext->Fpscr = fp->Fpscr;
+            for (int i = 0; i < 32; i++)
+            {
+                lpContext->D[i] = fp->D[i];
+            }
+        }
+        else
+        {
+            // Floating point state is not valid
+            // Mark the context correctly
+            lpContext->ContextFlags &= ~(ULONG)CONTEXT_FLOATING_POINT;
+        }
+#endif
+    }
+
+#ifdef HOST_AMD64
+    if ((contextFlags & CONTEXT_XSTATE) == CONTEXT_XSTATE)
+    {
+    // TODO: Enable for all Unix systems
+#if XSTATE_SUPPORTED
+        if (FPREG_HasYmmRegisters(native))
+        {
+            memcpy_s(lpContext->VectorRegister, sizeof(M128A) * 16, FPREG_Xstate_Ymmh(native), sizeof(M128A) * 16);
+        }
+        else
+#endif // XSTATE_SUPPORTED
+        {
+            // Reset the CONTEXT_XSTATE bit(s) so it's clear that the extended state data in
+            // the CONTEXT is not valid.
+            const ULONG xstateFlags = CONTEXT_XSTATE & ~(CONTEXT_CONTROL & CONTEXT_INTEGER);
+            lpContext->ContextFlags &= ~xstateFlags;
+        }
+    }
+#endif // HOST_AMD64
+}
+
 
 /*++
 Function:
