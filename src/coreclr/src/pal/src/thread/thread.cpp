@@ -1230,6 +1230,8 @@ CorUnix::InternalSetThreadPriority(
 #endif
 
         ASSERT("Unable to set thread priority to %d (error %d)\n", (int)posix_priority, st);
+        fprintf(stderr, "Unable to set thread priority to %d (error %d)\n", (int)posix_priority, st);
+        abort();
         palError = ERROR_INTERNAL_ERROR;
         goto InternalSetThreadPriorityExit;
     }

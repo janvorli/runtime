@@ -28,16 +28,17 @@ extern "C"
 #include <signal.h>
 #include <pthread.h>
 
-#if !HAVE_MACH_EXCEPTIONS
 /* A type to wrap the native context type, which is ucontext_t on some
  * platforms and another type elsewhere. */
 #if HAVE_UCONTEXT_T
-#include <ucontext.h>
+#include <sys/ucontext.h>
 
 typedef ucontext_t native_context_t;
 #else   // HAVE_UCONTEXT_T
 #error Native context type is not known on this platform!
 #endif  // HAVE_UCONTEXT_T
+
+#if !HAVE_MACH_EXCEPTIONS
 
 #if defined(XSTATE_SUPPORTED) && !HAVE_PUBLIC_XSTATE_STRUCT
 namespace asm_sigcontext
@@ -342,6 +343,56 @@ const fpsimd_context* GetConstNativeSigSimdContext(const native_context_t *mc)
 }
 
 #else
+
+#ifdef TARGET_OSX
+
+#define MCREG_Rbp(mc)      ((mc)->__ss.__rbp)
+#define MCREG_Rip(mc)      ((mc)->__ss.__rip)
+#define MCREG_Rsp(mc)      ((mc)->__ss.__rsp)
+#define MCREG_Rsi(mc)      ((mc)->__ss.__rsi)
+#define MCREG_Rdi(mc)      ((mc)->__ss.__rdi)
+#define MCREG_Rbx(mc)      ((mc)->__ss.__rbx)
+#define MCREG_Rdx(mc)      ((mc)->__ss.__rdx)
+#define MCREG_Rcx(mc)      ((mc)->__ss.__rcx)
+#define MCREG_Rax(mc)      ((mc)->__ss.__rax)
+#define MCREG_R8(mc)       ((mc)->__ss.__r8)
+#define MCREG_R9(mc)       ((mc)->__ss.__r9)
+#define MCREG_R10(mc)      ((mc)->__ss.__r10)
+#define MCREG_R11(mc)      ((mc)->__ss.__r11)
+#define MCREG_R12(mc)      ((mc)->__ss.__r12)
+#define MCREG_R13(mc)      ((mc)->__ss.__r13)
+#define MCREG_R14(mc)      ((mc)->__ss.__r14)
+#define MCREG_R15(mc)      ((mc)->__ss.__r15)
+#define MCREG_EFlags(mc)   ((mc)->__ss.__rflags)
+#define MCREG_SegCs(mc)    ((mc)->__ss.__cs)
+
+#define FPSTATE(uc)             ((uc)->uc_mcontext->__fs)
+#define FPREG_ControlWord(uc)   *((WORD*)&FPSTATE(uc).__fpu_fcw)
+#define FPREG_StatusWord(uc)    *((WORD*)&FPSTATE(uc).__fpu_fsw)
+#define FPREG_TagWord(uc)       FPSTATE(uc).__fpu_ftw
+#define FPREG_MxCsr(uc)         FPSTATE(uc).__fpu_mxcsr
+#define FPREG_MxCsr_Mask(uc)    FPSTATE(uc).__fpu_mxcsrmask
+#define FPREG_ErrorOffset(uc)   *(DWORD*) &(FPSTATE(uc).__fpu_ip)
+#define FPREG_ErrorSelector(uc) *((WORD*) &(FPSTATE(uc).__fpu_ip) + 2)
+#define FPREG_DataOffset(uc)    *(DWORD*) &(FPSTATE(uc).__fpu_dp)
+#define FPREG_DataSelector(uc)  *((WORD*) &(FPSTATE(uc).__fpu_dp) + 2)
+
+#define FPREG_Xmm(uc, index)    *(M128A*) &((&FPSTATE(uc).__fpu_xmm0)[index])
+#define FPREG_St(uc, index)     *(M128A*) &((&FPSTATE(uc).__fpu_stmm0)[index]) //.fp_acc)
+
+inline bool FPREG_HasYmmRegisters(const ucontext_t *uc)
+{
+    // TODO: fixme
+    return true;
+}
+
+inline void *FPREG_Xstate_Ymmh(const ucontext_t *uc)
+{
+    return reinterpret_cast<void *>(&((_STRUCT_X86_AVX_STATE64&)FPSTATE(uc)).__fpu_ymmh0);
+}
+
+#else //TARGET_OSX
+
     // For FreeBSD, as found in x86/ucontext.h
 #define MCREG_Rbp(mc)	    ((mc).mc_rbp)
 #define MCREG_Rip(mc)	    ((mc).mc_rip)
@@ -377,7 +428,8 @@ const fpsimd_context* GetConstNativeSigSimdContext(const native_context_t *mc)
 
 #define FPREG_Xmm(uc, index)    *(M128A*) &(FPSTATE(uc)->sv_xmm[index])
 #define FPREG_St(uc, index)     *(M128A*) &(FPSTATE(uc)->sv_fp[index].fp_acc)
-#endif
+#endif // TARGET_OSX
+#endif // HOST_ARM64
 
 #else // HOST_64BIT
 
@@ -694,42 +746,6 @@ CONTEXT_GetThreadContext(
          pthread_t self,
          LPCONTEXT lpContext);
 
-#if HAVE_MACH_EXCEPTIONS
-/*++
-Function:
-  CONTEXT_GetThreadContextFromPort
-
-  Helper for GetThreadContext that uses a mach_port
---*/
-kern_return_t
-CONTEXT_GetThreadContextFromPort(
-    mach_port_t Port,
-    LPCONTEXT lpContext);
-
-/*++
-Function:
-  SetThreadContextOnPort
-
-  Helper for CONTEXT_SetThreadContext
---*/
-kern_return_t
-CONTEXT_SetThreadContextOnPort(
-   mach_port_t Port,
-   IN CONST CONTEXT *lpContext);
-
-/*++
-Function:
-  GetThreadContextFromThreadState
-
-  Helper for mach exception support
---*/
-void
-CONTEXT_GetThreadContextFromThreadState(
-    thread_state_flavor_t stateFlavor,
-    thread_state_t threadState,
-    LPCONTEXT lpContext);
-
-#else // HAVE_MACH_EXCEPTIONS
 /*++
 Function :
     CONTEXTToNativeContext
@@ -767,6 +783,42 @@ Return value :
 void CONTEXTFromNativeContext(const native_context_t *native, LPCONTEXT lpContext,
                               ULONG contextFlags);
 
+#if HAVE_MACH_EXCEPTIONS
+/*++
+Function:
+  CONTEXT_GetThreadContextFromPort
+
+  Helper for GetThreadContext that uses a mach_port
+--*/
+kern_return_t
+CONTEXT_GetThreadContextFromPort(
+    mach_port_t Port,
+    LPCONTEXT lpContext);
+
+/*++
+Function:
+  SetThreadContextOnPort
+
+  Helper for CONTEXT_SetThreadContext
+--*/
+kern_return_t
+CONTEXT_SetThreadContextOnPort(
+   mach_port_t Port,
+   IN CONST CONTEXT *lpContext);
+
+/*++
+Function:
+  GetThreadContextFromThreadState
+
+  Helper for mach exception support
+--*/
+void
+CONTEXT_GetThreadContextFromThreadState(
+    thread_state_flavor_t stateFlavor,
+    thread_state_t threadState,
+    LPCONTEXT lpContext);
+
+#else // HAVE_MACH_EXCEPTIONS
 /*++
 Function :
     GetNativeContextPC
