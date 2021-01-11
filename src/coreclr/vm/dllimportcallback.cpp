@@ -1042,7 +1042,12 @@ UMEntryThunk* UMEntryThunk::CreateUMEntryThunk()
     p = s_thunkFreeList.GetUMEntryThunk();
 
     if (p == NULL)
-        p = (UMEntryThunk *)(void *)SystemDomain::GetGlobalLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(sizeof(UMEntryThunk)));
+    {
+        UMEntryThunk **ppThunk = (UMEntryThunk **)(void *)SystemDomain::GetGlobalLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(sizeof(UMEntryThunk *) + sizeof(UMEntryThunkCode)));
+        UMEntryThunkCode *pUMEntryThunkCode = (UMEntryThunkCode *)(ppThunk + 1);
+        p = new ((void *)SystemDomain::GetGlobalLoaderAllocator()->GetHighFrequencyHeap()->AllocMem(S_SIZE_T(sizeof(UMEntryThunk)))) UMEntryThunk(pUMEntryThunkCode);
+        *ppThunk = p;
+    }
 
     RETURN p;
 }
@@ -1056,7 +1061,7 @@ void UMEntryThunk::Terminate()
     }
     CONTRACTL_END;
 
-    m_code.Poison();
+    m_code->Poison();
 
     if (GetObjectHandle())
     {

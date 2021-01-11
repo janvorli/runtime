@@ -231,6 +231,11 @@ private:
 #endif
 
 public:
+
+    UMEntryThunk(UMEntryThunkCode* pUMEntryThunkCode) : m_code(pUMEntryThunkCode)
+    {
+    }
+
     static UMEntryThunk* CreateUMEntryThunk();
     static VOID FreeUMEntryThunk(UMEntryThunk* p);
 
@@ -277,7 +282,7 @@ public:
 
         m_pMD = pMD;    // For debugging and profiling, so they can identify the target
 
-        m_code.Encode((BYTE*)TheUMThunkPreStub(), this);
+        m_code->Encode((BYTE*)TheUMThunkPreStub(), this);
 
 #ifdef _DEBUG
         m_state = kLoadTimeInited;
@@ -299,7 +304,7 @@ public:
         if (m_pObjectHandle == NULL && m_pManagedTarget == NULL)
             m_pManagedTarget = m_pMD->GetMultiCallableAddrOfCode();
 
-        m_code.Encode((BYTE*)m_pUMThunkMarshInfo->GetExecStubEntryPoint(), this);
+        m_code->Encode((BYTE*)m_pUMThunkMarshInfo->GetExecStubEntryPoint(), this);
 
 #ifdef _DEBUG
 #if defined(HOST_OSX) && defined(HOST_ARM64)
@@ -401,13 +406,13 @@ public:
         }
         CONTRACT_END;
 
-        RETURN m_code.GetEntryPoint();
+        RETURN m_code->GetEntryPoint();
     }
 
     static UMEntryThunk* RecoverUMEntryThunk(const VOID* pCode)
     {
         LIMITED_METHOD_CONTRACT;
-        return (UMEntryThunk*)( ((LPBYTE)pCode) - offsetof(UMEntryThunk, m_code) );
+        return *(UMEntryThunk**)( ((LPBYTE)pCode) - sizeof(UMEntryThunk*) );
     }
 
 
@@ -467,7 +472,7 @@ private:
     DWORD                   m_state;        // the initialization state
 #endif
 
-    UMEntryThunkCode        m_code;
+    UMEntryThunkCode        *m_code;
 };
 
 // Cache to hold UMEntryThunk/UMThunkMarshInfo instances associated with MethodDescs.

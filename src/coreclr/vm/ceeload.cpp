@@ -6326,8 +6326,12 @@ void Module::FixupVTables()
                     LOG((LF_INTEROP, LL_INFO10, "[0x%p] <-- VTable  thunk for \"%s\" (pMD = 0x%p)\n",
                         (UINT_PTR)&(pPointers[iMethod]), pMD->m_pszDebugMethodName, pMD));
 
-                    UMEntryThunk *pUMEntryThunk = (UMEntryThunk*)(void*)(GetDllThunkHeap()->AllocAlignedMem(sizeof(UMEntryThunk), CODE_SIZE_ALIGN)); // UMEntryThunk contains code
-                    FillMemory(pUMEntryThunk, sizeof(*pUMEntryThunk), 0);
+                    UMEntryThunk **ppThunk = (UMEntryThunk **)(void*)(GetDllThunkHeap()->AllocAlignedMem(sizeof(UMEntryThunk*) + sizeof(UMEntryThunkCode), CODE_SIZE_ALIGN)); // UMEntryThunkCode contains code
+                    UMEntryThunkCode *pUMEntryThunkCode = (UMEntryThunkCode*)(ppThunk + 1);
+                    FillMemory(pUMEntryThunkCode, sizeof(*pUMEntryThunkCode), 0);
+                    UMEntryThunk *pUMEntryThunk = new ((void *)SystemDomain::GetGlobalLoaderAllocator()->GetHighFrequencyHeap()->AllocMem(S_SIZE_T(sizeof(UMEntryThunk)))) UMEntryThunk(pUMEntryThunkCode);
+
+                    *ppThunk = pUMEntryThunk;
 
                     UMThunkMarshInfo *pUMThunkMarshInfo = (UMThunkMarshInfo*)(void*)(GetThunkHeap()->AllocAlignedMem(sizeof(UMThunkMarshInfo), CODE_SIZE_ALIGN));
                     FillMemory(pUMThunkMarshInfo, sizeof(*pUMThunkMarshInfo), 0);
