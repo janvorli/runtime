@@ -1977,7 +1977,7 @@ UMEntryThunkCache *LoaderAllocator::GetUMEntryThunkCache()
 
     if (!m_pUMEntryThunkCache)
     {
-        UMEntryThunkCache *pUMEntryThunkCache = new UMEntryThunkCache(GetAppDomain());
+        UMEntryThunkCache *pUMEntryThunkCache = new UMEntryThunkCache();
 
         if (FastInterlockCompareExchangePointer(&m_pUMEntryThunkCache, pUMEntryThunkCache, NULL) != NULL)
         {

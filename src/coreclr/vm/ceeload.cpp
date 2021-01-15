@@ -6333,7 +6333,7 @@ void Module::FixupVTables()
 
                     *ppThunk = pUMEntryThunk;
 
-                    UMThunkMarshInfo *pUMThunkMarshInfo = (UMThunkMarshInfo*)(void*)(GetThunkHeap()->AllocAlignedMem(sizeof(UMThunkMarshInfo), CODE_SIZE_ALIGN));
+                    UMThunkMarshInfo *pUMThunkMarshInfo = (UMThunkMarshInfo*)(void*)(GetAppDomain()->GetLowFrequencyHeap()->AllocAlignedMem(sizeof(UMThunkMarshInfo), CODE_SIZE_ALIGN));
                     FillMemory(pUMThunkMarshInfo, sizeof(*pUMThunkMarshInfo), 0);
 
                     pUMThunkMarshInfo->LoadTimeInit(pMD);

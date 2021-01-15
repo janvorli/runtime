@@ -480,7 +480,7 @@ private:
 class UMEntryThunkCache
 {
 public:
-    UMEntryThunkCache(AppDomain *pDomain);
+    UMEntryThunkCache();
     ~UMEntryThunkCache();
 
     UMEntryThunk *GetUMEntryThunk(MethodDesc *pMD);
@@ -518,7 +518,6 @@ private:
 
     SHash<ThunkSHashTraits> m_hash;
     Crst       m_crst;
-    AppDomain *m_pDomain;
 };
 
 #if defined(TARGET_X86) && !defined(FEATURE_STUBS_AS_IL)

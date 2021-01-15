@@ -1170,11 +1170,9 @@ void ClassLoader::ValidateMethodsWithCovariantReturnTypes(MethodTable* pMT)
                 continue;
 
             Instantiation parentClassInst = pParentMD->GetClassInstantiation();
-            MethodTable* pNonSharedParentMT = pParentMT;
-            while (ClassLoader::IsTypicalSharedInstantiation(parentClassInst))
+            if (ClassLoader::IsTypicalSharedInstantiation(parentClassInst))
             {
-                parentClassInst = pNonSharedParentMT->GetInstantiation();
-                pNonSharedParentMT = pNonSharedParentMT->GetParentMethodTable();
+                parentClassInst = pParentMT->GetInstantiation();
             }
             SigTypeContext context1(parentClassInst, pMD->GetMethodInstantiation());
             MetaSig methodSig1(pParentMD);

@@ -848,12 +848,10 @@ PCODE UMThunkMarshInfo::GetExecStubEntryPoint()
 
 #endif // TARGET_X86
 
-UMEntryThunkCache::UMEntryThunkCache(AppDomain *pDomain) :
-    m_crst(CrstUMEntryThunkCache),
-    m_pDomain(pDomain)
+UMEntryThunkCache::UMEntryThunkCache() :
+    m_crst(CrstUMEntryThunkCache)
 {
     WRAPPER_NO_CONTRACT;
-    _ASSERTE(pDomain != NULL);
 }
 
 UMEntryThunkCache::~UMEntryThunkCache()
@@ -899,7 +897,7 @@ UMEntryThunk *UMEntryThunkCache::GetUMEntryThunk(MethodDesc *pMD)
         Holder<UMEntryThunk *, DoNothing, UMEntryThunk::FreeUMEntryThunk> umHolder;
         umHolder.Assign(pThunk);
 
-        UMThunkMarshInfo *pMarshInfo = (UMThunkMarshInfo *)(void *)(m_pDomain->GetStubHeap()->AllocMem(S_SIZE_T(sizeof(UMThunkMarshInfo))));
+        UMThunkMarshInfo *pMarshInfo = (UMThunkMarshInfo *)(void *)(GetAppDomain()->GetLowFrequencyHeap()->AllocMem(S_SIZE_T(sizeof(UMThunkMarshInfo))));
         Holder<UMThunkMarshInfo *, DoNothing, UMEntryThunkCache::DestroyMarshInfo> miHolder;
         miHolder.Assign(pMarshInfo);
 
