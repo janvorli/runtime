@@ -307,10 +307,6 @@ public:
         m_code->Encode((BYTE*)m_pUMThunkMarshInfo->GetExecStubEntryPoint(), this);
 
 #ifdef _DEBUG
-#if defined(HOST_OSX) && defined(HOST_ARM64)
-    auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
-#endif // defined(HOST_OSX) && defined(HOST_ARM64)
-
         m_state = kRunTimeInited;
 #endif // _DEBUG
     }
