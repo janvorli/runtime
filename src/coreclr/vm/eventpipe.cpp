@@ -1046,10 +1046,6 @@ HANDLE EventPipe::GetWaitHandle(EventPipeSessionID sessionID)
 
 void EventPipe::InvokeCallback(EventPipeProviderCallbackData *pEventPipeProviderCallbackData)
 {
-#if defined(HOST_OSX) && defined(HOST_ARM64)
-    auto jitWriteEnableHolder = PAL_JITWriteEnable(false);
-#endif // defined(HOST_OSX) && defined(HOST_ARM64)
-
     EventPipeProvider::InvokeCallback(pEventPipeProviderCallbackData);
 }
 

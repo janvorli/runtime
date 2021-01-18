@@ -1012,6 +1012,11 @@ void STDCALL UMEntryThunk::DoRunTimeInit(UMEntryThunk* pUMEntryThunk)
 
     {
         GCX_PREEMP();
+
+#if defined(HOST_OSX) && defined(HOST_ARM64)
+        auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
+#endif // defined(HOST_OSX) && defined(HOST_ARM64)
+
         pUMEntryThunk->RunTimeInit();
     }
 
@@ -1037,6 +1042,10 @@ UMEntryThunk* UMEntryThunk::CreateUMEntryThunk()
 
     if (p == NULL)
     {
+#if defined(HOST_OSX) && defined(HOST_ARM64)
+        auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
+#endif // defined(HOST_OSX) && defined(HOST_ARM64)
+
         UMEntryThunk **ppThunk = (UMEntryThunk **)(void *)SystemDomain::GetGlobalLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(sizeof(UMEntryThunk *) + sizeof(UMEntryThunkCode)));
         UMEntryThunkCode *pUMEntryThunkCode = (UMEntryThunkCode *)(ppThunk + 1);
         p = new ((void *)SystemDomain::GetGlobalLoaderAllocator()->GetHighFrequencyHeap()->AllocMem(S_SIZE_T(sizeof(UMEntryThunk)))) UMEntryThunk(pUMEntryThunkCode);
