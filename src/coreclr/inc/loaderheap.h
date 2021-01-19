@@ -550,7 +550,7 @@ private:
         WRAPPER_NO_CONTRACT;
 
 #if defined(HOST_OSX) && defined(HOST_ARM64)
-        auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
+        auto jitWriteEnableHolder = PAL_JITWriteEnable(IsExecutable());
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
 
         void *pResult;
@@ -630,7 +630,7 @@ public:
         WRAPPER_NO_CONTRACT;
 
 #if defined(HOST_OSX) && defined(HOST_ARM64)
-        auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
+        auto jitWriteEnableHolder = PAL_JITWriteEnable(IsExecutable());
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
 
         CRITSEC_Holder csh(m_CriticalSection);
