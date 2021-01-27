@@ -1214,6 +1214,8 @@ void LoaderAllocator::Init(BaseDomain *pDomain, BYTE *pExecutableHeapMemory)
     m_pPrecodeHeap = new (&m_PrecodeHeapInstance) CodeFragmentHeap(this, STUB_CODE_BLOCK_PRECODE);
 #endif
 
+    m_pUMThunkStubHeap = new (&m_UMEntryThunkStubHeapInstance) StubHeap(sizeof(UMEntryThunkData), sizeof(UMEntryThunk), sizeof(UMEntryThunkCodeData));
+
     // Initialize the EE marshaling data to NULL.
     m_pMarshalingData = NULL;
 

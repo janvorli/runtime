@@ -160,11 +160,13 @@ protected:
     BYTE                m_HighFreqHeapInstance[sizeof(LoaderHeap)];
     BYTE                m_StubHeapInstance[sizeof(LoaderHeap)];
     BYTE                m_PrecodeHeapInstance[sizeof(CodeFragmentHeap)];
+    BYTE                m_UMEntryThunkStubHeapInstance[sizeof(StubHeap)];
     PTR_LoaderHeap      m_pLowFrequencyHeap;
     PTR_LoaderHeap      m_pHighFrequencyHeap;
     PTR_LoaderHeap      m_pStubHeap; // stubs for PInvoke, remoting, etc
     PTR_CodeFragmentHeap m_pPrecodeHeap;
     PTR_LoaderHeap      m_pExecutableHeap;
+    StubHeap*           m_pUMThunkStubHeap;
 #ifdef FEATURE_READYTORUN
     PTR_CodeFragmentHeap m_pDynamicHelpersHeap;
 #endif
@@ -453,6 +455,12 @@ public:
     {
         LIMITED_METHOD_CONTRACT;
         return m_pExecutableHeap;
+    }
+
+    StubHeap* GetUMThunkStubHeap()
+    {
+        LIMITED_METHOD_CONTRACT;
+        return m_pUMThunkStubHeap;
     }
 
     PTR_CodeFragmentHeap GetDynamicHelpersHeap();

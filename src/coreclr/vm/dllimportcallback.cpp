@@ -62,7 +62,7 @@ public:
         if (pThunk == NULL)
             return NULL;
 
-        m_pHead = m_pHead->m_pNextFreeThunk;
+        m_pHead = m_pHead->GetNextFreeThunk();
         --m_count;
 
         return pThunk;
@@ -78,10 +78,6 @@ public:
 
         CrstHolder ch(&m_crst);
 
-#if defined(HOST_OSX) && defined(HOST_ARM64)
-        auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
-#endif // defined(HOST_OSX) && defined(HOST_ARM64)
-
         if (m_pHead == NULL)
         {
             m_pHead = pThunk;
@@ -89,11 +85,11 @@ public:
         }
         else
         {
-            m_pTail->m_pNextFreeThunk = pThunk;
+            m_pTail->SetNextFreeThunk(pThunk);
             m_pTail = pThunk;
         }
 
-        pThunk->m_pNextFreeThunk = NULL;
+        pThunk->SetNextFreeThunk(NULL);
 
         ++m_count;
     }
@@ -234,7 +230,7 @@ extern "C" VOID STDCALL UMThunkStubRareDisableWorker(Thread *pThread, UMEntryThu
 #endif // DEBUGGING_SUPPORTED
 }
 
-PCODE TheUMEntryPrestubWorker(UMEntryThunk * pUMEntryThunk)
+PCODE TheUMEntryPrestubWorker(UMEntryThunkData * pUMEntryThunkData)
 {
     STATIC_CONTRACT_THROWS;
     STATIC_CONTRACT_GC_TRIGGERS;
@@ -252,6 +248,8 @@ PCODE TheUMEntryPrestubWorker(UMEntryThunk * pUMEntryThunk)
 #if defined(HOST_OSX) && defined(HOST_ARM64)
     auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
+
+    UMEntryThunk* pUMEntryThunk = pUMEntryThunkData->GetUMEntryThunk();
 
     UMEntryThunk::DoRunTimeInit(pUMEntryThunk);
 
@@ -312,7 +310,8 @@ UMEntryThunk* UMEntryThunk::CreateUMEntryThunk()
     p = s_thunkFreeList.GetUMEntryThunk();
 
     if (p == NULL)
-        p = (UMEntryThunk *)(void *)SystemDomain::GetGlobalLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(sizeof(UMEntryThunk)));
+        //p = (UMEntryThunk *)(void *)SystemDomain::GetGlobalLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(sizeof(UMEntryThunk)));
+        p = (UMEntryThunk *)SystemDomain::GetGlobalLoaderAllocator()->GetUMThunkStubHeap()->Allocate();
 
     RETURN p;
 }
@@ -327,16 +326,7 @@ void UMEntryThunk::Terminate()
     CONTRACTL_END;
 
     m_code.Poison();
-
-    if (GetObjectHandle())
-    {
-#if defined(HOST_OSX) && defined(HOST_ARM64)
-        auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
-#endif // defined(HOST_OSX) && defined(HOST_ARM64)
-
-        DestroyLongWeakHandle(GetObjectHandle());
-        m_pObjectHandle = 0;
-    }
+    GetData()->Terminate();
 
     s_thunkFreeList.AddToList(this);
 }

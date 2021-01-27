@@ -429,6 +429,8 @@ struct DECLSPEC_ALIGN(8) UMEntryThunkCode
     // mov rax, pJmpDest        // 48 b8 xx xx xx xx xx xx xx xx    // need to ensure this imm64 is qword aligned
     // TAILJMP_RAX              // 48 FF E0
 
+    BYTE            m_dummy[16];
+/*
     BYTE            m_padding[4];
     BYTE            m_movR10[2];    // MOV R10,
     LPVOID          m_uet;          //          pointer to start of this structure
@@ -437,7 +439,7 @@ struct DECLSPEC_ALIGN(8) UMEntryThunkCode
     const BYTE*     m_execstub;     //          pointer to destination code // ensure this is qword aligned
     BYTE            m_jmpRAX[3];    // JMP RAX
     BYTE            m_padding2[5];
-
+*/
     void Encode(BYTE* pTargetCode, void* pvSecretParam);
     void Poison();
 
@@ -445,14 +447,14 @@ struct DECLSPEC_ALIGN(8) UMEntryThunkCode
     {
         LIMITED_METHOD_CONTRACT;
 
-        return (LPCBYTE)&m_movR10;
+        return (LPCBYTE)this; //&m_movR10;
     }
 
     static int GetEntryPointOffset()
     {
         LIMITED_METHOD_CONTRACT;
 
-        return offsetof(UMEntryThunkCode, m_movR10);
+        return 0;//offsetof(UMEntryThunkCode, m_movR10);
     }
 };
 #include <poppack.h>

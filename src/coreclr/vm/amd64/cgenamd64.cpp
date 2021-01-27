@@ -525,7 +525,7 @@ void UMEntryThunkCode::Encode(BYTE* pTargetCode, void* pvSecretParam)
     // mov r10, pUMEntryThunk   // 49 ba xx xx xx xx xx xx xx xx    // METHODDESC_REGISTER
     // mov rax, pJmpDest        // 48 b8 xx xx xx xx xx xx xx xx    // need to ensure this imm64 is qword aligned
     // TAILJMP_RAX              // 48 FF E0
-
+/*
 #ifdef _DEBUG
     m_padding[0] = X86_INSTR_INT3;
     m_padding[1] = X86_INSTR_INT3;
@@ -543,6 +543,7 @@ void UMEntryThunkCode::Encode(BYTE* pTargetCode, void* pvSecretParam)
     m_jmpRAX[2]  = 0xE0;
 
     _ASSERTE(DbgIsExecutable(&m_movR10[0], &m_jmpRAX[3]-&m_movR10[0]));
+*/    
 }
 
 void UMEntryThunkCode::Poison()
@@ -554,7 +555,7 @@ void UMEntryThunkCode::Poison()
         MODE_ANY;
     }
     CONTRACTL_END;
-
+/*
     m_execstub    = (BYTE *)UMEntryThunk::ReportViolation;
 
     m_movR10[0]  = REX_PREFIX_BASE | REX_OPERAND_SIZE_64BIT;
@@ -567,15 +568,18 @@ void UMEntryThunkCode::Poison()
 #endif
 
     ClrFlushInstructionCache(&m_movR10[0], &m_jmpRAX[3]-&m_movR10[0]);
+*/    
 }
 
 UMEntryThunk* UMEntryThunk::Decode(LPVOID pCallback)
 {
     LIMITED_METHOD_CONTRACT;
 
-    UMEntryThunkCode *pThunkCode = (UMEntryThunkCode*)((BYTE*)pCallback - UMEntryThunkCode::GetEntryPointOffset());
+    //UMEntryThunkCode *pThunkCode = (UMEntryThunkCode*)((BYTE*)pCallback - UMEntryThunkCode::GetEntryPointOffset());
 
-    return (UMEntryThunk*)pThunkCode->m_uet;
+    //return (UMEntryThunk*)pThunkCode->m_uet;
+
+    return (UMEntryThunk*)pCallback;
 }
 
 INT32 rel32UsingJumpStub(INT32 UNALIGNED * pRel32, PCODE target, MethodDesc *pMethod,

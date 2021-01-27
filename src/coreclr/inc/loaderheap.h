@@ -423,6 +423,142 @@ inline CRITSEC_COOKIE CreateLoaderHeapLock()
     return ClrCreateCriticalSection(CrstLoaderHeap,CrstFlags(CRST_UNSAFE_ANYMODE | CRST_DEBUGGER_THREAD));
 }
 
+struct StubHeapBlockHeader
+{
+    StubHeapBlockHeader* pNext;
+    size_t blockHeaderMagic1 = (size_t)-1;
+
+    bool IsValid()
+    {
+        return blockHeaderMagic1 == (size_t)-1;
+    }
+};
+
+class StubHeap
+{
+    CRITSEC_COOKIE    m_CriticalSection;
+    size_t BlockSize;// = 4096 * (sizeof(TThunk) / sizeof(TCode)) + 4096 + 4096;
+    uint8_t* m_currentBlock;
+    uint8_t* m_freeLoc;
+    size_t m_codeSize;
+    size_t m_dataSize;
+    size_t m_thunkSize;
+    size_t m_thunkBlockSize;
+    int m_numBlocks = 0;
+
+    // TODO: free list - not needed for UMEntryThunk, it has its own list of free stubs. Maybe all stubs can do that?
+
+    void AllocateBlock()
+    {
+        uint8_t* previousBlock = m_currentBlock;
+        m_numBlocks++;
+        fprintf(stderr, "@@@@@@@@@@@@@@@@ Allocated stub block #%d @@@@@@@@@@@@@@@\n", m_numBlocks);
+
+        m_currentBlock = (uint8_t*)VirtualAlloc(NULL, BlockSize, MEM_RESERVE, PAGE_READWRITE);
+        if (m_currentBlock == NULL)
+        {
+            throw 1;
+        }
+
+        // TCode
+        VirtualAlloc(m_currentBlock, 4096, MEM_COMMIT, PAGE_READWRITE); // first allocate it as RW, switch to RX after the code is generated
+        // TData
+        VirtualAlloc(m_currentBlock + 4096, 4096, MEM_COMMIT, PAGE_READWRITE);
+        if (m_thunkSize != 0)
+        {
+            // TThunk
+            VirtualAlloc(m_currentBlock + 4096 + 4096, m_thunkBlockSize, MEM_COMMIT, PAGE_READWRITE);
+        }
+
+        // TODO: generate the code page - need some callback, this is just a quick hack
+        int dataOffset = 8192-7+16;
+        for (uint8_t* code = m_currentBlock + m_codeSize; code < m_currentBlock + 4096; code += m_codeSize)
+        {
+            code[0] = 0x4C;
+            code[1] = 0x8D;
+            code[2] = 0x15;
+            code[3] = dataOffset & 0xFF;
+            code[4] = dataOffset >> 8;
+            code[5] = 0x00;
+            code[6] = 0x00;
+            code[7] = 0xFF;
+            code[8] = 0x25;
+            code[9] = 0xF3;
+            code[10] = 0x0F;
+            code[11] = 0x00;
+            code[12] = 0x00;
+            code[13] = 0x90;
+            code[14] = 0x90;
+            code[15] = 0x90;
+            dataOffset += 16;
+        }
+
+        // TCode
+        VirtualAlloc(m_currentBlock, 4096, MEM_COMMIT, PAGE_EXECUTE_READ);
+
+        StubHeapBlockHeader* pBlockHeader = (StubHeapBlockHeader*)(m_currentBlock + 4096);
+        new (pBlockHeader) StubHeapBlockHeader();
+        pBlockHeader->pNext = (StubHeapBlockHeader*)(previousBlock + 4096);
+
+        assert(sizeof(StubHeapBlockHeader) <= m_dataSize);
+
+        m_freeLoc = m_currentBlock + m_codeSize;
+    }
+
+public:
+#ifndef DACCESS_COMPILE
+    StubHeap(size_t thunkSize, size_t codeSize, size_t dataSize)
+    : m_CriticalSection(CreateLoaderHeapLock())
+    {
+        assert(dataSize == codeSize);
+        // TThunk size has to be a multiple of TCode size
+        assert(codeSize * (thunkSize / codeSize) == thunkSize);
+        // TODO: check that it is a power of 2 multiple?
+
+        m_codeSize = codeSize;
+        m_dataSize = dataSize;
+        m_thunkSize = thunkSize;
+        
+
+        m_thunkBlockSize = 4096 * (thunkSize / codeSize);
+
+        BlockSize = m_thunkBlockSize + 4096 + 4096;
+
+        AllocateBlock();
+    }
+#endif // DACCESS_COMPILE
+
+    void* Allocate()
+    {
+        // TODO: interlocked allocation?
+        CRITSEC_Holder csh(m_CriticalSection);
+
+        if (m_freeLoc == m_currentBlock + 4096)
+        {
+            AllocateBlock();
+        }
+        uint8_t* result = m_freeLoc;
+        m_freeLoc += m_codeSize;
+
+        return (void*)result;
+    }
+
+    virtual ~StubHeap()
+    {
+        WRAPPER_NO_CONTRACT;
+
+        // TODO: VirtualFree of all the blocks
+
+#ifndef DACCESS_COMPILE
+        if (m_CriticalSection != NULL)
+        {
+            ClrDeleteCriticalSection(m_CriticalSection);
+        }
+#endif // DACCESS_COMPILE
+    }
+
+};
+
 //===============================================================================
 // The LoaderHeap is the black-box heap and has a Backout() method but none
 // of the advanced features that let you control address ranges.
