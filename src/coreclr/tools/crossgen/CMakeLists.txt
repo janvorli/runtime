@@ -52,6 +52,7 @@ target_link_libraries(crossgen
     corzap_crossgen
     corelib_crossgen
     utilcode_crossgen
+    coreclr_minipal
 )
 
 if(CLR_CMAKE_HOST_UNIX)

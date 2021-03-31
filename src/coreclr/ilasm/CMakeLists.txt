@@ -82,6 +82,7 @@ set(ILASM_LINK_LIBRARIES
   ${END_LIBRARY_GROUP} # End group of libraries that have circular references
   ceefgen
   corguids
+  coreclr_minipal
 )
 
 if(CLR_CMAKE_TARGET_WIN32)

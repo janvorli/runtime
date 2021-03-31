@@ -11,6 +11,230 @@
 #include "utilcode.h"
 #include "ex.h"
 
+#include <intrin.h>
+#include "minipal.h"
+
+#define ENABLE_DOUBLE_MAPPING
+
+#ifdef ENABLE_DOUBLE_MAPPING
+
+class DoubleMappedAllocator
+{
+    static volatile DoubleMappedAllocator* g_instance;
+
+    struct BlockRX
+    {
+        BlockRX* next;
+        void* baseRX;
+        size_t size;
+        size_t offset;
+    };
+
+    struct BlockRW
+    {
+        BlockRW* next;
+        void* baseRW;
+        void* baseRX;
+        size_t size;
+        size_t refCount;
+    };
+
+    struct UsersListEntry
+    {
+        UsersListEntry* next;
+        size_t count;
+        size_t reuseCount;
+        void *user;
+    };
+
+    BlockRX* m_pFirstBlockRX = NULL;
+    BlockRW* m_pFirstBlockRW = NULL;
+
+    void *m_doubleMemoryMapperHandle = NULL;
+    uint64_t maxSize = 2048ULL*1024*1024;
+    size_t m_freeOffset = 0;
+    UsersListEntry *m_mapUsers = NULL;
+
+    CRITSEC_COOKIE m_CriticalSection;
+
+    static BYTE * s_CodeMinAddr;        // Preferred region to allocate the code in.
+    static BYTE * s_CodeMaxAddr;
+    static BYTE * s_CodeAllocStart;
+    static BYTE * s_CodeAllocHint;      // Next address to try to allocate for code in the preferred region.
+
+    static LONG g_reserveCalls;
+    static LONG g_reserveAtCalls;
+    static LONG g_rwMaps;
+    static LONG g_reusedRwMaps;
+    static LONG g_maxReusedRwMapsRefcount;
+    static LONG g_rwUnmaps;
+    static LONG g_failedRwUnmaps;
+    static LONG g_failedRwMaps;
+    static LONG g_mapReusePossibility;
+    static LONG g_RWMappingCount;
+    static LONG g_maxRWMappingCount;
+    static LONG g_maxRXSearchLength;
+    static LONG g_rxSearchLengthSum;
+    static LONG g_rxSearchLengthCount;
+
+    BlockRW* m_cachedMapping = NULL;
+
+    void UpdateCachedMapping(BlockRW *b);
+
+    void* FindRWBlock(void* baseRX, size_t size);
+
+    bool AddRWBlock(void* baseRW, void* baseRX, size_t size);
+
+    bool RemoveRWBlock(void* pRW, void** pUnmapAddress, size_t* pUnmapSize);
+
+    size_t Granularity()
+    {
+        return 64 * 1024;
+    }
+
+    bool AllocateOffset(size_t *pOffset, size_t size);
+    void AddBlockToList(BlockRX *pBlock);
+    void RecordUser(void* callAddress, bool reused);
+    
+public:
+
+    static DoubleMappedAllocator* Instance();
+
+    //
+    // Use this function to initialize the s_CodeAllocHint
+    // during startup. base is runtime .dll base address,
+    // size is runtime .dll virtual size.
+    //
+    static void InitCodeAllocHint(size_t base, size_t size, int randomPageOffset);
+
+    //
+    // Use this function to reset the s_CodeAllocHint
+    // after unloading an AppDomain
+    //
+    static void ResetCodeAllocHint();
+
+    //
+    // Returns TRUE if p is located in near clr.dll that allows us
+    // to use rel32 IP-relative addressing modes.
+    //
+    static bool IsPreferredExecutableRange(void * p);
+
+    bool Initialize();
+
+    ~DoubleMappedAllocator();
+
+    void ReportState();
+
+    // Reserve the specified amount of virtual address space for executable mapping.
+    void* Reserve(size_t size);
+
+    // Reserve the specified amount of virtual address space for executable mapping.
+    // The reserved range must be within the loAddress and hiAddress. If it is not
+    // possible to reserve memory in such range, the method returns NULL.
+    void* ReserveWithinRange(size_t size, const void* loAddress, const void* hiAddress);
+
+    // Reserve the specified amount of virtual address space for executable mapping
+    // exactly at the given address.
+    void* ReserveAt(void* baseAddressRX, size_t size);
+
+    void* Commit(void* pStart, size_t size, bool isExecutable);
+
+    void Release(void* pRX);
+
+    void* MapRW(void* pRX, size_t size, void* returnAddress);
+    void* MapRW(void* pRX, size_t size);
+    void UnmapRW(void* pRW);
+};
+
+#else // ENABLE_DOUBLE_MAPPING
+
+class DoubleMappedAllocator
+{
+    static volatile DoubleMappedAllocator* g_instance;
+
+    CRITSEC_COOKIE m_CriticalSection;
+
+    size_t Granularity()
+    {
+        return 64 * 1024;
+    }
+public:
+
+    static DoubleMappedAllocator* Instance()
+    {
+        if (g_instance == NULL)
+        {
+            DoubleMappedAllocator *instance = new (nothrow) DoubleMappedAllocator();
+            instance->Initialize();
+
+            if (InterlockedCompareExchangeT(const_cast<DoubleMappedAllocator**>(&g_instance), instance, NULL) != NULL)
+            {
+                delete instance;
+            }
+        }
+
+        return const_cast<DoubleMappedAllocator*>(g_instance);
+    }
+
+    ~DoubleMappedAllocator()
+    {
+    }
+
+    bool Initialize()
+    {
+        return true;
+    }
+
+    void* Commit(void* pStart, size_t size, bool isExecutable)
+    {
+        return ClrVirtualAlloc(pStart, size, MEM_COMMIT, isExecutable ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE);
+    }
+
+    void Release(void* pStart)
+    {
+        ClrVirtualFree(pStart, 0, MEM_RELEASE);
+    }
+
+    void* Reserve(size_t size)
+    {
+        return ClrVirtualAllocExecutable(size, MEM_RESERVE, PAGE_NOACCESS);
+    }
+
+    void* ReserveAt(void* baseAddressRX, size_t size)
+    {
+        return VirtualAlloc(baseAddressRX, size, MEM_RESERVE, PAGE_NOACCESS);
+    }
+
+    #pragma intrinsic(_ReturnAddress)
+
+    static size_t g_reserveCalls;
+    static size_t g_reserveAtCalls;
+    static size_t g_rwMaps;
+    static size_t g_reusedRwMaps;
+    static size_t g_maxReusedRwMapsRefcount;
+    static size_t g_rwUnmaps;
+    static size_t g_failedRwUnmaps;
+    static size_t g_failedRwMaps;
+    static size_t g_mapReusePossibility;
+    static size_t g_RWMappingCount;
+    static size_t g_maxRWMappingCount;
+
+    void ReportState();
+
+    void UnmapRW(void* pRW)
+    {
+    }
+
+    void* MapRW(void* pRX, size_t size)
+    {
+        return pRX;
+    }
+};
+
+#endif // ENABLE_DOUBLE_MAPPING
+
+#ifndef DACCESS_COMPILE
+
 // Holder class to map read-execute memory as read-write so that it can be modified without using read-write-execute mapping.
 // At the moment the implementation is dummy, returning the same addresses for both cases and expecting them to be read-write-execute.
 // The class uses the move semantics to ensure proper unmapping in case of re-assigning of the holder value.
@@ -30,13 +254,14 @@ class ExecutableWriterHolder
 
     void Unmap()
     {
-        if (m_addressRX != NULL)
-        {
-            // TODO: mapping / unmapping for targets using double memory mapping  will be added with the double mapped allocator addition 
 #if defined(HOST_OSX) && defined(HOST_ARM64) && !defined(DACCESS_COMPILE)
-            PAL_JitWriteProtect(false);
-#endif
+        PAL_JitWriteProtect(false);
+#else
+        if (m_addressRX != m_addressRW)
+        {
+            DoubleMappedAllocator::Instance()->UnmapRW((void*)m_addressRW);
         }
+#endif
     }
 
 public:
@@ -62,9 +287,11 @@ public:
     ExecutableWriterHolder(T* addressRX, size_t size)
     {
         m_addressRX = addressRX;
+#if defined(HOST_OSX) && defined(HOST_ARM64)
         m_addressRW = addressRX;
-#if defined(HOST_OSX) && defined(HOST_ARM64) && !defined(DACCESS_COMPILE)
         PAL_JitWriteProtect(true);
+#else
+        m_addressRW = (T *)DoubleMappedAllocator::Instance()->MapRW((void*)addressRX, size, (void *)_ReturnAddress());
 #endif
     }
 
@@ -79,3 +306,5 @@ public:
         return m_addressRW;
     }
 };
+
+#endif // DACCESS_COMPILE

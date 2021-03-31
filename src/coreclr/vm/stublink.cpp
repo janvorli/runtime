@@ -2014,7 +2014,8 @@ VOID Stub::DeleteStub()
 #endif
 
 #ifndef TARGET_UNIX
-        DeleteExecutable((BYTE*)GetAllocationBase());
+//        DeleteExecutable((BYTE*)GetAllocationBase());
+        delete [] (BYTE*)GetAllocationBase();
 #else
         delete [] (BYTE*)GetAllocationBase();
 #endif
@@ -2122,10 +2123,13 @@ Stub* Stub::NewStub(PTR_VOID pCode, DWORD flags)
     size_t totalSize = size.Value();
 
     BYTE *pBlock;
+
+    // TODO: reorder stuff so that we don't need this check twice
     if (pHeap == NULL)
     {
 #ifndef TARGET_UNIX
-        pBlock = new (executable) BYTE[totalSize];
+        // TODO: would it make sense to make it closer to the code?
+        pBlock = new BYTE[totalSize]; //new (executable) BYTE[totalSize];
 #else
         pBlock = new BYTE[totalSize];
 #endif

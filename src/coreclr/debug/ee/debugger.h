@@ -1049,6 +1049,8 @@ protected:
 
 #define DBG_MAX_EXECUTABLE_ALLOC_SIZE 48
 
+#ifndef DACCESS_COMPILE
+
 // Forward declaration
 struct DebuggerHeapExecutableMemoryPage;
 
@@ -1177,6 +1179,8 @@ private:
     DebuggerHeapExecutableMemoryPage* m_pages;
     Crst m_execMemAllocMutex;
 };
+
+#endif // DACCESS_COMPILE
 
 // ------------------------------------------------------------------------ *
 // DebuggerHeap class

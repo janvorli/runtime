@@ -1006,8 +1006,8 @@ void  DispatchHolder::Initialize(DispatchHolder* pDispatchHolderRX, PCODE implTa
 
 void ResolveHolder::Initialize(ResolveHolder* pResolveHolderRX,
                                PCODE resolveWorkerTarget, PCODE patcherTarget,
-                                size_t dispatchToken, UINT32 hashedToken,
-                                void * cacheAddr, INT32 * counterAddr)
+                               size_t dispatchToken, UINT32 hashedToken,
+                               void * cacheAddr, INT32 * counterAddr)
 {
     // Called directly by JITTED code
     // ResolveStub._resolveEntryPoint(r0:Object*, r1, r2, r3, r4:IndirectionCellAndFlags)

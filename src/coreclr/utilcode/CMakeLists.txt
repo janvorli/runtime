@@ -29,6 +29,7 @@ set(UTILCODE_COMMON_SOURCES
   memorypool.cpp
   iallocator.cpp
   loaderheap.cpp
+  executableallocator.cpp
   outstring.cpp
   ilformatter.cpp
   opinfo.cpp

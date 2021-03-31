@@ -6187,6 +6187,9 @@ unsigned emitter::emitEndCodeGen(Compiler* comp,
     // Assign the real prolog size
     *prologSize = emitCodeOffset(emitPrologIG, emitPrologEndPos);
 
+    // Ensure that any attempt to write code after this point will fail
+    writeableOffset = 0;
+
     /* Return the amount of code we've generated */
 
     return actualCodeSize;
