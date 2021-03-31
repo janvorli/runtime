@@ -3008,7 +3008,7 @@ BOOL Thread::RedirectCurrentThreadAtHandledJITCase(PFN_REDIRECTTARGET pTgt, CONT
 
     //////////////////////////////////////
     // Get and save the thread's context
-    BOOL success = CopyContext(pCtx, pCtx->ContextFlags, pCurrentThreadCtx);
+    BOOL success = CopyContext(pCtx, pCurrentThreadCtx->ContextFlags, pCurrentThreadCtx);
     _ASSERTE(success);
 
     // Ensure that this flag is set for the next time through the normal path,

@@ -7,12 +7,74 @@
 #include "pedecoder.h"
 #define DONOT_DEFINE_ETW_CALLBACK
 #include "eventtracebase.h"
+#include "stacktrace.h"
 
 #define LHF_EXECUTABLE  0x1
 
 #ifndef DACCESS_COMPILE
 
 INDEBUG(DWORD UnlockedLoaderHeap::s_dwNumInstancesOfLoaderHeaps = 0;)
+
+volatile DoubleMappedAllocator* DoubleMappedAllocator::g_instance = NULL;
+    size_t DoubleMappedAllocator::g_rwMaps = 0;
+    size_t DoubleMappedAllocator::g_reusedRwMaps = 0;
+    size_t DoubleMappedAllocator::g_rwUnmaps = 0;
+    size_t DoubleMappedAllocator::g_failedRwUnmaps = 0;
+    size_t DoubleMappedAllocator::g_failedRwMaps = 0;
+    size_t DoubleMappedAllocator::g_allocCalls = 0;
+    size_t DoubleMappedAllocator::g_reserveCalls = 0;
+    size_t DoubleMappedAllocator::g_reserveAtCalls = 0;
+    size_t DoubleMappedAllocator::g_mapReusePossibility = 0;
+    size_t DoubleMappedAllocator::g_maxRWMappingCount = 0;
+    size_t DoubleMappedAllocator::g_RWMappingCount = 0;
+    size_t DoubleMappedAllocator::g_maxReusedRwMapsRefcount = 0;
+    size_t DoubleMappedAllocator::g_maxRXSearchLength = 0;
+    size_t DoubleMappedAllocator::g_rxSearchLengthSum = 0;
+    size_t DoubleMappedAllocator::g_rxSearchLengthCount = 0;
+
+void FillSymbolInfo
+(
+SYM_INFO *psi,
+DWORD_PTR dwAddr
+);
+
+void MagicInit();
+
+void DoubleMappedAllocator::ReportState()
+{
+// #ifdef ENABLE_DOUBLE_MAPPING
+// #ifndef CROSSGEN_COMPILE
+// #ifndef DACCESS_COMPILE
+// #ifdef TARGET_WINDOWS
+//     printf("Reserve calls: %zd\n", g_reserveCalls);
+//     printf("Reserve-at calls: %zd\n", g_reserveAtCalls);
+//     printf("RW Maps: %zd\n", g_rwMaps);
+//     printf("Reused RW Maps: %zd\n", g_reusedRwMaps);
+//     printf("Max reused RW Maps refcount: %zd\n", g_maxReusedRwMapsRefcount);
+//     printf("RW Unmaps: %zd\n", g_rwUnmaps);
+//     printf("Failed RW Maps: %zd\n", g_failedRwMaps);
+//     printf("Failed RW Unmaps: %zd\n", g_failedRwUnmaps);
+//     printf("Map reuse possibility: %zd\n", g_mapReusePossibility);
+//     printf("RW mappings count: %zd\n", g_RWMappingCount);
+//     printf("Max RW mappings count: %zd\n", g_maxRWMappingCount);
+//     printf("Max RX search length: %zd\n", g_maxRXSearchLength);
+//     printf("Average RX search length: %zd\n", g_rxSearchLengthSum / g_rxSearchLengthCount);
+
+//     printf("\n");
+//     printf("MapRW users:\n");
+
+//     MagicInit();
+//     for (UsersListEntry* user = m_mapUsers; user != NULL; user = user->next)
+//     {
+//         SYM_INFO psi;
+//         FillSymbolInfo(&psi, (DWORD_PTR)user->user);
+//         printf(" %p - count %zd reuseCount %zd  %s\n", user->user, user->count, user->reuseCount, psi.achSymbol);
+//     }
+// #endif
+// #endif
+// #endif
+// #endif
+}
 
 #ifdef RANDOMIZE_ALLOC
 #include <time.h>
@@ -944,6 +1006,13 @@ UnlockedLoaderHeap::UnlockedLoaderHeap(DWORD dwReserveBlockSize,
 
     if (dwReservedRegionAddress != NULL && dwReservedRegionSize > 0)
     {
+#ifdef _DEBUG        
+        MEMORY_BASIC_INFORMATION mbi;
+        if (ClrVirtualQuery((void *)dwReservedRegionAddress, &mbi, sizeof(mbi)))
+        {
+            _ASSERTE((mbi.Protect & PAGE_EXECUTE_READWRITE) == 0);
+        }
+#endif        
         m_reservedBlock.Init((void *)dwReservedRegionAddress, dwReservedRegionSize, FALSE);
     }
 }
@@ -977,9 +1046,17 @@ UnlockedLoaderHeap::~UnlockedLoaderHeap()
 
         if (fReleaseMemory)
         {
-            BOOL fSuccess;
-            fSuccess = ClrVirtualFree(pVirtualAddress, 0, MEM_RELEASE);
-            _ASSERTE(fSuccess);
+            DoubleMappedAllocator::Instance()->Release(pVirtualAddress);
+            // if (m_Options & LHF_EXECUTABLE)
+            // {
+            //     // TODO: how do we release the executable memory?
+            // }
+            // else
+            // {
+            //     BOOL fSuccess;
+            //     fSuccess = ClrVirtualFree(pVirtualAddress, 0, MEM_RELEASE);
+            //     _ASSERTE(fSuccess);
+            // }
         }
 
         delete pSearch;
@@ -987,9 +1064,17 @@ UnlockedLoaderHeap::~UnlockedLoaderHeap()
 
     if (m_reservedBlock.m_fReleaseMemory)
     {
-        BOOL fSuccess;
-        fSuccess = ClrVirtualFree(m_reservedBlock.pVirtualAddress, 0, MEM_RELEASE);
-        _ASSERTE(fSuccess);
+        DoubleMappedAllocator::Instance()->Release(m_reservedBlock.pVirtualAddress);
+        // if (m_Options & LHF_EXECUTABLE)
+        // {
+        //     // TODO: how do we release the executable memory?
+        // }
+        // else
+        // {
+        //     BOOL fSuccess;
+        //     fSuccess = ClrVirtualFree(m_reservedBlock.pVirtualAddress, 0, MEM_RELEASE);
+        //     _ASSERTE(fSuccess);
+        // }
     }
 
     INDEBUG(s_dwNumInstancesOfLoaderHeaps --;)
@@ -999,6 +1084,13 @@ void UnlockedLoaderHeap::UnlockedSetReservedRegion(BYTE* dwReservedRegionAddress
 {
     WRAPPER_NO_CONTRACT;
     _ASSERTE(m_reservedBlock.pVirtualAddress == NULL);
+#ifdef _DEBUG        
+        MEMORY_BASIC_INFORMATION mbi;
+        if (ClrVirtualQuery((void *)dwReservedRegionAddress, &mbi, sizeof(mbi)))
+        {
+            _ASSERTE((mbi.Protect & PAGE_EXECUTE_READWRITE) == 0);
+        }
+#endif        
     m_reservedBlock.Init((void *)dwReservedRegionAddress, dwReservedRegionSize, fReleaseMemory);
 }
 
@@ -1058,7 +1150,7 @@ void ReleaseReservedMemory(BYTE* value)
 {
     if (value)
     {
-        ClrVirtualFree(value, 0, MEM_RELEASE);
+        DoubleMappedAllocator::Instance()->Release(value);
     }
 }
 
@@ -1099,6 +1191,7 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
     {
         if (m_fExplicitControl)
         {
+            __debugbreak();
             return FALSE;
         }
 
@@ -1114,11 +1207,41 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
         // Reserve pages
         //
 
-        pData = ClrVirtualAllocExecutable(dwSizeToReserve, MEM_RESERVE, PAGE_NOACCESS);
-        if (pData == NULL)
+        //if (m_Options & LHF_EXECUTABLE)
         {
-            return FALSE;
+            // Reserve the memory for even non-executable stuff close to the executable code, as it has profound effect
+            // on e.g. a static variable access performance.
+            // TODO: we really don't need to get the memory from the DoubleMappedAllocator. We need to reserve the VM range.
+            // So it would be better to have a separate method out of the DoubleMappedAllocator that would call into the ReserveAt or 
+            // ClrVirtualAlloc based on the executability. Call it e.g. ReserveExecutableMemoryRange(size, bool isExec)
+            // or "ReserveCloseToExecutableMemory"
+            pData = (BYTE *)DoubleMappedAllocator::Instance()->Reserve(dwSizeToReserve);
+            if (pData == NULL)
+            {
+                __debugbreak();
+                return FALSE;
+            }
+            // TODO: is this correct? Do we actually need two state flag - uncommit and release? Uncommit for the double mapped allocation
+            //fReleaseMemory = FALSE;
         }
+        // else
+        // {
+        //     // TODO: or should it still use executable memory to ensure closer distance to code?
+        //     //pData = ClrVirtualAlloc(NULL, dwSizeToReserve, MEM_RESERVE, PAGE_NOACCESS);
+        //     //pData = ClrVirtualAllocExecutable(dwSizeToReserve, MEM_RESERVE, PAGE_NOACCESS);
+
+        //     if (pData == NULL)
+        //     {
+        //         __debugbreak();
+        //         return FALSE;
+        //     }
+        // }
+
+        // pData = ClrVirtualAllocExecutable(dwSizeToReserve, MEM_RESERVE, PAGE_NOACCESS);
+        // if (pData == NULL)
+        // {
+        //     return FALSE;
+        // }
     }
 
     // When the user passes in the reserved memory, the commit size is 0 and is adjusted to be the sizeof(LoaderHeap).
@@ -1131,6 +1254,7 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
     if (pData == NULL)
     {
         //_ASSERTE(!"Unable to ClrVirtualAlloc reserve in a loaderheap");
+        __debugbreak();
         return FALSE;
     }
 
@@ -1140,7 +1264,8 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
     }
 
     // Commit first set of pages, since it will contain the LoaderHeapBlock
-    void *pTemp = ClrVirtualAlloc(pData, dwSizeToCommit, MEM_COMMIT, (m_Options & LHF_EXECUTABLE) ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE);
+    void *pPrevPData = pData;
+    void *pTemp = DoubleMappedAllocator::Instance()->Commit(pData, dwSizeToCommit, (m_Options & LHF_EXECUTABLE));
     if (pTemp == NULL)
     {
         //_ASSERTE(!"Unable to ClrVirtualAlloc commit in a loaderheap");
@@ -1213,9 +1338,16 @@ BOOL UnlockedLoaderHeap::GetMoreCommittedPages(size_t dwMinSize)
         dwSizeToCommit = ALIGN_UP(dwSizeToCommit, GetOsPageSize());
 
         // Yes, so commit the desired number of reserved pages
+#ifdef ENABLE_DOUBLE_MAPPING
+        void *pData = ClrVirtualAlloc(m_pPtrToEndOfCommittedRegion, dwSizeToCommit, MEM_COMMIT, (m_Options & LHF_EXECUTABLE) ? PAGE_EXECUTE_READ : PAGE_READWRITE);
+#else
         void *pData = ClrVirtualAlloc(m_pPtrToEndOfCommittedRegion, dwSizeToCommit, MEM_COMMIT, (m_Options & LHF_EXECUTABLE) ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE);
+#endif
         if (pData == NULL)
+        {
+            __debugbreak();
             return FALSE;
+        }
 
         m_dwTotalAlloc += dwSizeToCommit;
 
@@ -1383,6 +1515,7 @@ again:
     if (GetMoreCommittedPages(dwSize))
         goto again;
 
+    __debugbreak();
     // We could not satisfy this allocation request
     RETURN NULL;
 }
