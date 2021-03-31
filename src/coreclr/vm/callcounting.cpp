@@ -281,7 +281,9 @@ const CallCountingStub *CallCountingManager::CallCountingStubAllocator::Allocate
             if (CallCountingStubShort::CanUseFor(allocationAddressHolder, targetForMethod))
         #endif
             {
-                stub = new(allocationAddressHolder) CallCountingStubShort(remainingCallCountCell, targetForMethod);
+                ExecutableWriterHolder<void> holder(allocationAddressHolder, sizeInBytes);
+                stub = new(holder.GetRW()) CallCountingStubShort(remainingCallCountCell, targetForMethod, (CallCountingStubShort*)(void*)allocationAddressHolder);
+                stub = (CallCountingStub*)(void*)allocationAddressHolder;
                 allocationAddressHolder.SuppressRelease();
                 break;
             }
@@ -290,7 +292,9 @@ const CallCountingStub *CallCountingManager::CallCountingStubAllocator::Allocate
     #ifdef TARGET_AMD64
         sizeInBytes = sizeof(CallCountingStubLong);
         void *allocationAddress = (void *)heap->AllocAlignedMem(sizeInBytes, CallCountingStub::Alignment);
-        stub = new(allocationAddress) CallCountingStubLong(remainingCallCountCell, targetForMethod);
+        ExecutableWriterHolder<void> holder(allocationAddress, sizeInBytes);
+        stub = new(holder.GetRW()) CallCountingStubLong(remainingCallCountCell, targetForMethod);
+        stub = (CallCountingStub*)allocationAddress;
     #else
         UNREACHABLE();
     #endif

@@ -1836,11 +1836,14 @@ CodeFragmentHeap::CodeFragmentHeap(LoaderAllocator * pAllocator, StubCodeBlockKi
     WRAPPER_NO_CONTRACT;
 }
 
-void CodeFragmentHeap::AddBlock(VOID * pMem, size_t dwSize)
+void CodeFragmentHeap::AddBlock(void *pMem, size_t dwSize)
 {
     LIMITED_METHOD_CONTRACT;
-    FreeBlock * pBlock = (FreeBlock *)pMem;
+//    printf("Adding block %p, 0x%zx\n", pMem, dwSize);
+
+    FreeBlock * pBlock = (FreeBlock *)malloc(sizeof(FreeBlock));
     pBlock->m_pNext = m_pFreeBlocks;
+    pBlock->m_pBlock = pMem;
     pBlock->m_dwSize = dwSize;
     m_pFreeBlocks = pBlock;
 }
@@ -1849,8 +1852,10 @@ void CodeFragmentHeap::RemoveBlock(FreeBlock ** ppBlock)
 {
     LIMITED_METHOD_CONTRACT;
     FreeBlock * pBlock = *ppBlock;
+//    printf("Removing block %p, 0x%zx\n", pBlock, pBlock->m_dwSize);
     *ppBlock = pBlock->m_pNext;
     ZeroMemory(pBlock, sizeof(FreeBlock));
+    free(pBlock);
 }
 
 TaggedMemAllocPtr CodeFragmentHeap::RealAllocAlignedMem(size_t  dwRequestedSize
@@ -1898,7 +1903,7 @@ TaggedMemAllocPtr CodeFragmentHeap::RealAllocAlignedMem(size_t  dwRequestedSize
     SIZE_T dwSize;
     if (ppBestFit != NULL)
     {
-        pMem = *ppBestFit;
+        pMem = (*ppBestFit)->m_pBlock;
         dwSize = (*ppBestFit)->m_dwSize;
 
         RemoveBlock(ppBestFit);
@@ -1948,11 +1953,14 @@ void CodeFragmentHeap::RealBackoutMem(void *pMem
 
     _ASSERTE(dwSize >= sizeof(FreeBlock));
 
+    {
 #if defined(HOST_OSX) && defined(HOST_ARM64)
-    auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
+        auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
 
-    ZeroMemory((BYTE *)pMem, dwSize);
+        ExecutableWriterHolder<BYTE> memHolder((BYTE*)pMem, dwSize);
+        ZeroMemory(memHolder.GetRW(), dwSize);
+    }
 
     //
     // Try to coalesce blocks if possible
@@ -1965,6 +1973,7 @@ void CodeFragmentHeap::RealBackoutMem(void *pMem
         if ((BYTE *)pFreeBlock == (BYTE *)pMem + dwSize)
         {
             // pMem = pMem;
+//            printf("Coalescing blocks %p, 0x%zx and %p, 0x%zx\n", pMem, dwSize, pFreeBlock, pFreeBlock->m_dwSize);
             dwSize += pFreeBlock->m_dwSize;
             RemoveBlock(ppFreeBlock);
             continue;
@@ -1972,6 +1981,7 @@ void CodeFragmentHeap::RealBackoutMem(void *pMem
         else
         if ((BYTE *)pFreeBlock + pFreeBlock->m_dwSize == (BYTE *)pMem)
         {
+//            printf("Coalescing blocks %p, 0x%zx and %p, 0x%zx\n", pFreeBlock, pFreeBlock->m_dwSize, pMem, dwSize);
             pMem = pFreeBlock;
             dwSize += pFreeBlock->m_dwSize;
             RemoveBlock(ppFreeBlock);
@@ -2223,23 +2233,35 @@ HeapList* LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
         }
         else
         {
-            pBaseAddr = ClrVirtualAllocExecutable(reserveSize, MEM_RESERVE, PAGE_NOACCESS);
+            pBaseAddr = (BYTE*)DoubleMappedAllocator::Instance()->Reserve(reserveSize);
             if (!pBaseAddr)
                 ThrowOutOfMemory();
         }
-        pCodeHeap->m_LoaderHeap.SetReservedRegion(pBaseAddr, reserveSize, TRUE);
+        // TODO: this reserved region business is ugly. We should just get rid of it. Otherwise we would have to pass in 
+        // double pointer to the next function and let the heap keep the RW mapping until the first allocation.
+        pCodeHeap->m_LoaderHeap.SetReservedRegion(pBaseAddr/*RW*/, reserveSize, TRUE);
     }
 
 
     // this first allocation is critical as it sets up correctly the loader heap info
-    HeapList *pHp = (HeapList*)pCodeHeap->m_LoaderHeap.AllocMem(sizeof(HeapList));
+    HeapList *pHp = (HeapList*)malloc(sizeof(HeapList));
+
+#if defined(TARGET_AMD64)
+    pHp->CLRPersonalityRoutine = (BYTE *)pCodeHeap->m_LoaderHeap.AllocMem(JUMP_ALLOCATE_SIZE);
+    // TODO: do we need alignment of the size here?
+    pHp->startAddress = (TADDR)pHp->CLRPersonalityRoutine + JUMP_ALLOCATE_SIZE;
+#elif defined(TARGET_ARM64)
+    pHp->CLRPersonalityRoutine = (UINT32 *)pCodeHeap->m_LoaderHeap.AllocMem(JUMP_ALLOCATE_SIZE);
+    pHp->startAddress = (TADDR)pHp->CLRPersonalityRoutine + JUMP_ALLOCATE_SIZE;
+#else
+    // Dummy allocation - can we do something better? E.g. add method to get base address
+    pHp->startAddress = (TADDR)pCodeHeap->m_LoaderHeap.AllocMem(16) + 16;
+#endif
 
     pHp->pHeap = pCodeHeap;
 
     size_t heapSize = pCodeHeap->m_LoaderHeap.GetReservedBytesFree();
     size_t nibbleMapSize = HEAP2MAPSIZE(ROUND_UP_TO_PAGE(heapSize));
-
-    pHp->startAddress    = (TADDR)pHp + sizeof(HeapList);
 
     pHp->endAddress      = pHp->startAddress;
     pHp->maxCodeHeapSize = heapSize;
@@ -2252,6 +2274,7 @@ HeapList* LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
 
     pHp->mapBase         = ROUND_DOWN_TO_PAGE(pHp->startAddress);  // round down to next lower page align
     pHp->pHdrMap         = (DWORD*)(void*)pJitMetaHeap->AllocMem(S_SIZE_T(nibbleMapSize));
+    //printf("CreateCodeHeap: pHp=%p, pHdrMap=%p\n", pHp, pHp->pHdrMap);
 
     LOG((LF_JIT, LL_INFO100,
          "Created new CodeHeap(" FMT_ADDR ".." FMT_ADDR ")\n",
@@ -2259,14 +2282,15 @@ HeapList* LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
          ));
 
 #ifdef TARGET_64BIT
-    emitJump((LPBYTE)pHp->CLRPersonalityRoutine, (void *)ProcessCLRException);
+    ExecutableWriterHolder<BYTE> personalityRoutineHolder(pHp->CLRPersonalityRoutine, 12);
+    emitJump(personalityRoutineHolder.GetRW(), (void *)ProcessCLRException);
 #endif // TARGET_64BIT
 
     pCodeHeap.SuppressRelease();
     RETURN pHp;
 }
 
-void * LoaderCodeHeap::AllocMemForCode_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs)
+void *LoaderCodeHeap::AllocMemForCode_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs)
 {
     CONTRACTL {
         NOTHROW;
@@ -2376,13 +2400,7 @@ HeapList* EEJitManager::NewCodeHeap(CodeHeapRequestInfo *pInfo, DomainCodeHeapLi
     }
 #endif
 
-    // <BUGNUM> VSW 433293 </BUGNUM>
-    // SETUP_NEW_BLOCK reserves the first sizeof(LoaderHeapBlock) bytes for LoaderHeapBlock.
-    // In other word, the first m_pAllocPtr starts at sizeof(LoaderHeapBlock) bytes
-    // after the allocated memory. Therefore, we need to take it into account.
-    size_t requestAndHeadersSize = sizeof(LoaderHeapBlock) + sizeof(HeapList) + initialRequestSize;
-
-    size_t reserveSize = requestAndHeadersSize;
+    size_t reserveSize = initialRequestSize;
     if (reserveSize < minReserveSize)
         reserveSize = minReserveSize;
     reserveSize = ALIGN_UP(reserveSize, VIRTUAL_ALLOC_RESERVE_GRANULARITY);
@@ -2414,13 +2432,15 @@ HeapList* EEJitManager::NewCodeHeap(CodeHeapRequestInfo *pInfo, DomainCodeHeapLi
     }
 
     _ASSERTE (pHp != NULL);
+
     _ASSERTE (pHp->maxCodeHeapSize >= initialRequestSize);
 
     pHp->SetNext(GetCodeHeapList());
 
+
     EX_TRY
     {
-        TADDR pStartRange = (TADDR) pHp;
+        TADDR pStartRange = pHp->GetModuleBase();
         TADDR pEndRange = (TADDR) &((BYTE*)pHp->startAddress)[pHp->maxCodeHeapSize];
 
         ExecutionManager::AddCodeRange(pStartRange,
@@ -2444,8 +2464,8 @@ HeapList* EEJitManager::NewCodeHeap(CodeHeapRequestInfo *pInfo, DomainCodeHeapLi
         // If we failed to alloc memory in ExecutionManager::AddCodeRange()
         // then we will delete the LoaderHeap that we allocated
 
-        // pHp is allocated in pHeap, so only need to delete the LoaderHeap itself
         delete pHp->pHeap;
+        free(pHp);
 
         pHp = NULL;
     }
@@ -2460,6 +2480,8 @@ HeapList* EEJitManager::NewCodeHeap(CodeHeapRequestInfo *pInfo, DomainCodeHeapLi
 
     HeapList **ppHeapList = pADHeapList->m_CodeHeapList.AppendThrowing();
     *ppHeapList = pHp;
+
+    // TODO: release the RW mapping or return the double ptr
 
     RETURN(pHp);
 }
@@ -2555,9 +2577,9 @@ void* EEJitManager::allocCodeRaw(CodeHeapRequestInfo *pInfo,
     // Record the pCodeHeap value into ppCodeHeap
     *ppCodeHeap = pCodeHeap;
 
-    _ASSERTE((TADDR)mem >= pCodeHeap->startAddress);
+    _ASSERTE((TADDR) mem >= pCodeHeap->startAddress);
 
-    if (((TADDR) mem)+blockSize > (TADDR)pCodeHeap->endAddress)
+    if (((TADDR)mem)+blockSize > (TADDR)pCodeHeap->endAddress)
     {
         // Update the CodeHeap endAddress
         pCodeHeap->endAddress = (TADDR)mem+blockSize;
@@ -2656,10 +2678,20 @@ CodeHeader* EEJitManager::allocCode(MethodDesc* pMD, size_t blockSize, size_t re
 
         pCodeHdr = ((CodeHeader *)pCode) - 1;
 
+        ExecutableWriterHolder<CodeHeader> codeHdrHolder(pCodeHdr, sizeof(CodeHeader));
+
 #ifdef USE_INDIRECT_CODEHEADER
+        ExecutableWriterHolder<void> realCodeHeaderHolder;
         if (requestInfo.IsDynamicDomain())
         {
-            pCodeHdr->SetRealCodeHeader((BYTE*)pCode + ALIGN_UP(blockSize, sizeof(void*)));
+            // TODO: unify these two cases, but ensure that the header is destroyed when the code is pitched - how?
+            // realCodeHeaderHolder = ExecutableWriterHolder<void>((BYTE*)pCode + ALIGN_UP(blockSize, sizeof(void*)), sizeof(RealCodeHeader));
+            // codeHdrHolder.GetRW()->SetRealCodeHeader((BYTE*)realCodeHeaderHolder.GetRW());
+            //BYTE* pRealHeader = (BYTE*)pCode + ALIGN_UP(blockSize, sizeof(void*));
+
+            // TODO: this leaks memory, need to use regular alloc or find some way to free the memory
+            BYTE* pRealHeader = (BYTE*)(void*)pMD->GetLoaderAllocator()->GetLowFrequencyHeap()->AllocMem(S_SIZE_T(realHeaderSize));
+            codeHdrHolder.GetRW()->SetRealCodeHeader(pRealHeader);
         }
         else
         {
@@ -2667,20 +2699,30 @@ CodeHeader* EEJitManager::allocCode(MethodDesc* pMD, size_t blockSize, size_t re
             //
             // allocate the real header in the low frequency heap
             BYTE* pRealHeader = (BYTE*)(void*)pMD->GetLoaderAllocator()->GetLowFrequencyHeap()->AllocMem(S_SIZE_T(realHeaderSize));
-            pCodeHdr->SetRealCodeHeader(pRealHeader);
+            codeHdrHolder.GetRW()->SetRealCodeHeader(pRealHeader);
         }
 #endif
 
-        pCodeHdr->SetDebugInfo(NULL);
-        pCodeHdr->SetEHInfo(NULL);
-        pCodeHdr->SetGCInfo(NULL);
-        pCodeHdr->SetMethodDesc(pMD);
+        codeHdrHolder.GetRW()->SetDebugInfo(NULL);
+        codeHdrHolder.GetRW()->SetEHInfo(NULL);
+        codeHdrHolder.GetRW()->SetGCInfo(NULL);
+        codeHdrHolder.GetRW()->SetMethodDesc(pMD);
 #ifdef FEATURE_EH_FUNCLETS
-        pCodeHdr->SetNumberOfUnwindInfos(nUnwindInfos);
-        *pModuleBase = (TADDR)pCodeHeap;
+        codeHdrHolder.GetRW()->SetNumberOfUnwindInfos(nUnwindInfos);
+        *pModuleBase = pCodeHeap->GetModuleBase();
 #endif
 
-        NibbleMapSet(pCodeHeap, pCode, TRUE);
+#ifdef USE_INDIRECT_CODEHEADER
+        // TODO:  try to do this in a cleaner way. The setter methods above are indirections via the real code header, so we need to write
+        // through the writeable one. But the readable one needs to be stored there after.
+        // Actually, it would be beneficial to keep the real code header as RW until at least CEEJitInfo::allocUnwindInfo to avoid remapping
+        if (requestInfo.IsDynamicDomain())
+        {
+//            codeHdrHolder.GetRW()->SetRealCodeHeader((BYTE*)pCode + ALIGN_UP(blockSize, sizeof(void*)));
+        }
+#endif
+
+        NibbleMapSet(pCodeHeap, (TADDR)pCode, TRUE);
     }
 
     RETURN(pCodeHdr);
@@ -2930,7 +2972,7 @@ EE_ILEXCEPTION* EEJitManager::allocEHInfo(CodeHeader* pCodeHeader, unsigned numC
     return(pCodeHeader->GetEHInfo());
 }
 
-JumpStubBlockHeader *  EEJitManager::allocJumpStubBlock(MethodDesc* pMD, DWORD numJumps,
+JumpStubBlockHeader * EEJitManager::allocJumpStubBlock(MethodDesc* pMD, DWORD numJumps,
                                                         BYTE * loAddr, BYTE * hiAddr,
                                                         LoaderAllocator *pLoaderAllocator,
                                                         bool throwOnOutOfMemoryWithinRange)
@@ -2952,13 +2994,13 @@ JumpStubBlockHeader *  EEJitManager::allocJumpStubBlock(MethodDesc* pMD, DWORD n
     requestInfo.setThrowOnOutOfMemoryWithinRange(throwOnOutOfMemoryWithinRange);
 
     TADDR                  mem;
-    JumpStubBlockHeader *  pBlock;
-
+    JumpStubBlockHeader *  pBlockRW;
     // Scope the lock
     {
         CrstHolder ch(&m_CodeHeapCritSec);
 
-        mem = (TADDR) allocCodeRaw(&requestInfo, sizeof(TADDR), blockSize, CODE_SIZE_ALIGN, &pCodeHeap);
+        // Note: TADDR was a bug here, we were just lucky that it has the same size
+        mem = (TADDR) allocCodeRaw(&requestInfo, sizeof(CodeHeader), blockSize, CODE_SIZE_ALIGN, &pCodeHeap);
         if (mem == NULL)
         {
             _ASSERTE(!throwOnOutOfMemoryWithinRange);
@@ -2967,27 +3009,30 @@ JumpStubBlockHeader *  EEJitManager::allocJumpStubBlock(MethodDesc* pMD, DWORD n
 
         // CodeHeader comes immediately before the block
         CodeHeader * pCodeHdr = (CodeHeader *) (mem - sizeof(CodeHeader));
-        pCodeHdr->SetStubCodeBlockKind(STUB_CODE_BLOCK_JUMPSTUB);
+        ExecutableWriterHolder<CodeHeader> codeHdrHolder(pCodeHdr, sizeof(CodeHeader));
+        codeHdrHolder.GetRW()->SetStubCodeBlockKind(STUB_CODE_BLOCK_JUMPSTUB);
 
         NibbleMapSet(pCodeHeap, mem, TRUE);
 
-        pBlock = (JumpStubBlockHeader *)mem;
+        pBlockRW = (JumpStubBlockHeader *)DoubleMappedAllocator::Instance()->MapRW((void *)mem, sizeof(JumpStubBlockHeader));
 
-        _ASSERTE(IS_ALIGNED(pBlock, CODE_SIZE_ALIGN));
+        _ASSERTE(IS_ALIGNED(pBlockRW, CODE_SIZE_ALIGN));
     }
 
-    pBlock->m_next            = NULL;
-    pBlock->m_used            = 0;
-    pBlock->m_allocated       = numJumps;
+    pBlockRW->m_next            = NULL;
+    pBlockRW->m_used            = 0;
+    pBlockRW->m_allocated       = numJumps;
     if (pMD && pMD->IsLCGMethod())
-        pBlock->SetHostCodeHeap(static_cast<HostCodeHeap*>(pCodeHeap->pHeap));
+        pBlockRW->SetHostCodeHeap(static_cast<HostCodeHeap*>(pCodeHeap->pHeap));
     else
-        pBlock->SetLoaderAllocator(pLoaderAllocator);
+        pBlockRW->SetLoaderAllocator(pLoaderAllocator);
+
+    DoubleMappedAllocator::Instance()->UnmapRW(pBlockRW);
 
     LOG((LF_JIT, LL_INFO1000, "Allocated new JumpStubBlockHeader for %d stubs at" FMT_ADDR " in loader allocator " FMT_ADDR "\n",
-         numJumps, DBG_ADDR(pBlock) , DBG_ADDR(pLoaderAllocator) ));
+         numJumps, DBG_ADDR(mem) , DBG_ADDR(pLoaderAllocator) ));
 
-    RETURN(pBlock);
+    RETURN((JumpStubBlockHeader*)mem);
 }
 
 void * EEJitManager::allocCodeFragmentBlock(size_t blockSize, unsigned alignment, LoaderAllocator *pLoaderAllocator, StubCodeBlockKind kind)
@@ -3018,9 +3063,10 @@ void * EEJitManager::allocCodeFragmentBlock(size_t blockSize, unsigned alignment
 
         // CodeHeader comes immediately before the block
         CodeHeader * pCodeHdr = (CodeHeader *) (mem - sizeof(CodeHeader));
-        pCodeHdr->SetStubCodeBlockKind(kind);
+        ExecutableWriterHolder<CodeHeader> codeHdrHolder(pCodeHdr, sizeof(CodeHeader));
+        codeHdrHolder.GetRW()->SetStubCodeBlockKind(kind);
 
-        NibbleMapSet(pCodeHeap, (TADDR)mem, TRUE);
+        NibbleMapSet(pCodeHeap, mem, TRUE);
 
         // Record the jump stub reservation
         pCodeHeap->reserveForJumpStubs += requestInfo.getReserveForJumpStubs();
@@ -3514,12 +3560,13 @@ void EEJitManager::DeleteCodeHeap(HeapList *pHeapList)
             _ASSERTE(pHp != NULL);  // should always find the HeapList
             pHpNext = pHp->GetNext();
         }
+
         pHp->SetNext(pHeapList->GetNext());
     }
 
-    DeleteEEFunctionTable((PVOID)pHeapList);
+    DeleteEEFunctionTable((PVOID)pHeapList->mapBase);
 
-    ExecutionManager::DeleteRange((TADDR)pHeapList);
+    ExecutionManager::DeleteRange((TADDR)pHeapList->mapBase);
 
     LOG((LF_JIT, LL_INFO100, "DeleteCodeHeap start" FMT_ADDR "end" FMT_ADDR "\n",
                               (const BYTE*)pHeapList->startAddress,
@@ -3531,6 +3578,7 @@ void EEJitManager::DeleteCodeHeap(HeapList *pHeapList)
     // delete pHeapList->pHeap;
     CodeHeap* pHeap = pHeapList->pHeap;
     delete pHeap;
+    free(pHeapList);
 }
 
 #endif // #ifndef DACCESS_COMPILE
@@ -5051,9 +5099,18 @@ PCODE ExecutionManager::getNextJumpStub(MethodDesc* pMD, PCODE target,
         POSTCONDITION((RETVAL != NULL) || !throwOnOutOfMemoryWithinRange);
     } CONTRACT_END;
 
-    DWORD            numJumpStubs   = DEFAULT_JUMPSTUBS_PER_BLOCK;  // a block of 32 JumpStubs
-    BYTE *           jumpStub       = NULL;
+    BYTE *           jumpStubRX     = NULL;
+    BYTE *           jumpStubRW     = NULL;
     bool             isLCG          = pMD && pMD->IsLCGMethod();
+    // For LCG we request a small block of 4 jumpstubs, because we can not share them
+    // with any other methods and very frequently our method only needs one jump stub.
+    // Using 4 gives a request size of (32 + 4*12) or 80 bytes.
+    // Also note that request sizes are rounded up to a multiples of 16.
+    // The request size is calculated into 'blockSize' in allocJumpStubBlock.
+    // For x64 the value of BACK_TO_BACK_JUMP_ALLOCATE_SIZE is 12 bytes
+    // and the sizeof(JumpStubBlockHeader) is 32.
+    //
+    DWORD            numJumpStubs   = isLCG ? 4 : DEFAULT_JUMPSTUBS_PER_BLOCK;
     JumpStubCache *  pJumpStubCache = (JumpStubCache *) pLoaderAllocator->m_pJumpStubCache;
 
     if (isLCG)
@@ -5064,42 +5121,37 @@ PCODE ExecutionManager::getNextJumpStub(MethodDesc* pMD, PCODE target,
     }
 
     JumpStubBlockHeader ** ppHead   = &(pJumpStubCache->m_pBlocks);
-    JumpStubBlockHeader *  curBlock = *ppHead;
+    JumpStubBlockHeader *  curBlockRX = *ppHead;
+    JumpStubBlockHeader *  curBlockRW = NULL;
+    JumpStubBlockHeader *  block;
 
     // allocate a new jumpstub from 'curBlock' if it is not fully allocated
     //
-    while (curBlock)
+    while (curBlockRX)
     {
-        _ASSERTE(pLoaderAllocator == (isLCG ? curBlock->GetHostCodeHeap()->GetAllocator() : curBlock->GetLoaderAllocator()));
+        _ASSERTE(pLoaderAllocator == (isLCG ? curBlockRX->GetHostCodeHeap()->GetAllocator() : curBlockRX->GetLoaderAllocator()));
 
-        if (curBlock->m_used < curBlock->m_allocated)
+        if (curBlockRX->m_used < curBlockRX->m_allocated)
         {
-            jumpStub = (BYTE *) curBlock + sizeof(JumpStubBlockHeader) + ((size_t) curBlock->m_used * BACK_TO_BACK_JUMP_ALLOCATE_SIZE);
+            jumpStubRX = (BYTE *) curBlockRX + sizeof(JumpStubBlockHeader) + ((size_t) curBlockRX->m_used * BACK_TO_BACK_JUMP_ALLOCATE_SIZE);
 
-            if ((loAddr <= jumpStub) && (jumpStub <= hiAddr))
+            if ((loAddr <= jumpStubRX) && (jumpStubRX <= hiAddr))
             {
                 // We will update curBlock->m_used at "DONE"
+                size_t blockSize = sizeof(JumpStubBlockHeader) + (size_t) numJumpStubs * BACK_TO_BACK_JUMP_ALLOCATE_SIZE;
+                curBlockRW = (JumpStubBlockHeader *)DoubleMappedAllocator::Instance()->MapRW(curBlockRX, blockSize);
+                block = curBlockRX;
+                jumpStubRW = (BYTE *)((TADDR)jumpStubRX + (TADDR)curBlockRW - (TADDR)curBlockRX);
                 goto DONE;
             }
         }
-        curBlock = curBlock->m_next;
+        curBlockRX = curBlockRX->m_next;
     }
 
     // If we get here then we need to allocate a new JumpStubBlock
 
     if (isLCG)
     {
-        // For LCG we request a small block of 4 jumpstubs, because we can not share them
-        // with any other methods and very frequently our method only needs one jump stub.
-        // Using 4 gives a request size of (32 + 4*12) or 80 bytes.
-        // Also note that request sizes are rounded up to a multiples of 16.
-        // The request size is calculated into 'blockSize' in allocJumpStubBlock.
-        // For x64 the value of BACK_TO_BACK_JUMP_ALLOCATE_SIZE is 12 bytes
-        // and the sizeof(JumpStubBlockHeader) is 32.
-        //
-
-        numJumpStubs = 4;
-
 #ifdef TARGET_AMD64
         // Note this these values are not requirements, instead we are
         // just confirming the values that are mentioned in the comments.
@@ -5121,33 +5173,37 @@ PCODE ExecutionManager::getNextJumpStub(MethodDesc* pMD, PCODE target,
     //
     // note that this can throw an OOM exception
 
-    curBlock = ExecutionManager::GetEEJitManager()->allocJumpStubBlock(pMD, numJumpStubs, loAddr, hiAddr, pLoaderAllocator, throwOnOutOfMemoryWithinRange);
-    if (curBlock == NULL)
+    block = ExecutionManager::GetEEJitManager()->allocJumpStubBlock(pMD, numJumpStubs, loAddr, hiAddr, pLoaderAllocator, throwOnOutOfMemoryWithinRange);
+    if (block == NULL)
     {
         _ASSERTE(!throwOnOutOfMemoryWithinRange);
         RETURN(NULL);
     }
 
-    jumpStub = (BYTE *) curBlock + sizeof(JumpStubBlockHeader) + ((size_t) curBlock->m_used * BACK_TO_BACK_JUMP_ALLOCATE_SIZE);
+    curBlockRX = block;
+    curBlockRW = (JumpStubBlockHeader*)DoubleMappedAllocator::Instance()->MapRW(curBlockRX, sizeof(JumpStubBlockHeader) + ((size_t) (curBlockRX->m_used + 1) * BACK_TO_BACK_JUMP_ALLOCATE_SIZE));
 
-    _ASSERTE((loAddr <= jumpStub) && (jumpStub <= hiAddr));
+    jumpStubRW = (BYTE *) curBlockRW + sizeof(JumpStubBlockHeader) + ((size_t) curBlockRX->m_used * BACK_TO_BACK_JUMP_ALLOCATE_SIZE);
+    jumpStubRX = (BYTE *) curBlockRX + sizeof(JumpStubBlockHeader) + ((size_t) curBlockRX->m_used * BACK_TO_BACK_JUMP_ALLOCATE_SIZE);
 
-    curBlock->m_next = *ppHead;
-    *ppHead = curBlock;
+    _ASSERTE((loAddr <= jumpStubRX) && (jumpStubRX <= hiAddr));
+
+    curBlockRW->m_next = *ppHead;
+    *ppHead = curBlockRX;
 
 DONE:
 
-    _ASSERTE((curBlock->m_used < curBlock->m_allocated));
+    _ASSERTE((curBlockRX->m_used < curBlockRX->m_allocated));
 
 #ifdef TARGET_ARM64
     // 8-byte alignment is required on ARM64
-    _ASSERTE(((UINT_PTR)jumpStub & 7) == 0);
+    _ASSERTE(((UINT_PTR)jumpStubRX & 7) == 0);
 #endif
 
-    emitBackToBackJump(jumpStub, (void*) target);
+    emitBackToBackJump(jumpStubRW, (void*) target);
 
 #ifdef FEATURE_PERFMAP
-    PerfMap::LogStubs(__FUNCTION__, "emitBackToBackJump", (PCODE)jumpStub, BACK_TO_BACK_JUMP_ALLOCATE_SIZE);
+    PerfMap::LogStubs(__FUNCTION__, "emitBackToBackJump", (PCODE)jumpStubRX, BACK_TO_BACK_JUMP_ALLOCATE_SIZE);
 #endif
 
     // We always add the new jumpstub to the jumpStubCache
@@ -5157,11 +5213,13 @@ DONE:
     JumpStubEntry entry;
 
     entry.m_target = target;
-    entry.m_jumpStub = (PCODE)jumpStub;
+    entry.m_jumpStub = (PCODE)jumpStubRX;
 
     pJumpStubCache->m_Table.Add(entry);
 
-    curBlock->m_used++;    // record that we have used up one more jumpStub in the block
+    curBlockRW->m_used++;    // record that we have used up one more jumpStub in the block
+
+    DoubleMappedAllocator::Instance()->UnmapRW(curBlockRW);
 
     // Every time we create a new jumpStub thunk one of these counters is incremented
     if (isLCG)
@@ -5176,7 +5234,7 @@ DONE:
     }
 
     // Is the 'curBlock' now completely full?
-    if (curBlock->m_used == curBlock->m_allocated)
+    if (curBlockRX->m_used == curBlockRX->m_allocated)
     {
         if (isLCG)
         {
@@ -5209,7 +5267,7 @@ DONE:
         }
     }
 
-    RETURN((PCODE)jumpStub);
+    RETURN((PCODE)jumpStubRX);
 }
 #endif // !DACCESS_COMPILE && !CROSSGEN_COMPILE
 

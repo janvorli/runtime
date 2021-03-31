@@ -5801,7 +5801,7 @@ void InitJitHelperLogging()
 #endif // TARGET_AMD64
 
                     pSl->EmitJITHelperLoggingThunk(GetEEFuncEntryPoint(hlpFunc->pfnHelper), (LPVOID)hlpFuncCount);
-                    Stub* pStub = pSl->Link(pHeap);
+                    Stub *pStub = pSl->Link(pHeap);
                     hlpFunc->pfnHelper = (void*)pStub->GetEntryPoint();
                 }
                 else

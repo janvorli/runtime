@@ -370,7 +370,7 @@ INT32 rel32UsingJumpStub(INT32 UNALIGNED * pRel32, PCODE target, MethodDesc *pMe
     LoaderAllocator *pLoaderAllocator = NULL, bool throwOnOutOfMemoryWithinRange = true);
 
 // Get Rel32 destination, emit jumpStub if necessary into a preallocated location
-INT32 rel32UsingPreallocatedJumpStub(INT32 UNALIGNED * pRel32, PCODE target, PCODE jumpStubAddr, bool emitJump);
+INT32 rel32UsingPreallocatedJumpStub(INT32 UNALIGNED * pRel32, PCODE target, PCODE jumpStubAddr, PCODE jumpStubAddrRW, bool emitJump);
 
 void emitCOMStubCall (ComCallMethodDesc *pCOMMethod, PCODE target);
 
@@ -610,19 +610,19 @@ private:
 
 #ifndef DACCESS_COMPILE
 public:
-    CallCountingStubShort(CallCount *remainingCallCountCell, PCODE targetForMethod)
+    CallCountingStubShort(CallCount *remainingCallCountCell, PCODE targetForMethod, CallCountingStubShort* stubRX)
         : m_part0{                                              0x48, 0xb8},            //     mov  rax,
         m_remainingCallCountCell(remainingCallCountCell),                               //               <imm64>
         m_part1{                                                0x66, 0xff, 0x08,       //     dec  word ptr [rax]
                                                                 0x0f, 0x85},            //     jnz  
         m_rel32TargetForMethod(                                                         //          <rel32>
             GetRelative32BitOffset(
-                &m_rel32TargetForMethod,
+                &stubRX->m_rel32TargetForMethod,
                 targetForMethod)),
         m_part2{                                                0xe8},                  //     call
         m_rel32TargetForThresholdReached(                                               //          <rel32>
             GetRelative32BitOffset(
-                &m_rel32TargetForThresholdReached,
+                &stubRX->m_rel32TargetForThresholdReached,
                 TargetForThresholdReached)),
                                                                                         // (rip == stub-identifying token)
         m_alignmentPadding{}

@@ -2194,14 +2194,19 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT, CallerGCMode callerGCMo
     }
 
     /**************************   CODE CREATION  *************************/
+
+    volatile int creationIndex = 0;
+
     if (IsUnboxingStub())
     {
         pStub = MakeUnboxingStubWorker(this);
+        creationIndex = 1;
     }
 #if defined(FEATURE_SHARE_GENERIC_CODE)
     else if (IsInstantiatingStub())
     {
         pStub = MakeInstantiatingStubWorker(this);
+        creationIndex = 2;
     }
 #endif // defined(FEATURE_SHARE_GENERIC_CODE)
     else if (IsIL() || IsNoMetadata())
@@ -2261,6 +2266,7 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT, CallerGCMode callerGCMo
     else if (IsArray())
     {
         pStub = GenerateArrayOpStub((ArrayMethodDesc*)this);
+        creationIndex = 3;
     }
     else if (IsEEImpl())
     {
@@ -2304,13 +2310,16 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT, CallerGCMode callerGCMo
     {
         if (!GetOrCreatePrecode()->SetTargetInterlocked(pStub->GetEntryPoint()))
         {
-            pStub->DecRef();
+            ExecutableWriterHolder<Stub> stubHolder(pStub, sizeof(Stub));
+            stubHolder.GetRW()->DecRef();
         }
         else if (pStub->HasExternalEntryPoint())
         {
             // If the Stub wraps code that is outside of the Stub allocation, then we
             // need to free the Stub allocation now.
             pStub->DecRef();
+            // ExecutableWriterHolder<Stub> stubHolder(pStub, sizeof(Stub));
+            // stubHolder.GetRW()->DecRef();
         }
     }
 

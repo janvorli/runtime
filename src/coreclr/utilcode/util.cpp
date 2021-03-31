@@ -353,10 +353,10 @@ HRESULT FakeCoCreateInstanceEx(REFCLSID       rclsid,
 }
 
 #if USE_UPPER_ADDRESS
-static BYTE * s_CodeMinAddr;        // Preferred region to allocate the code in.
-static BYTE * s_CodeMaxAddr;
-static BYTE * s_CodeAllocStart;
-static BYTE * s_CodeAllocHint;      // Next address to try to allocate for code in the preferred region.
+BYTE * s_CodeMinAddr;        // Preferred region to allocate the code in.
+BYTE * s_CodeMaxAddr;
+BYTE * s_CodeAllocStart;
+BYTE * s_CodeAllocHint;      // Next address to try to allocate for code in the preferred region.
 #endif
 
 //
@@ -617,7 +617,13 @@ BYTE * ClrVirtualAllocWithinRange(const BYTE *pMinAddr,
     // then we can call ClrVirtualAlloc instead
     if ((pMinAddr == (BYTE *) BOT_MEMORY) && (pMaxAddr == (BYTE *) TOP_MEMORY))
     {
+#ifdef DACCESS_COMPILE            
         return (BYTE*) ClrVirtualAlloc(nullptr, dwSize, flAllocationType, flProtect);
+#else            
+        _ASSERTE(flAllocationType == MEM_RESERVE);
+        _ASSERTE(flProtect == PAGE_NOACCESS);
+        return (BYTE*)DoubleMappedAllocator::Instance()->Reserve(dwSize);
+#endif            
     }
 
 #ifdef HOST_UNIX
@@ -658,7 +664,11 @@ BYTE * ClrVirtualAllocWithinRange(const BYTE *pMinAddr,
             (mbInfo.RegionSize >= (SIZE_T) dwSize || mbInfo.RegionSize == 0))
         {
             // Try reserving the memory using VirtualAlloc now
+#ifdef DACCESS_COMPILE            
             pResult = (BYTE*)ClrVirtualAlloc(tryAddr, dwSize, MEM_RESERVE, flProtect);
+#else            
+            pResult = (BYTE*)DoubleMappedAllocator::Instance()->ReserveAt(tryAddr, dwSize);
+#endif            
 
             // Normally this will be successful
             //

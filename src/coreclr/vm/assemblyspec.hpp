@@ -291,7 +291,9 @@ class AssemblySpecHash
         if (entry == (AssemblySpec*) INVALIDENTRY)
         {
             if (m_pHeap != NULL)
+            {
                 entry = new (m_pHeap->AllocMem(S_SIZE_T(sizeof(AssemblySpec)))) AssemblySpec;
+            }
             else
                 entry = new AssemblySpec;
 

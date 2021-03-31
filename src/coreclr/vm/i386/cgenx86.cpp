@@ -1375,14 +1375,18 @@ EXTERN_C PVOID STDCALL VirtualMethodFixupWorker(Object * pThisPtr,  CORCOMPILE_V
 #define BEGIN_DYNAMIC_HELPER_EMIT(size) \
     SIZE_T cb = size; \
     SIZE_T cbAligned = ALIGN_UP(cb, DYNAMIC_HELPER_ALIGNMENT); \
-    BYTE * pStart = (BYTE *)(void *)pAllocator->GetDynamicHelpersHeap()->AllocAlignedMem(cbAligned, DYNAMIC_HELPER_ALIGNMENT); \
+    TaggedMemAllocPtr start = pAllocator->GetDynamicHelpersHeap()->AllocAlignedMem(cbAligned, DYNAMIC_HELPER_ALIGNMENT); \
+    BYTE * pStartRX = (BYTE *)(void*)start; \
+    ExecutableWriterHolder<BYTE> startHolder(pStartRX, cbAligned); \
+    BYTE * pStart = startHolder.GetRW(); \
+    size_t rxOffset = pStartRX - pStart; \
     BYTE * p = pStart;
 
 #define END_DYNAMIC_HELPER_EMIT() \
     _ASSERTE(pStart + cb == p); \
     while (p < pStart + cbAligned) *p++ = X86_INSTR_INT3; \
-    ClrFlushInstructionCache(pStart, cbAligned); \
-    return (PCODE)pStart
+    ClrFlushInstructionCache(pStartRX, cbAligned); \
+    return (PCODE)pStartRX
 
 PCODE DynamicHelpers::CreateHelper(LoaderAllocator * pAllocator, TADDR arg, PCODE target)
 {
@@ -1395,13 +1399,13 @@ PCODE DynamicHelpers::CreateHelper(LoaderAllocator * pAllocator, TADDR arg, PCOD
     p += 4;
 
     *p++ = X86_INSTR_JMP_REL32; // jmp rel32
-    *(INT32 *)p = rel32UsingJumpStub((INT32 *)p, target);
+    *(INT32 *)p = rel32UsingJumpStub((INT32 *)(p + rxOffset), target);
     p += 4;
 
     END_DYNAMIC_HELPER_EMIT();
 }
 
-void DynamicHelpers::EmitHelperWithArg(BYTE*& p, LoaderAllocator * pAllocator, TADDR arg, PCODE target)
+void DynamicHelpers::EmitHelperWithArg(BYTE*& p, size_t rxOffset, LoaderAllocator * pAllocator, TADDR arg, PCODE target)
 {
     CONTRACTL
     {
@@ -1417,7 +1421,7 @@ void DynamicHelpers::EmitHelperWithArg(BYTE*& p, LoaderAllocator * pAllocator, T
     p += 4;
 
     *p++ = X86_INSTR_JMP_REL32; // jmp rel32
-    *(INT32 *)p = rel32UsingJumpStub((INT32 *)p, target);
+    *(INT32 *)p = rel32UsingJumpStub((INT32 *)(p + rxOffset), target);
     p += 4;
 }
 
@@ -1425,7 +1429,7 @@ PCODE DynamicHelpers::CreateHelperWithArg(LoaderAllocator * pAllocator, TADDR ar
 {
     BEGIN_DYNAMIC_HELPER_EMIT(10);
 
-    EmitHelperWithArg(p, pAllocator, arg, target);
+    EmitHelperWithArg(p, rxOffset, pAllocator, arg, target);
 
     END_DYNAMIC_HELPER_EMIT();
 }
@@ -1443,7 +1447,7 @@ PCODE DynamicHelpers::CreateHelper(LoaderAllocator * pAllocator, TADDR arg, TADD
     p += 4;
 
     *p++ = X86_INSTR_JMP_REL32; // jmp rel32
-    *(INT32 *)p = rel32UsingJumpStub((INT32 *)p, target);
+    *(INT32 *)p = rel32UsingJumpStub((INT32 *)(p + rxOffset), target);
     p += 4;
 
     END_DYNAMIC_HELPER_EMIT();
@@ -1461,7 +1465,7 @@ PCODE DynamicHelpers::CreateHelperArgMove(LoaderAllocator * pAllocator, TADDR ar
     p += 4;
 
     *p++ = X86_INSTR_JMP_REL32; // jmp rel32
-    *(INT32 *)p = rel32UsingJumpStub((INT32 *)p, target);
+    *(INT32 *)p = rel32UsingJumpStub((INT32 *)(p + rxOffset), target);
     p += 4;
 
     END_DYNAMIC_HELPER_EMIT();
@@ -1547,9 +1551,9 @@ PCODE DynamicHelpers::CreateHelperWithTwoArgs(LoaderAllocator * pAllocator, TADD
 
     *p++ = X86_INSTR_JMP_REL32; // jmp rel32
 #ifdef UNIX_X86_ABI
-    *(INT32 *)p = rel32UsingJumpStub((INT32 *)p, (PCODE)DynamicHelperArgsStub);
+    *(INT32 *)p = rel32UsingJumpStub((INT32 *)(p + rxOffset), (PCODE)DynamicHelperArgsStub);
 #else
-    *(INT32 *)p = rel32UsingJumpStub((INT32 *)p, target);
+    *(INT32 *)p = rel32UsingJumpStub((INT32 *)(p + rxOffset), target);
 #endif
     p += 4;
 
@@ -1596,9 +1600,9 @@ PCODE DynamicHelpers::CreateHelperWithTwoArgs(LoaderAllocator * pAllocator, TADD
 
     *p++ = X86_INSTR_JMP_REL32; // jmp rel32
 #ifdef UNIX_X86_ABI
-    *(INT32 *)p = rel32UsingJumpStub((INT32 *)p, (PCODE)DynamicHelperArgsStub);
+    *(INT32 *)p = rel32UsingJumpStub((INT32 *)(p + rxOffset), (PCODE)DynamicHelperArgsStub);
 #else
-    *(INT32 *)p = rel32UsingJumpStub((INT32 *)p, target);
+    *(INT32 *)p = rel32UsingJumpStub((INT32 *)(p + rxOffset), target);
 #endif
     p += 4;
 
@@ -1630,7 +1634,7 @@ PCODE DynamicHelpers::CreateDictionaryLookupHelper(LoaderAllocator * pAllocator,
         // ecx contains the generic context parameter
         // mov edx,pArgs
         // jmp helperAddress
-        EmitHelperWithArg(p, pAllocator, (TADDR)pArgs, helperAddress);
+        EmitHelperWithArg(p, rxOffset, pAllocator, (TADDR)pArgs, helperAddress);
 
         END_DYNAMIC_HELPER_EMIT();
     }
@@ -1707,7 +1711,7 @@ PCODE DynamicHelpers::CreateDictionaryLookupHelper(LoaderAllocator * pAllocator,
 
                 // mov edx,pArgs
                 // jmp helperAddress
-                EmitHelperWithArg(p, pAllocator, (TADDR)pArgs, helperAddress);
+                EmitHelperWithArg(p, rxOffset, pAllocator, (TADDR)pArgs, helperAddress);
             }
         }
 

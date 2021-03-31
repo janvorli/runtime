@@ -59,7 +59,6 @@
 //-------------------------------------------------------------------------
 class  InstructionFormat;
 class  Stub;
-class  InterceptStub;
 class  CheckDuplicatedStructLayouts;
 class  CodeBasedStubCache;
 struct  CodeLabel;
@@ -724,7 +723,7 @@ class Stub
         //-------------------------------------------------------------------
         // This creates stubs.
         //-------------------------------------------------------------------
-        static Stub* NewStub(LoaderHeap *pLoaderHeap, UINT numCodeBytes,
+        static Stub *NewStub(LoaderHeap *pLoaderHeap, UINT numCodeBytes,
                              DWORD flags = 0
 #ifdef STUBLINKER_GENERATES_UNWIND_INFO
                              , UINT nUnwindInfoSize = 0

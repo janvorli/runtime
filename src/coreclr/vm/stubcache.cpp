@@ -64,8 +64,6 @@ StubCacheBase::~StubCacheBase()
     }
 }
 
-
-
 //---------------------------------------------------------
 // Returns the equivalent hashed Stub, creating a new hash
 // entry if necessary. If the latter, will call out to CompileStub.
@@ -76,7 +74,7 @@ StubCacheBase::~StubCacheBase()
 //---------------------------------------------------------
 Stub *StubCacheBase::Canonicalize(const BYTE * pRawStub)
 {
-    CONTRACT (Stub*)
+    CONTRACT (Stub *)
     {
         STANDARD_VM_CHECK;
         POSTCONDITION(CheckPointer(RETVAL, NULL_OK));
@@ -84,7 +82,7 @@ Stub *StubCacheBase::Canonicalize(const BYTE * pRawStub)
     CONTRACT_END;
 
     STUBHASHENTRY *phe = NULL;
-
+    
     {
         CrstHolder ch(&m_crst);
 
@@ -92,13 +90,12 @@ Stub *StubCacheBase::Canonicalize(const BYTE * pRawStub)
         phe = (STUBHASHENTRY*)Find((LPVOID)pRawStub);
         if (phe)
         {
-            StubHolder<Stub> pstub;
-            pstub = phe->m_pStub;
+            Stub* pstub = phe->m_pStub;
 
+            ExecutableWriterHolder<Stub> stubHolder(pstub, sizeof(Stub));
             // IncRef as we're returning a reference to our caller.
-            pstub->IncRef();
+            stubHolder.GetRW()->IncRef();
 
-            pstub.SuppressRelease();
             RETURN pstub;
         }
     }
@@ -112,8 +109,8 @@ Stub *StubCacheBase::Canonicalize(const BYTE * pRawStub)
     // and link up the stub.
     CodeLabel *plabel = psl->EmitNewCodeLabel();
     psl->EmitBytes(pRawStub, Length(pRawStub));
-    StubHolder<Stub> pstub;
-    pstub = psl->Link(m_heap);
+    StubHolder<Stub> pstub = sl.Link(m_heap);
+
     UINT32 offset = psl->GetLabelOffset(plabel);
 
     if (offset > 0xffff)
@@ -146,15 +143,21 @@ Stub *StubCacheBase::Canonicalize(const BYTE * pRawStub)
 
                 //Use the previously created stub
                 // This will DecRef the new stub for us.
+                // TODO: Free the pstub!
+
                 pstub = phe->m_pStub;
             }
             // IncRef so that caller has firm ownership of stub.
-            pstub->IncRef();
+            ExecutableWriterHolder<Stub> stubHolder(pstub, sizeof(Stub));
+            stubHolder.GetRW()->IncRef();
         }
     }
 
     if (!phe)
     {
+        // TODO: need to free the stub?
+
+        // 
         // Couldn't grow hash table due to lack of memory.
         COMPlusThrowOM();
     }

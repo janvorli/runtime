@@ -1137,7 +1137,8 @@ void LoaderAllocator::Init(BaseDomain *pDomain, BYTE *pExecutableHeapMemory)
     _ASSERTE(dwTotalReserveMemSize <= VIRTUAL_ALLOC_RESERVE_GRANULARITY);
 #endif
 
-    BYTE * initReservedMem = ClrVirtualAllocExecutable(dwTotalReserveMemSize, MEM_RESERVE, PAGE_NOACCESS);
+    //BYTE * initReservedMem = ClrVirtualAllocExecutable(dwTotalReserveMemSize, MEM_RESERVE, PAGE_NOACCESS);
+    BYTE * initReservedMem = (BYTE*)DoubleMappedAllocator::Instance()->Reserve(dwTotalReserveMemSize);
 
     m_InitialReservedMemForLoaderHeaps = initReservedMem;
 

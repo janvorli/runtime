@@ -844,7 +844,9 @@ Stub *StubLinker::Link(LoaderHeap *pHeap, DWORD flags)
                 );
         ASSERT(pStub != NULL);
 
-        bool fSuccess; fSuccess = EmitStub(pStub, globalsize, pHeap);
+        // TODO: is sizeof(Stub) correct?
+        ExecutableWriterHolder<Stub> stubHolder(pStub, sizeof(Stub));
+        bool fSuccess = EmitStub(stubHolder.GetRW(), globalsize, pHeap);
 
 #ifdef STUBLINKER_GENERATES_UNWIND_INFO
         if (fSuccess)
@@ -1100,7 +1102,7 @@ bool StubLinker::EmitStub(Stub* pStub, int globalsize, LoaderHeap* pHeap)
         FlushInstructionCache(GetCurrentProcess(), pCode, globalsize);
     }
 
-    _ASSERTE(m_fDataOnly || DbgIsExecutable(pCode, globalsize));
+    //_ASSERTE(m_fDataOnly || DbgIsExecutable(pCode, globalsize));
 
     return true;
 }
@@ -2006,7 +2008,8 @@ VOID Stub::DeleteStub()
 #endif
 
 #ifndef TARGET_UNIX
-        DeleteExecutable((BYTE*)GetAllocationBase());
+//        DeleteExecutable((BYTE*)GetAllocationBase());
+        delete [] (BYTE*)GetAllocationBase();
 #else
         delete [] (BYTE*)GetAllocationBase();
 #endif
@@ -2045,7 +2048,7 @@ TADDR Stub::GetAllocationBase()
     return info - cbPrefix;
 }
 
-Stub* Stub::NewStub(PTR_VOID pCode, DWORD flags)
+Stub *Stub::NewStub(PTR_VOID pCode, DWORD flags)
 {
     CONTRACTL
     {
@@ -2054,9 +2057,7 @@ Stub* Stub::NewStub(PTR_VOID pCode, DWORD flags)
     }
     CONTRACTL_END;
 
-    Stub* pStub = NewStub(NULL, 0, flags | NEWSTUB_FL_EXTERNAL);
-    _ASSERTE(pStub->HasExternalEntryPoint());
-
+    Stub *pStub = NewStub(NULL, 0, flags | NEWSTUB_FL_EXTERNAL);
     *(PTR_VOID *)(pStub + 1) = pCode;
 
     return pStub;
@@ -2065,7 +2066,7 @@ Stub* Stub::NewStub(PTR_VOID pCode, DWORD flags)
 //-------------------------------------------------------------------
 // Stub allocation done here.
 //-------------------------------------------------------------------
-/*static*/ Stub* Stub::NewStub(
+/*static*/ Stub *Stub::NewStub(
         LoaderHeap *pHeap,
         UINT numCodeBytes,
         DWORD flags
@@ -2080,6 +2081,11 @@ Stub* Stub::NewStub(PTR_VOID pCode, DWORD flags)
         GC_NOTRIGGER;
     }
     CONTRACTL_END;
+
+    if (flags & NEWSTUB_FL_EXTERNAL)
+    {
+        _ASSERTE(pHeap == NULL);
+    }
 
 #ifdef STUBLINKER_GENERATES_UNWIND_INFO
     _ASSERTE(!nUnwindInfoSize || !pHeap || pHeap->m_fPermitStubsWithUnwindInfo);
@@ -2111,25 +2117,42 @@ Stub* Stub::NewStub(PTR_VOID pCode, DWORD flags)
     size_t totalSize = size.Value();
 
     BYTE *pBlock;
+
+    // TODO: reorder stuff so that we don't need this check twice
     if (pHeap == NULL)
     {
 #ifndef TARGET_UNIX
-        pBlock = new (executable) BYTE[totalSize];
+        // TODO: would it make sense to make it closer to the code?
+        pBlock = new BYTE[totalSize]; //new (executable) BYTE[totalSize];
 #else
         pBlock = new BYTE[totalSize];
 #endif
     }
     else
     {
-        pBlock = (BYTE*)(void*) pHeap->AllocAlignedMem(totalSize, CODE_SIZE_ALIGN);
+        TaggedMemAllocPtr ptr = pHeap->AllocAlignedMem(totalSize, CODE_SIZE_ALIGN);
+        pBlock = (BYTE*)(void*)ptr;
         flags |= NEWSTUB_FL_LOADERHEAP;
     }
 
-    // Make sure that the payload of the stub is aligned
-    Stub* pStub = (Stub*)((pBlock + totalSize) -
-        (sizeof(Stub) + ((flags & NEWSTUB_FL_EXTERNAL) ? sizeof(PTR_PCODE) : numCodeBytes)));
+    size_t stubPayloadOffset = totalSize -
+        (sizeof(Stub) + ((flags & NEWSTUB_FL_EXTERNAL) ? sizeof(PTR_PCODE) : numCodeBytes));
 
-    pStub->SetupStub(
+    // Make sure that the payload of the stub is aligned
+    Stub* pStubRX = (Stub*)(pBlock + stubPayloadOffset);
+    Stub* pStubRW;
+    ExecutableWriterHolder<Stub> stubHolder;
+
+    if (pHeap == NULL)
+    {
+        pStubRW = pStubRX;
+    }
+    else
+    {
+        stubHolder = ExecutableWriterHolder<Stub>(pStubRX, sizeof(Stub));
+        pStubRW = stubHolder.GetRW();
+    }
+    pStubRW->SetupStub(
             numCodeBytes,
             flags
 #ifdef STUBLINKER_GENERATES_UNWIND_INFO
@@ -2137,9 +2160,9 @@ Stub* Stub::NewStub(PTR_VOID pCode, DWORD flags)
 #endif
             );
 
-    _ASSERTE((BYTE *)pStub->GetAllocationBase() == pBlock);
+    _ASSERTE((BYTE *)pStubRX->GetAllocationBase() == pBlock);
 
-    return pStub;
+    return pStubRX;
 }
 
 void Stub::SetupStub(int numCodeBytes, DWORD flags

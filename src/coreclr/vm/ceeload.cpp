@@ -6328,14 +6328,19 @@ void Module::FixupVTables()
                     LOG((LF_INTEROP, LL_INFO10, "[0x%p] <-- VTable  thunk for \"%s\" (pMD = 0x%p)\n",
                         (UINT_PTR)&(pPointers[iMethod]), pMD->m_pszDebugMethodName, pMD));
 
-                    UMEntryThunk *pUMEntryThunk = (UMEntryThunk*)(void*)(GetDllThunkHeap()->AllocAlignedMem(sizeof(UMEntryThunk), CODE_SIZE_ALIGN)); // UMEntryThunk contains code
-                    FillMemory(pUMEntryThunk, sizeof(*pUMEntryThunk), 0);
+                    TaggedMemAllocPtr umEntryThunk = (GetDllThunkHeap()->AllocAlignedMem(sizeof(UMEntryThunk), CODE_SIZE_ALIGN)); // UMEntryThunk contains code
+                    UMEntryThunk *pUMEntryThunk =  (UMEntryThunk*)(void*)umEntryThunk;
+                    ExecutableWriterHolder<UMEntryThunk> uMEntryThunkHolder(pUMEntryThunk, sizeof(UMEntryThunk));
+                    FillMemory(uMEntryThunkHolder.GetRW(), sizeof(UMEntryThunk), 0);
 
-                    UMThunkMarshInfo *pUMThunkMarshInfo = (UMThunkMarshInfo*)(void*)(GetThunkHeap()->AllocAlignedMem(sizeof(UMThunkMarshInfo), CODE_SIZE_ALIGN));
-                    FillMemory(pUMThunkMarshInfo, sizeof(*pUMThunkMarshInfo), 0);
+                    TaggedMemAllocPtr mem = (GetThunkHeap()->AllocAlignedMem(sizeof(UMThunkMarshInfo), CODE_SIZE_ALIGN));
+                    UMThunkMarshInfo *pUMThunkMarshInfo = (UMThunkMarshInfo*)(void*)mem;
+                    ExecutableWriterHolder<UMThunkMarshInfo> uMThunkMarshInfoHolder(pUMThunkMarshInfo, sizeof(UMThunkMarshInfo));
+                    FillMemory(uMThunkMarshInfoHolder.GetRW(), sizeof(UMThunkMarshInfo), 0);
 
-                    pUMThunkMarshInfo->LoadTimeInit(pMD);
-                    pUMEntryThunk->LoadTimeInit(NULL, NULL, pUMThunkMarshInfo, pMD);
+                    uMThunkMarshInfoHolder.GetRW()->LoadTimeInit(pMD);
+                    uMEntryThunkHolder.GetRW()->LoadTimeInit(pUMEntryThunk, NULL, NULL, pUMThunkMarshInfo, pMD);
+
                     SetTargetForVTableEntry(hInstThis, (BYTE **)&pPointers[iMethod], (BYTE *)pUMEntryThunk->GetCode());
 
                     pData->MarkMethodFixedUp(iFixup, iMethod);

@@ -64,7 +64,7 @@ public:
         return pThunk;
     }
 
-    void AddToList(UMEntryThunk *pThunk)
+    void AddToList(UMEntryThunk *pThunk, UMEntryThunk *pThunkRW)
     {
         CONTRACTL
         {
@@ -85,11 +85,12 @@ public:
         }
         else
         {
-            m_pTail->m_pNextFreeThunk = pThunk;
+            ExecutableWriterHolder<UMEntryThunk> tailThunkHolder(m_pTail, sizeof(UMEntryThunk));
+            tailThunkHolder.GetRW()->m_pNextFreeThunk = pThunk;
             m_pTail = pThunk;
         }
 
-        pThunk->m_pNextFreeThunk = NULL;
+        pThunkRW->m_pNextFreeThunk = NULL;
 
         ++m_count;
     }
@@ -162,6 +163,7 @@ UMEntryThunk *UMEntryThunkCache::GetUMEntryThunk(MethodDesc *pMD)
         auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
         pThunk = UMEntryThunk::CreateUMEntryThunk();
+
         Holder<UMEntryThunk *, DoNothing, UMEntryThunk::FreeUMEntryThunk> umHolder;
         umHolder.Assign(pThunk);
 
@@ -170,7 +172,9 @@ UMEntryThunk *UMEntryThunkCache::GetUMEntryThunk(MethodDesc *pMD)
         miHolder.Assign(pMarshInfo);
 
         pMarshInfo->LoadTimeInit(pMD);
-        pThunk->LoadTimeInit(NULL, NULL, pMarshInfo, pMD);
+
+        ExecutableWriterHolder<UMEntryThunk> thunkHolder(pThunk, sizeof(UMEntryThunk));
+        thunkHolder.GetRW()->LoadTimeInit(pThunk, NULL, NULL, pMarshInfo, pMD);
 
         // add it to the cache
         CacheElement element;
@@ -284,8 +288,8 @@ void STDCALL UMEntryThunk::DoRunTimeInit(UMEntryThunk* pUMEntryThunk)
 #if defined(HOST_OSX) && defined(HOST_ARM64)
         auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
-
-        pUMEntryThunk->RunTimeInit();
+        ExecutableWriterHolder<UMEntryThunk> uMEntryThunkHolder(pUMEntryThunk, sizeof(UMEntryThunk));
+        uMEntryThunkHolder.GetRW()->RunTimeInit(pUMEntryThunk);
     }
 
     UNINSTALL_UNWIND_AND_CONTINUE_HANDLER;
@@ -304,14 +308,15 @@ UMEntryThunk* UMEntryThunk::CreateUMEntryThunk()
     }
     CONTRACT_END;
 
-    UMEntryThunk * p;
+    UMEntryThunk * pThunk = s_thunkFreeList.GetUMEntryThunk();
 
-    p = s_thunkFreeList.GetUMEntryThunk();
+    if (pThunk == NULL)
+    {
+        TaggedMemAllocPtr m = SystemDomain::GetGlobalLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(sizeof(UMEntryThunk)));
+        pThunk = (UMEntryThunk*)(void*)m;
+    }
 
-    if (p == NULL)
-        p = (UMEntryThunk *)(void *)SystemDomain::GetGlobalLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(sizeof(UMEntryThunk)));
-
-    RETURN p;
+    RETURN pThunk;
 }
 
 void UMEntryThunk::Terminate()
@@ -323,7 +328,8 @@ void UMEntryThunk::Terminate()
     }
     CONTRACTL_END;
 
-    m_code.Poison();
+    ExecutableWriterHolder<UMEntryThunk> thunkHolder(this, sizeof(UMEntryThunk));
+    thunkHolder.GetRW()->m_code.Poison();
 
     if (GetObjectHandle())
     {
@@ -332,10 +338,9 @@ void UMEntryThunk::Terminate()
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
 
         DestroyLongWeakHandle(GetObjectHandle());
-        m_pObjectHandle = 0;
+        thunkHolder.GetRW()->m_pObjectHandle = 0;
     }
-
-    s_thunkFreeList.AddToList(this);
+    s_thunkFreeList.AddToList(this, thunkHolder.GetRW());
 }
 
 VOID UMEntryThunk::FreeUMEntryThunk(UMEntryThunk* p)

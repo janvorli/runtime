@@ -1087,6 +1087,7 @@ public:
     {
         LIMITED_METHOD_CONTRACT;
         _ASSERTE(VirtualCallStubManager::isLookupStubStatic((PCODE)s));
+
         stub = (LookupStub*) s;
     }
 

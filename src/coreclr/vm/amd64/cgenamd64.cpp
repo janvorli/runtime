@@ -508,7 +508,7 @@ void emitJump(LPBYTE pBuffer, LPVOID target)
     pBuffer[10] = 0xFF;
     pBuffer[11] = 0xE0;
 
-    _ASSERTE(DbgIsExecutable(pBuffer, 12));
+    //_ASSERTE(DbgIsExecutable(pBuffer, 12));
 }
 
 void UMEntryThunkCode::Encode(BYTE* pTargetCode, void* pvSecretParam)
@@ -542,7 +542,7 @@ void UMEntryThunkCode::Encode(BYTE* pTargetCode, void* pvSecretParam)
     m_jmpRAX[1]  = 0xFF;
     m_jmpRAX[2]  = 0xE0;
 
-    _ASSERTE(DbgIsExecutable(&m_movR10[0], &m_jmpRAX[3]-&m_movR10[0]));
+//    _ASSERTE(DbgIsExecutable(&m_movR10[0], &m_jmpRAX[3]-&m_movR10[0]));
 }
 
 void UMEntryThunkCode::Poison()
@@ -647,7 +647,7 @@ INT32 rel32UsingJumpStub(INT32 UNALIGNED * pRel32, PCODE target, MethodDesc *pMe
     return static_cast<INT32>(offset);
 }
 
-INT32 rel32UsingPreallocatedJumpStub(INT32 UNALIGNED * pRel32, PCODE target, PCODE jumpStubAddr, bool emitJump)
+INT32 rel32UsingPreallocatedJumpStub(INT32 UNALIGNED * pRel32, PCODE target, PCODE jumpStubAddrRX, PCODE jumpStubAddrRW, bool emitJump)
 {
     CONTRACTL
     {
@@ -657,12 +657,12 @@ INT32 rel32UsingPreallocatedJumpStub(INT32 UNALIGNED * pRel32, PCODE target, PCO
     CONTRACTL_END;
 
     TADDR baseAddr = (TADDR)pRel32 + 4;
-    _ASSERTE(FitsInI4(jumpStubAddr - baseAddr));
+    _ASSERTE(FitsInI4(jumpStubAddrRX - baseAddr));
 
     INT_PTR offset = target - baseAddr;
     if (!FitsInI4(offset) INDEBUG(|| PEDecoder::GetForceRelocs()))
     {
-        offset = jumpStubAddr - baseAddr;
+        offset = jumpStubAddrRX - baseAddr;
         if (!FitsInI4(offset))
         {
             _ASSERTE(!"jump stub was not in expected range");
@@ -671,11 +671,11 @@ INT32 rel32UsingPreallocatedJumpStub(INT32 UNALIGNED * pRel32, PCODE target, PCO
 
         if (emitJump)
         {
-            emitBackToBackJump((LPBYTE)jumpStubAddr, (LPVOID)target);
+            emitBackToBackJump((LPBYTE)jumpStubAddrRW, (LPVOID)target);
         }
         else
         {
-            _ASSERTE(decodeBackToBackJump(jumpStubAddr) == target);
+            _ASSERTE(decodeBackToBackJump(jumpStubAddrRX) == target);
         }
     }
 
@@ -859,6 +859,7 @@ EXTERN_C PCODE VirtualMethodFixupWorker(TransitionBlock * pTransitionBlock, CORC
             BYTE* pNewValue = (BYTE*)&newValue;
             pNewValue[0] = X86_INSTR_JMP_REL32;
 
+            // TODO: fix this
             *(INT32 *)(pNewValue+1) = rel32UsingJumpStub((INT32*)(&pThunk->callJmp[1]), pCode, pMD, NULL);
 
             _ASSERTE(IS_ALIGNED(pThunk, sizeof(INT64)));
@@ -888,14 +889,18 @@ EXTERN_C PCODE VirtualMethodFixupWorker(TransitionBlock * pTransitionBlock, CORC
 #define BEGIN_DYNAMIC_HELPER_EMIT(size) \
     SIZE_T cb = size; \
     SIZE_T cbAligned = ALIGN_UP(cb, DYNAMIC_HELPER_ALIGNMENT); \
-    BYTE * pStart = (BYTE *)(void *)pAllocator->GetDynamicHelpersHeap()->AllocAlignedMem(cbAligned, DYNAMIC_HELPER_ALIGNMENT); \
+    TaggedMemAllocPtr start = pAllocator->GetDynamicHelpersHeap()->AllocAlignedMem(cbAligned, DYNAMIC_HELPER_ALIGNMENT); \
+    BYTE * pStartRX = (BYTE *)(void*)start; \
+    ExecutableWriterHolder<BYTE> startHolder(pStartRX, cbAligned); \
+    BYTE * pStart = startHolder.GetRW(); \
+    size_t rxOffset = pStartRX - pStart; \
     BYTE * p = pStart;
 
 #define END_DYNAMIC_HELPER_EMIT() \
     _ASSERTE(pStart + cb == p); \
     while (p < pStart + cbAligned) *p++ = X86_INSTR_INT3; \
-    ClrFlushInstructionCache(pStart, cbAligned); \
-    return (PCODE)pStart
+    ClrFlushInstructionCache(pStartRX, cbAligned); \
+    return (PCODE)pStartRX
 
 PCODE DynamicHelpers::CreateHelper(LoaderAllocator * pAllocator, TADDR arg, PCODE target)
 {
@@ -913,13 +918,13 @@ PCODE DynamicHelpers::CreateHelper(LoaderAllocator * pAllocator, TADDR arg, PCOD
     p += 8;
 
     *p++ = X86_INSTR_JMP_REL32; // jmp rel32
-    *(INT32 *)p = rel32UsingJumpStub((INT32 *)p, target, NULL, pAllocator);
+    *(INT32 *)p = rel32UsingJumpStub((INT32 *)(p + rxOffset), target, NULL, pAllocator);
     p += 4;
 
     END_DYNAMIC_HELPER_EMIT();
 }
 
-void DynamicHelpers::EmitHelperWithArg(BYTE*& p, LoaderAllocator * pAllocator, TADDR arg, PCODE target)
+void DynamicHelpers::EmitHelperWithArg(BYTE*& p, size_t rxOffset, LoaderAllocator * pAllocator, TADDR arg, PCODE target)
 {
     CONTRACTL
     {
@@ -940,7 +945,7 @@ void DynamicHelpers::EmitHelperWithArg(BYTE*& p, LoaderAllocator * pAllocator, T
     p += 8;
 
     *p++ = X86_INSTR_JMP_REL32; // jmp rel32
-    *(INT32 *)p = rel32UsingJumpStub((INT32 *)p, target, NULL, pAllocator);
+    *(INT32 *)p = rel32UsingJumpStub((INT32 *)(p + rxOffset), target, NULL, pAllocator);
     p += 4;
 }
 
@@ -948,7 +953,7 @@ PCODE DynamicHelpers::CreateHelperWithArg(LoaderAllocator * pAllocator, TADDR ar
 {
     BEGIN_DYNAMIC_HELPER_EMIT(15);
 
-    EmitHelperWithArg(p, pAllocator, arg, target);
+    EmitHelperWithArg(p, rxOffset, pAllocator, arg, target);
 
     END_DYNAMIC_HELPER_EMIT();
 }
@@ -976,7 +981,7 @@ PCODE DynamicHelpers::CreateHelper(LoaderAllocator * pAllocator, TADDR arg, TADD
     p += 8;
 
     *p++ = X86_INSTR_JMP_REL32; // jmp rel32
-    *(INT32 *)p = rel32UsingJumpStub((INT32 *)p, target, NULL, pAllocator);
+    *(INT32 *)p = rel32UsingJumpStub((INT32 *)(p + rxOffset), target, NULL, pAllocator);
     p += 4;
 
     END_DYNAMIC_HELPER_EMIT();
@@ -1005,7 +1010,7 @@ PCODE DynamicHelpers::CreateHelperArgMove(LoaderAllocator * pAllocator, TADDR ar
     p += 8;
 
     *p++ = X86_INSTR_JMP_REL32; // jmp rel32
-    *(INT32 *)p = rel32UsingJumpStub((INT32 *)p, target, NULL, pAllocator);
+    *(INT32 *)p = rel32UsingJumpStub((INT32 *)(p + rxOffset), target, NULL, pAllocator);
     p += 4;
 
     END_DYNAMIC_HELPER_EMIT();
@@ -1071,7 +1076,7 @@ PCODE DynamicHelpers::CreateHelperWithTwoArgs(LoaderAllocator * pAllocator, TADD
     p += 8;
 
     *p++ = X86_INSTR_JMP_REL32; // jmp rel32
-    *(INT32 *)p = rel32UsingJumpStub((INT32 *)p, target, NULL, pAllocator);
+    *(INT32 *)p = rel32UsingJumpStub((INT32 *)(p + rxOffset), target, NULL, pAllocator);
     p += 4;
 
     END_DYNAMIC_HELPER_EMIT();
@@ -1100,7 +1105,7 @@ PCODE DynamicHelpers::CreateHelperWithTwoArgs(LoaderAllocator * pAllocator, TADD
     p += 8;
 
     *p++ = X86_INSTR_JMP_REL32; // jmp rel32
-    *(INT32 *)p = rel32UsingJumpStub((INT32 *)p, target, NULL, pAllocator);
+    *(INT32 *)p = rel32UsingJumpStub((INT32 *)(p + rxOffset), target, NULL, pAllocator);
     p += 4;
 
     END_DYNAMIC_HELPER_EMIT();
@@ -1116,10 +1121,12 @@ PCODE DynamicHelpers::CreateDictionaryLookupHelper(LoaderAllocator * pAllocator,
         GetEEFuncEntryPoint(JIT_GenericHandleMethodWithSlotAndModule) :
         GetEEFuncEntryPoint(JIT_GenericHandleClassWithSlotAndModule));
 
-    GenericHandleArgs * pArgs = (GenericHandleArgs *)(void *)pAllocator->GetDynamicHelpersHeap()->AllocAlignedMem(sizeof(GenericHandleArgs), DYNAMIC_HELPER_ALIGNMENT);
-    pArgs->dictionaryIndexAndSlot = dictionaryIndexAndSlot;
-    pArgs->signature = pLookup->signature;
-    pArgs->module = (CORINFO_MODULE_HANDLE)pModule;
+    TaggedMemAllocPtr mem = pAllocator->GetDynamicHelpersHeap()->AllocAlignedMem(sizeof(GenericHandleArgs), DYNAMIC_HELPER_ALIGNMENT);
+    GenericHandleArgs * pArgs = (GenericHandleArgs *)(void*)mem;
+    ExecutableWriterHolder<GenericHandleArgs> argsHolder(pArgs, sizeof(GenericHandleArgs));
+    argsHolder.GetRW()->dictionaryIndexAndSlot = dictionaryIndexAndSlot;
+    argsHolder.GetRW()->signature = pLookup->signature;
+    argsHolder.GetRW()->module = (CORINFO_MODULE_HANDLE)pModule;
 
     WORD slotOffset = (WORD)(dictionaryIndexAndSlot & 0xFFFF) * sizeof(Dictionary*);
 
@@ -1131,7 +1138,7 @@ PCODE DynamicHelpers::CreateDictionaryLookupHelper(LoaderAllocator * pAllocator,
         // rcx/rdi contains the generic context parameter
         // mov rdx/rsi,pArgs
         // jmp helperAddress
-        EmitHelperWithArg(p, pAllocator, (TADDR)pArgs, helperAddress);
+        EmitHelperWithArg(p, rxOffset, pAllocator, (TADDR)pArgs, helperAddress);
 
         END_DYNAMIC_HELPER_EMIT();
     }
@@ -1238,7 +1245,7 @@ PCODE DynamicHelpers::CreateDictionaryLookupHelper(LoaderAllocator * pAllocator,
 
                 // mov rdx|rsi,pArgs
                 // jmp helperAddress
-                EmitHelperWithArg(p, pAllocator, (TADDR)pArgs, helperAddress);
+                EmitHelperWithArg(p, rxOffset, pAllocator, (TADDR)pArgs, helperAddress);
             }
         }
 

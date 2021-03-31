@@ -7,12 +7,68 @@
 #include "pedecoder.h"
 #define DONOT_DEFINE_ETW_CALLBACK
 #include "eventtracebase.h"
+#include "stacktrace.h"
 
 #define LHF_EXECUTABLE  0x1
 
 #ifndef DACCESS_COMPILE
 
 INDEBUG(DWORD UnlockedLoaderHeap::s_dwNumInstancesOfLoaderHeaps = 0;)
+
+volatile DoubleMappedAllocator* DoubleMappedAllocator::g_instance = NULL;
+    size_t DoubleMappedAllocator::g_rwMaps = 0;
+    size_t DoubleMappedAllocator::g_reusedRwMaps = 0;
+    size_t DoubleMappedAllocator::g_rwUnmaps = 0;
+    size_t DoubleMappedAllocator::g_failedRwUnmaps = 0;
+    size_t DoubleMappedAllocator::g_failedRwMaps = 0;
+    size_t DoubleMappedAllocator::g_allocCalls = 0;
+    size_t DoubleMappedAllocator::g_reserveCalls = 0;
+    size_t DoubleMappedAllocator::g_reserveAtCalls = 0;
+    size_t DoubleMappedAllocator::g_mapReusePossibility = 0;
+    size_t DoubleMappedAllocator::g_maxRWMappingCount = 0;
+    size_t DoubleMappedAllocator::g_RWMappingCount = 0;
+    size_t DoubleMappedAllocator::g_maxReusedRwMapsRefcount = 0;
+
+void FillSymbolInfo
+(
+SYM_INFO *psi,
+DWORD_PTR dwAddr
+);
+
+void MagicInit();
+
+void DoubleMappedAllocator::ReportState()
+{
+#ifdef ENABLE_DOUBLE_MAPPING
+#ifndef CROSSGEN_COMPILE
+#ifndef DACCESS_COMPILE
+    printf("Alloc calls: %zd\n", g_allocCalls);
+    printf("Reserve calls: %zd\n", g_reserveCalls);
+    printf("Reserve-at calls: %zd\n", g_reserveAtCalls);
+    printf("RW Maps: %zd\n", g_rwMaps);
+    printf("Reused RW Maps: %zd\n", g_reusedRwMaps);
+    printf("Max reused RW Maps refcount: %zd\n", g_maxReusedRwMapsRefcount);
+    printf("RW Unmaps: %zd\n", g_rwUnmaps);
+    printf("Failed RW Maps: %zd\n", g_failedRwMaps);
+    printf("Failed RW Unmaps: %zd\n", g_failedRwUnmaps);
+    printf("Map reuse possibility: %zd\n", g_mapReusePossibility);
+    printf("RW mappings count: %zd\n", g_RWMappingCount);
+    printf("Max RW mappings count: %zd\n", g_maxRWMappingCount);
+
+    printf("\n");
+    printf("MapRW users:\n");
+
+    MagicInit();
+    for (UsersListEntry* user = m_mapUsers; user != NULL; user = user->next)
+    {
+        SYM_INFO psi;
+        FillSymbolInfo(&psi, (DWORD_PTR)user->user);
+        printf(" %p - count %zd reuseCount %zd  %s\n", user->user, user->count, user->reuseCount, psi.achSymbol);
+    }
+#endif
+#endif
+#endif
+}
 
 #ifdef RANDOMIZE_ALLOC
 #include <time.h>
@@ -945,6 +1001,13 @@ UnlockedLoaderHeap::UnlockedLoaderHeap(DWORD dwReserveBlockSize,
 
     if (dwReservedRegionAddress != NULL && dwReservedRegionSize > 0)
     {
+#ifdef _DEBUG        
+        MEMORY_BASIC_INFORMATION mbi;
+        if (ClrVirtualQuery((void *)dwReservedRegionAddress, &mbi, sizeof(mbi)))
+        {
+            _ASSERTE((mbi.Protect & PAGE_EXECUTE_READWRITE) == 0);
+        }
+#endif        
         m_reservedBlock.Init((void *)dwReservedRegionAddress, dwReservedRegionSize, FALSE);
     }
 }
@@ -978,17 +1041,31 @@ UnlockedLoaderHeap::~UnlockedLoaderHeap()
 
         if (fReleaseMemory)
         {
-            BOOL fSuccess;
-            fSuccess = ClrVirtualFree(pVirtualAddress, 0, MEM_RELEASE);
-            _ASSERTE(fSuccess);
+            if (m_Options & LHF_EXECUTABLE)
+            {
+                // TODO: how do we release the executable memory?
+            }
+            else
+            {
+                BOOL fSuccess;
+                fSuccess = ClrVirtualFree(pVirtualAddress, 0, MEM_RELEASE);
+                _ASSERTE(fSuccess);
+            }
         }
     }
 
     if (m_reservedBlock.m_fReleaseMemory)
     {
-        BOOL fSuccess;
-        fSuccess = ClrVirtualFree(m_reservedBlock.pVirtualAddress, 0, MEM_RELEASE);
-        _ASSERTE(fSuccess);
+        if (m_Options & LHF_EXECUTABLE)
+        {
+            // TODO: how do we release the executable memory?
+        }
+        else
+        {
+            BOOL fSuccess;
+            fSuccess = ClrVirtualFree(m_reservedBlock.pVirtualAddress, 0, MEM_RELEASE);
+            _ASSERTE(fSuccess);
+        }
     }
 
     INDEBUG(s_dwNumInstancesOfLoaderHeaps --;)
@@ -998,6 +1075,13 @@ void UnlockedLoaderHeap::UnlockedSetReservedRegion(BYTE* dwReservedRegionAddress
 {
     WRAPPER_NO_CONTRACT;
     _ASSERTE(m_reservedBlock.pVirtualAddress == NULL);
+#ifdef _DEBUG        
+        MEMORY_BASIC_INFORMATION mbi;
+        if (ClrVirtualQuery((void *)dwReservedRegionAddress, &mbi, sizeof(mbi)))
+        {
+            _ASSERTE((mbi.Protect & PAGE_EXECUTE_READWRITE) == 0);
+        }
+#endif        
     m_reservedBlock.Init((void *)dwReservedRegionAddress, dwReservedRegionSize, fReleaseMemory);
 }
 
@@ -1091,6 +1175,7 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
     {
         if (m_fExplicitControl)
         {
+            __debugbreak();
             return FALSE;
         }
 
@@ -1106,11 +1191,41 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
         // Reserve pages
         //
 
-        pData = ClrVirtualAllocExecutable(dwSizeToReserve, MEM_RESERVE, PAGE_NOACCESS);
-        if (pData == NULL)
+        //if (m_Options & LHF_EXECUTABLE)
         {
-            return FALSE;
+            // Reserve the memory for even non-executable stuff close to the executable code, as it has profound effect
+            // on e.g. a static variable access performance.
+            // TODO: we really don't need to get the memory from the DoubleMappedAllocator. We need to reserve the VM range.
+            // So it would be better to have a separate method out of the DoubleMappedAllocator that would call into the ReserveAt or 
+            // ClrVirtualAlloc based on the executability. Call it e.g. ReserveExecutableMemoryRange(size, bool isExec)
+            // or "ReserveCloseToExecutableMemory"
+            pData = DoubleMappedAllocator::Instance()->Reserve(dwSizeToReserve);
+            if (pData == NULL)
+            {
+                __debugbreak();
+                return FALSE;
+            }
+            // TODO: is this correct? Do we actually need two state flag - uncommit and release? Uncommit for the double mapped allocation
+            fReleaseMemory = FALSE;
         }
+        // else
+        // {
+        //     // TODO: or should it still use executable memory to ensure closer distance to code?
+        //     //pData = ClrVirtualAlloc(NULL, dwSizeToReserve, MEM_RESERVE, PAGE_NOACCESS);
+        //     //pData = ClrVirtualAllocExecutable(dwSizeToReserve, MEM_RESERVE, PAGE_NOACCESS);
+
+        //     if (pData == NULL)
+        //     {
+        //         __debugbreak();
+        //         return FALSE;
+        //     }
+        // }
+
+        // pData = ClrVirtualAllocExecutable(dwSizeToReserve, MEM_RESERVE, PAGE_NOACCESS);
+        // if (pData == NULL)
+        // {
+        //     return FALSE;
+        // }
     }
 
     // When the user passes in the reserved memory, the commit size is 0 and is adjusted to be the sizeof(LoaderHeap).
@@ -1123,19 +1238,26 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
     if (pData == NULL)
     {
         //_ASSERTE(!"Unable to ClrVirtualAlloc reserve in a loaderheap");
+        __debugbreak();
         return FALSE;
     }
 
     // Commit first set of pages, since it will contain the LoaderHeapBlock
+    void *pPrevPData = pData;
+#ifdef ENABLE_DOUBLE_MAPPING
+    void *pTemp = ClrVirtualAlloc(pData, dwSizeToCommit, MEM_COMMIT, (m_Options & LHF_EXECUTABLE) ? PAGE_EXECUTE_READ : PAGE_READWRITE);
+#else
     void *pTemp = ClrVirtualAlloc(pData, dwSizeToCommit, MEM_COMMIT, (m_Options & LHF_EXECUTABLE) ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE);
+#endif
     if (pTemp == NULL)
     {
         //_ASSERTE(!"Unable to ClrVirtualAlloc commit in a loaderheap");
 
         // Unable to commit - release pages
         if (fReleaseMemory)
-            ClrVirtualFree(pData, 0, MEM_RELEASE);
+            ClrVirtualFree(pData, 0, MEM_RELEASE); // TODO: is this correct for the double mapped memory too?
 
+        __debugbreak();
         return FALSE;
     }
 
@@ -1148,9 +1270,14 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
                                     (void *) this))
         {
 
-            if (fReleaseMemory)
-                ClrVirtualFree(pData, 0, MEM_RELEASE);
+            // TODO: what do we do in the double mapped memory world?
+            if (!(m_Options & LHF_EXECUTABLE))
+            {
+                if (fReleaseMemory)
+                    ClrVirtualFree(pData, 0, MEM_RELEASE);
+            }
 
+            __debugbreak();
             return FALSE;
         }
     }
@@ -1166,10 +1293,17 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
 
     pNewBlock = (LoaderHeapBlock *) pData;
 
-    pNewBlock->dwVirtualSize    = dwSizeToReserve;
-    pNewBlock->pVirtualAddress  = pData;
-    pNewBlock->pNext            = NULL;
-    pNewBlock->m_fReleaseMemory = fReleaseMemory;
+    ExecutableWriterHolder<LoaderHeapBlock> newBlockHolder(pNewBlock);
+
+    if ((m_Options & LHF_EXECUTABLE))
+    {
+        newBlockHolder = ExecutableWriterHolder<LoaderHeapBlock>(pNewBlock, sizeof(LoaderHeapBlock));
+    }
+
+    newBlockHolder.GetRW()->dwVirtualSize    = dwSizeToReserve;
+    newBlockHolder.GetRW()->pVirtualAddress  = pData;
+    newBlockHolder.GetRW()->pNext            = NULL;
+    newBlockHolder.GetRW()->m_fReleaseMemory = fReleaseMemory;
 
     LoaderHeapBlock *pCurBlock = m_pCurBlock;
 
@@ -1179,7 +1313,15 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
         pCurBlock = pCurBlock->pNext;
 
     if (pCurBlock != NULL)
-        m_pCurBlock->pNext = pNewBlock;
+    {
+        // TODO: BUG??? is it really m_pCurBlock and not pCurBlock? I believe it was a bug
+        ExecutableWriterHolder<LoaderHeapBlock> curBlockHolder(pCurBlock);
+        if ((m_Options & LHF_EXECUTABLE))
+        {
+            curBlockHolder = ExecutableWriterHolder<LoaderHeapBlock>(pCurBlock, sizeof(LoaderHeapBlock));
+        }
+        curBlockHolder.GetRW()->pNext = pNewBlock;
+    }
     else
         m_pFirstBlock = pNewBlock;
 
@@ -1221,9 +1363,16 @@ BOOL UnlockedLoaderHeap::GetMoreCommittedPages(size_t dwMinSize)
         dwSizeToCommit = ALIGN_UP(dwSizeToCommit, GetOsPageSize());
 
         // Yes, so commit the desired number of reserved pages
+#ifdef ENABLE_DOUBLE_MAPPING
+        void *pData = ClrVirtualAlloc(m_pPtrToEndOfCommittedRegion, dwSizeToCommit, MEM_COMMIT, (m_Options & LHF_EXECUTABLE) ? PAGE_EXECUTE_READ : PAGE_READWRITE);
+#else
         void *pData = ClrVirtualAlloc(m_pPtrToEndOfCommittedRegion, dwSizeToCommit, MEM_COMMIT, (m_Options & LHF_EXECUTABLE) ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE);
+#endif
         if (pData == NULL)
+        {
+            __debugbreak();
             return FALSE;
+        }
 
         m_dwTotalAlloc += dwSizeToCommit;
 
@@ -1338,8 +1487,13 @@ again:
         if (pData)
         {
 #ifdef _DEBUG
+            ExecutableWriterHolder<void> dataHolder(pData);
+            if (m_Options & LHF_EXECUTABLE)
+            {
+                dataHolder = ExecutableWriterHolder<void>(pData, dwSize);
+            }
 
-            BYTE *pAllocatedBytes = (BYTE *)pData;
+            BYTE *pAllocatedBytes = (BYTE *)dataHolder.GetRW();
 #if LOADER_HEAP_DEBUG_BOUNDARY > 0
             // Don't fill the memory we allocated - it is assumed to be zeroed - fill the memory after it
             memset(pAllocatedBytes + dwRequestedSize, 0xEE, LOADER_HEAP_DEBUG_BOUNDARY);
@@ -1352,7 +1506,7 @@ again:
 
             if (!m_fExplicitControl)
             {
-                LoaderHeapValidationTag *pTag = AllocMem_GetTag(pData, dwRequestedSize);
+                LoaderHeapValidationTag *pTag = AllocMem_GetTag(dataHolder.GetRW(), dwRequestedSize);
                 pTag->m_allocationType  = kAllocMem;
                 pTag->m_dwRequestedSize = dwRequestedSize;
                 pTag->m_szFile          = szFile;
@@ -1385,6 +1539,7 @@ again:
     if (GetMoreCommittedPages(dwSize))
         goto again;
 
+    __debugbreak();
     // We could not satisfy this allocation request
     RETURN NULL;
 }
@@ -1522,7 +1677,13 @@ void UnlockedLoaderHeap::UnlockedBackoutMem(void *pMem,
     {
         // Cool. This was the last block allocated. We can just undo the allocation instead
         // of going to the freelist.
-        memset(pMem, 0x00, dwSize); // Fill freed region with 0
+        // TODO: do this for executable heap only
+        ExecutableWriterHolder<void> memHolder(pMem);
+        if (m_Options & LHF_EXECUTABLE)
+        {
+            memHolder = ExecutableWriterHolder<void>(pMem, dwSize);
+        }
+        memset(memHolder.GetRW(), 0x00, dwSize); // Fill freed region with 0
         m_pAllocPtr = (BYTE*)pMem;
     }
     else
@@ -1630,11 +1791,16 @@ void *UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSiz
     size_t dwSize = AllocMem_TotalSize( cbAllocSize.Value(), this);
     m_pAllocPtr += dwSize;
 
-
     ((BYTE*&)pResult) += extra;
 
 #ifdef _DEBUG
-     BYTE *pAllocatedBytes = (BYTE *)pResult;
+    ExecutableWriterHolder<void> resultHolder(pResult);
+    if (m_Options & LHF_EXECUTABLE)
+    {
+        resultHolder = ExecutableWriterHolder<void>(pResult, dwSize - extra);
+    }
+
+     BYTE *pAllocatedBytes = (BYTE *)resultHolder.GetRW();
 #if LOADER_HEAP_DEBUG_BOUNDARY > 0
     // Don't fill the entire memory - we assume it is all zeroed -just the memory after our alloc
     memset(pAllocatedBytes + dwRequestedSize, 0xee, LOADER_HEAP_DEBUG_BOUNDARY);
@@ -1664,12 +1830,13 @@ void *UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSiz
 
     if (!m_fExplicitControl)
     {
-        LoaderHeapValidationTag *pTag = AllocMem_GetTag(((BYTE*)pResult) - extra, dwRequestedSize + extra);
+        LoaderHeapValidationTag *pTag = AllocMem_GetTag(((BYTE*)resultHolder.GetRW()) - extra, dwRequestedSize + extra);
         pTag->m_allocationType  = kAllocMem;
         pTag->m_dwRequestedSize = dwRequestedSize + extra;
         pTag->m_szFile          = szFile;
         pTag->m_lineNum         = lineNum;
     }
+
 #endif //_DEBUG
 
     if (pdwExtra)

@@ -667,10 +667,13 @@ void FixupPrecode::Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocator, int 
         }
 
         if (*(void**)GetBase() == NULL)
+        {
             *(void**)GetBase() = (BYTE*)pMD - (iMethodDescChunkIndex * MethodDesc::ALIGNMENT);
+            DoubleMappedAllocator::Instance()->UnmapRW(pBaseRW);
+        }
     }
 
-    _ASSERTE(GetMethodDesc() == (TADDR)pMD);
+    _ASSERTE(pPrecodeRX->GetMethodDesc() == (TADDR)pMD);
 
     if (pLoaderAllocator != NULL)
     {
@@ -1854,14 +1857,18 @@ void StubLinkerCPU::EmitCallManagedMethod(MethodDesc *pMD, BOOL fTailCall)
 #define BEGIN_DYNAMIC_HELPER_EMIT(size) \
     SIZE_T cb = size; \
     SIZE_T cbAligned = ALIGN_UP(cb, DYNAMIC_HELPER_ALIGNMENT); \
-    BYTE * pStart = (BYTE *)(void *)pAllocator->GetDynamicHelpersHeap()->AllocAlignedMem(cbAligned, DYNAMIC_HELPER_ALIGNMENT); \
+    TaggedMemAllocPtr start = pAllocator->GetDynamicHelpersHeap()->AllocAlignedMem(cbAligned, DYNAMIC_HELPER_ALIGNMENT); \
+    BYTE * pStartRX = (BYTE *)(void*)start; \
+    ExecutableWriterHolder<BYTE> startHolder(pStartRX, cbAligned); \
+    BYTE * pStart = startHolder.GetRW(); \
+    size_t rxOffset = pStartRX - pStart; \
     BYTE * p = pStart;
 
 #define END_DYNAMIC_HELPER_EMIT() \
     _ASSERTE(pStart + cb == p); \
     while (p < pStart + cbAligned) { *(DWORD*)p = 0xBADC0DF0; p += 4; }\
-    ClrFlushInstructionCache(pStart, cbAligned); \
-    return (PCODE)pStart
+    ClrFlushInstructionCache(pStartRX, cbAligned); \
+    return (PCODE)pStartRX
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
 
 // Uses x8 as scratch register to store address of data label
@@ -1944,7 +1951,7 @@ PCODE DynamicHelpers::CreateHelperWithArg(LoaderAllocator * pAllocator, TADDR ar
 
     BEGIN_DYNAMIC_HELPER_EMIT(32);
 
-    EmitHelperWithArg(p, pAllocator, arg, target);
+    EmitHelperWithArg(p, rxOffset, pAllocator, arg, target);
 
     END_DYNAMIC_HELPER_EMIT();
 }
@@ -2161,7 +2168,7 @@ PCODE DynamicHelpers::CreateDictionaryLookupHelper(LoaderAllocator * pAllocator,
         // reuse EmitHelperWithArg for below two operations
         // X1 <- pArgs
         // branch to helperAddress
-        EmitHelperWithArg(p, pAllocator, (TADDR)pArgs, helperAddress);
+        EmitHelperWithArg(p, rxOffset, pAllocator, (TADDR)pArgs, helperAddress);
 
         END_DYNAMIC_HELPER_EMIT();
     }
@@ -2299,7 +2306,7 @@ PCODE DynamicHelpers::CreateDictionaryLookupHelper(LoaderAllocator * pAllocator,
             // reuse EmitHelperWithArg for below two operations
             // X1 <- pArgs
             // branch to helperAddress
-            EmitHelperWithArg(p, pAllocator, (TADDR)pArgs, helperAddress);
+            EmitHelperWithArg(p, rxOffset, pAllocator, (TADDR)pArgs, helperAddress);
         }
 
         // datalabel:

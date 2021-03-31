@@ -396,11 +396,8 @@ HeapList* HostCodeHeap::InitializeHeapList(CodeHeapRequestInfo *pInfo)
 
     size_t ReserveBlockSize = pInfo->getRequestSize();
 
-    // Add TrackAllocation, HeapList and very conservative padding to make sure we have enough for the allocation
-    ReserveBlockSize += sizeof(TrackAllocation) + sizeof(HeapList) + HOST_CODEHEAP_SIZE_ALIGN + 0x100;
-
-    // reserve ReserveBlockSize rounded-up to VIRTUAL_ALLOC_RESERVE_GRANULARITY of memory
-    ReserveBlockSize = ALIGN_UP(ReserveBlockSize, VIRTUAL_ALLOC_RESERVE_GRANULARITY);
+    // Add a very conservative padding to make sure we have enough for the allocation
+    ReserveBlockSize += HOST_CODEHEAP_SIZE_ALIGN + 0x100;
 
     if (pInfo->m_loAddr != NULL || pInfo->m_hiAddr != NULL)
     {
@@ -418,7 +415,8 @@ HeapList* HostCodeHeap::InitializeHeapList(CodeHeapRequestInfo *pInfo)
         // top up the ReserveBlockSize to suggested minimum
         ReserveBlockSize = max(ReserveBlockSize, pInfo->getReserveSize());
 
-        m_pBaseAddr = ClrVirtualAllocExecutable(ReserveBlockSize, MEM_RESERVE, PAGE_NOACCESS);
+//        m_pBaseAddr = ClrVirtualAllocExecutable(ReserveBlockSize, MEM_RESERVE, PAGE_NOACCESS);
+        m_pBaseAddr = (BYTE*)DoubleMappedAllocator::Instance()->Reserve(ReserveBlockSize);
         if (!m_pBaseAddr)
             ThrowOutOfMemory();
     }
@@ -428,15 +426,29 @@ HeapList* HostCodeHeap::InitializeHeapList(CodeHeapRequestInfo *pInfo)
     m_ApproximateLargestBlock = ReserveBlockSize;
     m_pAllocator = pInfo->m_pAllocator;
 
-    TrackAllocation *pTracker = AllocMemory_NoThrow(0, sizeof(HeapList), sizeof(void*), 0);
-    if (pTracker == NULL)
+    HeapList* pHp = (HeapList*)malloc(sizeof(HeapList));
+    if (pHp == NULL)
     {
         // This should only ever happen with fault injection
         _ASSERTE(g_pConfig->ShouldInjectFault(INJECTFAULT_DYNAMICCODEHEAP));
         ThrowOutOfMemory();
     }
 
-    HeapList* pHp = (HeapList *)(pTracker + 1);
+    TrackAllocation *pTracker = NULL;
+
+#if defined(TARGET_AMD64) || defined(TARGET_ARM64)
+
+    pTracker = AllocMemory_NoThrow(0, JUMP_ALLOCATE_SIZE, sizeof(void*), 0);
+    if (pTracker == NULL)
+    {
+        // This should only ever happen with fault injection
+        _ASSERTE(g_pConfig->ShouldInjectFault(INJECTFAULT_DYNAMICCODEHEAP));
+        free(pHp);
+        ThrowOutOfMemory();
+    }
+
+    pHp->CLRPersonalityRoutine = (BYTE *)(pTracker + 1);
+#endif
 
     pHp->hpNext = NULL;
     pHp->pHeap = (PTR_CodeHeap)this;
@@ -446,22 +458,24 @@ HeapList* HostCodeHeap::InitializeHeapList(CodeHeapRequestInfo *pInfo)
     LOG((LF_BCL, LL_INFO100, "Level2 - CodeHeap creation {0x%p} - size available 0x%p, private data ptr [0x%p, 0x%p]\n",
         (HostCodeHeap*)this, m_TotalBytesAvailable, pTracker, pTracker->size));
 
-    // It is imporant to exclude the CLRPersonalityRoutine from the tracked range
-    pHp->startAddress = dac_cast<TADDR>(m_pBaseAddr) + pTracker->size;
+    // It is important to exclude the CLRPersonalityRoutine from the tracked range
+    pHp->startAddress = dac_cast<TADDR>(m_pBaseAddr) + (pTracker ? pTracker->size : 0);    
     pHp->mapBase = ROUND_DOWN_TO_PAGE(pHp->startAddress);  // round down to next lower page align
     pHp->pHdrMap = NULL;
     pHp->endAddress = pHp->startAddress;
 
-    pHp->maxCodeHeapSize = m_TotalBytesAvailable - pTracker->size;
+    pHp->maxCodeHeapSize = m_TotalBytesAvailable - (pTracker ? pTracker->size : 0);
     pHp->reserveForJumpStubs = 0;
 
 #ifdef HOST_64BIT
-    emitJump((LPBYTE)pHp->CLRPersonalityRoutine, (void *)ProcessCLRException);
+    ExecutableWriterHolder<BYTE> personalityRoutineHolder(pHp->CLRPersonalityRoutine, 12);
+    emitJump(personalityRoutineHolder.GetRW(), (void *)ProcessCLRException);
 #endif
 
     size_t nibbleMapSize = HEAP2MAPSIZE(ROUND_UP_TO_PAGE(pHp->maxCodeHeapSize));
     pHp->pHdrMap = new DWORD[nibbleMapSize / sizeof(DWORD)];
     ZeroMemory(pHp->pHdrMap, nibbleMapSize);
+    //printf("InitializeHeapList: pHp=%p, pHdrMap=%p\n", pHp, pHp->pHdrMap);
 
     return pHp;
 }
@@ -491,6 +505,14 @@ HostCodeHeap::TrackAllocation* HostCodeHeap::AllocFromFreeList(size_t header, si
                 // found a block
                 LOG((LF_BCL, LL_INFO100, "Level2 - CodeHeap [0x%p] - Block found, size 0x%X\n", this, pCurrent->size));
 
+                ExecutableWriterHolder<TrackAllocation> previousHolder;
+                if (pPrevious)
+                {
+                    previousHolder = ExecutableWriterHolder<TrackAllocation>(pPrevious, sizeof(TrackAllocation));
+                }
+
+                ExecutableWriterHolder<TrackAllocation> currentHolder(pCurrent, sizeof(TrackAllocation));
+
                 // The space left is not big enough for a new block, let's just
                 // update the TrackAllocation record for the current block
                 if (pCurrent->size - realSize < max(HOST_CODEHEAP_SIZE_ALIGN, sizeof(TrackAllocation)))
@@ -499,7 +521,7 @@ HostCodeHeap::TrackAllocation* HostCodeHeap::AllocFromFreeList(size_t header, si
                     // remove current
                     if (pPrevious)
                     {
-                        pPrevious->pNext = pCurrent->pNext;
+                        previousHolder.GetRW()->pNext = pCurrent->pNext;
                     }
                     else
                     {
@@ -510,12 +532,15 @@ HostCodeHeap::TrackAllocation* HostCodeHeap::AllocFromFreeList(size_t header, si
                 {
                     // create a new TrackAllocation after the memory we just allocated and insert it into the free list
                     TrackAllocation *pNewCurrent = (TrackAllocation*)((BYTE*)pCurrent + realSize);
-                    pNewCurrent->pNext = pCurrent->pNext;
-                    pNewCurrent->size = pCurrent->size - realSize;
+                    
+                    ExecutableWriterHolder<TrackAllocation> newCurrentHolder(pNewCurrent, sizeof(TrackAllocation));
+                    newCurrentHolder.GetRW()->pNext = pCurrent->pNext;
+                    newCurrentHolder.GetRW()->size = pCurrent->size - realSize;
+
                     LOG((LF_BCL, LL_INFO100, "Level2 - CodeHeap [0x%p] - Item changed %p, new size 0x%X\n", this, pNewCurrent, pNewCurrent->size));
                     if (pPrevious)
                     {
-                        pPrevious->pNext = pNewCurrent;
+                        previousHolder.GetRW()->pNext = pNewCurrent;
                     }
                     else
                     {
@@ -523,10 +548,10 @@ HostCodeHeap::TrackAllocation* HostCodeHeap::AllocFromFreeList(size_t header, si
                     }
 
                     // We only need to update the size of the current block if we are creating a new block
-                    pCurrent->size = realSize;
+                    currentHolder.GetRW()->size = realSize;
                 }
 
-                pCurrent->pHeap = this;
+                currentHolder.GetRW()->pHeap = this;
 
                 LOG((LF_BCL, LL_INFO100, "Level2 - CodeHeap [0x%p] - Allocation returned %p, size 0x%X - data -> %p\n", this, pCurrent, pCurrent->size, pPointer));
                 return pCurrent;
@@ -539,7 +564,7 @@ HostCodeHeap::TrackAllocation* HostCodeHeap::AllocFromFreeList(size_t header, si
     return NULL;
 }
 
-void HostCodeHeap::AddToFreeList(TrackAllocation *pBlockToInsert)
+void HostCodeHeap::AddToFreeList(TrackAllocation *pBlockToInsert, TrackAllocation *pBlockToInsertRW)
 {
     CONTRACTL
     {
@@ -565,10 +590,13 @@ void HostCodeHeap::AddToFreeList(TrackAllocation *pBlockToInsert)
             if (pCurrent > pBlockToInsert)
             {
                 // found the point of insertion
-                pBlockToInsert->pNext = pCurrent;
+                pBlockToInsertRW->pNext = pCurrent;
+                ExecutableWriterHolder<TrackAllocation> previousHolder;
+
                 if (pPrevious)
                 {
-                    pPrevious->pNext = pBlockToInsert;
+                    previousHolder = ExecutableWriterHolder<TrackAllocation>(pPrevious, sizeof(TrackAllocation));
+                    previousHolder.GetRW()->pNext = pBlockToInsert;
                     LOG((LF_BCL, LL_INFO100, "Level2 - CodeHeap [0x%p] - Insert block [%p, 0x%X] -> [%p, 0x%X] -> [%p, 0x%X]\n", this,
                                                                         pPrevious, pPrevious->size,
                                                                         pBlockToInsert, pBlockToInsert->size,
@@ -588,8 +616,8 @@ void HostCodeHeap::AddToFreeList(TrackAllocation *pBlockToInsert)
                                                                         pBlockToInsert, pBlockToInsert->size,
                                                                         pCurrent, pCurrent->size,
                                                                         pCurrent->size + pBlockToInsert->size));
-                    pBlockToInsert->pNext = pCurrent->pNext;
-                    pBlockToInsert->size += pCurrent->size;
+                    pBlockToInsertRW->pNext = pCurrent->pNext;
+                    pBlockToInsertRW->size += pCurrent->size;
                 }
 
                 if (pPrevious && (BYTE*)pPrevious + pPrevious->size == (BYTE*)pBlockToInsert)
@@ -599,8 +627,8 @@ void HostCodeHeap::AddToFreeList(TrackAllocation *pBlockToInsert)
                                                                         pPrevious, pPrevious->size,
                                                                         pBlockToInsert, pBlockToInsert->size,
                                                                         pPrevious->size + pBlockToInsert->size));
-                    pPrevious->pNext = pBlockToInsert->pNext;
-                    pPrevious->size += pBlockToInsert->size;
+                    previousHolder.GetRW()->pNext = pBlockToInsert->pNext;
+                    previousHolder.GetRW()->size += pBlockToInsert->size;
                 }
 
                 return;
@@ -609,8 +637,10 @@ void HostCodeHeap::AddToFreeList(TrackAllocation *pBlockToInsert)
             pCurrent = pCurrent->pNext;
         }
         _ASSERTE(pPrevious && pCurrent == NULL);
-        pBlockToInsert->pNext = NULL;
+        pBlockToInsertRW->pNext = NULL;
         // last in the list
+        ExecutableWriterHolder<TrackAllocation> previousHolder(pPrevious, sizeof(TrackAllocation));
+
         if ((BYTE*)pPrevious + pPrevious->size == (BYTE*)pBlockToInsert)
         {
             // coalesce with previous
@@ -618,11 +648,11 @@ void HostCodeHeap::AddToFreeList(TrackAllocation *pBlockToInsert)
                                                                 pPrevious, pPrevious->size,
                                                                 pBlockToInsert, pBlockToInsert->size,
                                                                 pPrevious->size + pBlockToInsert->size));
-            pPrevious->size += pBlockToInsert->size;
+            previousHolder.GetRW()->size += pBlockToInsert->size;
         }
         else
         {
-            pPrevious->pNext = pBlockToInsert;
+            previousHolder.GetRW()->pNext = pBlockToInsert;
             LOG((LF_BCL, LL_INFO100, "Level2 - CodeHeap [0x%p] - Insert block [%p, 0x%X] to end after [%p, 0x%X]\n", this,
                                                                 pBlockToInsert, pBlockToInsert->size,
                                                                 pPrevious, pPrevious->size));
@@ -632,13 +662,13 @@ void HostCodeHeap::AddToFreeList(TrackAllocation *pBlockToInsert)
 
     }
     // first in the list
-    pBlockToInsert->pNext = m_pFreeList;
+    pBlockToInsertRW->pNext = m_pFreeList;
     m_pFreeList = pBlockToInsert;
     LOG((LF_BCL, LL_INFO100, "Level2 - CodeHeap [0x%p] - Insert block [%p, 0x%X] to head\n", this,
                                                         m_pFreeList, m_pFreeList->size));
 }
 
-void* HostCodeHeap::AllocMemForCode_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs)
+void *HostCodeHeap::AllocMemForCode_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs)
 {
     CONTRACTL
     {
@@ -665,9 +695,12 @@ void* HostCodeHeap::AllocMemForCode_NoThrow(size_t header, size_t size, DWORD al
 
     BYTE * pCode = ALIGN_UP((BYTE*)(pTracker + 1) + header, alignment);
 
+    ExecutableWriterHolder<TrackAllocation> trackerHolder(pTracker, (pCode + size) - (BYTE*)pTracker);
+    BYTE * pCodeRW = (BYTE*)trackerHolder.GetRW() + (pCode - (BYTE*)pTracker);
+
     // Pointer to the TrackAllocation record is stored just before the code header
-    CodeHeader * pHdr = (CodeHeader *)pCode - 1;
-    *((TrackAllocation **)(pHdr) - 1) = pTracker;
+    CodeHeader * pHdrRW = (CodeHeader *)pCodeRW - 1;
+    *((TrackAllocation **)(pHdrRW) - 1) = pTracker;
 
     _ASSERTE(pCode + size <= (BYTE*)pTracker + pTracker->size);
 
@@ -728,17 +761,23 @@ HostCodeHeap::TrackAllocation* HostCodeHeap::AllocMemory_NoThrow(size_t header, 
 
         if (m_pLastAvailableCommittedAddr + sizeToCommit <= m_pBaseAddr + m_TotalBytesAvailable)
         {
+#ifdef ENABLE_DOUBLE_MAPPING
+            if (NULL == ClrVirtualAlloc(m_pLastAvailableCommittedAddr, sizeToCommit, MEM_COMMIT, PAGE_EXECUTE_READ))
+#else
             if (NULL == ClrVirtualAlloc(m_pLastAvailableCommittedAddr, sizeToCommit, MEM_COMMIT, PAGE_EXECUTE_READWRITE))
+#endif
             {
                 LOG((LF_BCL, LL_ERROR, "CodeHeap [0x%p] - VirtualAlloc failed\n", this));
                 return NULL;
             }
 
             TrackAllocation *pBlockToInsert = (TrackAllocation*)(void*)m_pLastAvailableCommittedAddr;
-            pBlockToInsert->pNext = NULL;
-            pBlockToInsert->size = sizeToCommit;
+            ExecutableWriterHolder<TrackAllocation> blockToInsertHolder(pBlockToInsert, sizeof(TrackAllocation));
+
+            blockToInsertHolder.GetRW()->pNext = NULL;
+            blockToInsertHolder.GetRW()->size = sizeToCommit;
             m_pLastAvailableCommittedAddr += sizeToCommit;
-            AddToFreeList(pBlockToInsert);
+            AddToFreeList(pBlockToInsert, blockToInsertHolder.GetRW());
             pTracker = AllocFromFreeList(header, size, alignment, reserveForJumpStubs);
             _ASSERTE(pTracker != NULL);
         }
@@ -824,7 +863,8 @@ void HostCodeHeap::FreeMemForCode(void * codeStart)
     LIMITED_METHOD_CONTRACT;
 
     TrackAllocation *pTracker = HostCodeHeap::GetTrackAllocation((TADDR)codeStart);
-    AddToFreeList(pTracker);
+    ExecutableWriterHolder<TrackAllocation> trackerHolder(pTracker, sizeof(TrackAllocation));
+    AddToFreeList(pTracker, trackerHolder.GetRW());
 
     m_ApproximateLargestBlock += pTracker->size;
 

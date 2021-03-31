@@ -704,6 +704,7 @@ public:
         } CONTRACTL_END;
 
         m_CodeHeader = NULL;
+        m_CodeHeaderRW = NULL;
 
         if (m_pOffsetMapping != NULL)
             delete [] ((BYTE*) m_pOffsetMapping);
@@ -803,6 +804,7 @@ public:
         : CEEInfo(fd, fVerifyOnly, allowInlining),
           m_jitManager(jm),
           m_CodeHeader(NULL),
+          m_CodeHeaderRW(NULL),
           m_ILHeader(header),
 #ifdef FEATURE_EH_FUNCLETS
           m_moduleBase(NULL),
@@ -850,6 +852,11 @@ public:
             GC_NOTRIGGER;
             MODE_ANY;
         } CONTRACTL_END;
+
+        if (m_CodeHeaderRW != NULL && m_CodeHeaderRW != m_CodeHeader)
+        {
+            DoubleMappedAllocator::Instance()->UnmapRW(m_CodeHeaderRW);
+        }
 
         if (m_pOffsetMapping != NULL)
             delete [] ((BYTE*) m_pOffsetMapping);
@@ -932,13 +939,14 @@ protected :
 
 
     EEJitManager*           m_jitManager;   // responsible for allocating memory
-    CodeHeader*             m_CodeHeader;   // descriptor for JITTED code
+    CodeHeader*             m_CodeHeader;   // descriptor for JITTED code - read/execute address
+    CodeHeader*             m_CodeHeaderRW; // descriptor for JITTED code - writeable address
     COR_ILMETHOD_DECODER *  m_ILHeader;     // the code header as exist in the file
 #ifdef FEATURE_EH_FUNCLETS
     TADDR                   m_moduleBase;       // Base for unwind Infos
     ULONG                   m_totalUnwindSize;  // Total reserved unwind space
     uint32_t                m_usedUnwindSize;   // used space in m_theUnwindBlock
-    BYTE *                  m_theUnwindBlock;   // start of the unwind memory block
+    BYTE*                   m_theUnwindBlock;   // start of the unwind memory block
     ULONG                   m_totalUnwindInfos; // Number of RUNTIME_FUNCTION needed
     ULONG                   m_usedUnwindInfos;
 #endif

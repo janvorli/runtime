@@ -641,8 +641,9 @@ void VirtualCallStubManager::Init(BaseDomain *pDomain, LoaderAllocator *pLoaderA
                               dwTotalReserveMemSize);
         }
 
-        initReservedMem = ClrVirtualAllocExecutable (dwTotalReserveMemSize, MEM_RESERVE, PAGE_NOACCESS);
-
+        //initReservedMem = ClrVirtualAllocExecutable (dwTotalReserveMemSize, MEM_RESERVE, PAGE_NOACCESS);
+        initReservedMem = (BYTE*)DoubleMappedAllocator::Instance()->Reserve(dwTotalReserveMemSize);
+        
         m_initialReservedMemForHeaps = (BYTE *) initReservedMem;
 
         if (initReservedMem == NULL)
@@ -1208,9 +1209,12 @@ VTableCallHolder* VirtualCallStubManager::GenerateVTableCallStub(DWORD slot)
     } CONTRACT_END;
 
     //allocate from the requisite heap and copy the template over it.
-    VTableCallHolder * pHolder = (VTableCallHolder*)(void*)vtable_heap->AllocAlignedMem(VTableCallHolder::GetHolderSize(slot), CODE_SIZE_ALIGN);
+    TaggedMemAllocPtr holder = vtable_heap->AllocAlignedMem(VTableCallHolder::GetHolderSize(slot), CODE_SIZE_ALIGN);
 
-    pHolder->Initialize(slot);
+    VTableCallHolder * pHolder = (VTableCallHolder *)(void*)holder;
+    ExecutableWriterHolder<VTableCallHolder> vtableHolderHolder(pHolder, sizeof(VTableCallHolder));
+    vtableHolderHolder.GetRW()->Initialize(slot);
+
     ClrFlushInstructionCache(pHolder->stub(), pHolder->stub()->size());
 
     AddToCollectibleVSDRangeList(pHolder);
@@ -2758,18 +2762,21 @@ DispatchHolder *VirtualCallStubManager::GenerateDispatchStub(PCODE            ad
 #endif
 
     //allocate from the requisite heap and copy the template over it.
-    DispatchHolder * holder = (DispatchHolder*) (void*)
+    TaggedMemAllocPtr holder = 
         dispatch_heap->AllocAlignedMem(dispatchHolderSize, CODE_SIZE_ALIGN);
 
+    DispatchHolder * holderRX = (DispatchHolder*)(void*)holder;
+
 #ifdef TARGET_AMD64
-    if (!DispatchHolder::CanShortJumpDispatchStubReachFailTarget(addrOfFail, (LPCBYTE)holder))
+    if (!DispatchHolder::CanShortJumpDispatchStubReachFailTarget(addrOfFail, (LPCBYTE)holderRX))
     {
         m_fShouldAllocateLongJumpDispatchStubs = TRUE;
         RETURN GenerateDispatchStub(addrOfCode, addrOfFail, pMTExpected, dispatchToken, pMayHaveReenteredCooperativeGCMode);
     }
 #endif
 
-    holder->Initialize(addrOfCode,
+    ExecutableWriterHolder<DispatchHolder> dispatchHolderHolder(holderRX, sizeof(DispatchHolder) + sizeof(DispatchStubShort));
+    dispatchHolderHolder.GetRW()->Initialize(holderRX, addrOfCode,
                        addrOfFail,
                        (size_t)pMTExpected
 #ifdef TARGET_AMD64
@@ -2782,7 +2789,7 @@ DispatchHolder *VirtualCallStubManager::GenerateDispatchStub(PCODE            ad
     if (pMD->IsVersionableWithVtableSlotBackpatch())
     {
         EntryPointSlots::SlotType slotType;
-        TADDR slot = holder->stub()->implTargetSlot(&slotType);
+        TADDR slot = holderRX->stub()->implTargetSlot(&slotType);
         pMD->RecordAndBackpatchEntryPointSlot(m_loaderAllocator, slot, slotType);
 
         // RecordAndBackpatchEntryPointSlot() may exit and reenter cooperative GC mode
@@ -2790,21 +2797,21 @@ DispatchHolder *VirtualCallStubManager::GenerateDispatchStub(PCODE            ad
     }
 #endif
 
-    ClrFlushInstructionCache(holder->stub(), holder->stub()->size());
+    ClrFlushInstructionCache(holderRX->stub(), holderRX->stub()->size());
 
-    AddToCollectibleVSDRangeList(holder);
+    AddToCollectibleVSDRangeList(holderRX);
 
     //incr our counters
     stats.stub_mono_counter++;
     stats.stub_space += (UINT32)dispatchHolderSize;
     LOG((LF_STUBS, LL_INFO10000, "GenerateDispatchStub for token" FMT_ADDR "and pMT" FMT_ADDR "at" FMT_ADDR "\n",
-                                 DBG_ADDR(dispatchToken), DBG_ADDR(pMTExpected), DBG_ADDR(holder->stub())));
+                                 DBG_ADDR(dispatchToken), DBG_ADDR(pMTExpected), DBG_ADDR(holderRX->stub())));
 
 #ifdef FEATURE_PERFMAP
-    PerfMap::LogStubs(__FUNCTION__, "GenerateDispatchStub", (PCODE)holder->stub(), holder->stub()->size());
+    PerfMap::LogStubs(__FUNCTION__, "GenerateDispatchStub", (PCODE)holderRX->stub(), holderRX->stub()->size());
 #endif
 
-    RETURN (holder);
+    RETURN (holderRX);
 }
 
 #ifdef TARGET_AMD64
@@ -2831,10 +2838,13 @@ DispatchHolder *VirtualCallStubManager::GenerateDispatchStubLong(PCODE          
     } CONTRACT_END;
 
     //allocate from the requisite heap and copy the template over it.
-    DispatchHolder * holder = (DispatchHolder*) (void*)
+    TaggedMemAllocPtr holder =
         dispatch_heap->AllocAlignedMem(DispatchHolder::GetHolderSize(DispatchStub::e_TYPE_LONG), CODE_SIZE_ALIGN);
 
-    holder->Initialize(addrOfCode,
+    DispatchHolder * holderRX = (DispatchHolder *)(void*)holder;
+    ExecutableWriterHolder<DispatchHolder> dispatchHolderHolder(holderRX, sizeof(DispatchHolder) + sizeof(DispatchStubLong));
+
+    dispatchHolderHolder.GetRW()->Initialize(holderRX, addrOfCode,
                        addrOfFail,
                        (size_t)pMTExpected,
                        DispatchStub::e_TYPE_LONG);
@@ -2844,7 +2854,7 @@ DispatchHolder *VirtualCallStubManager::GenerateDispatchStubLong(PCODE          
     if (pMD->IsVersionableWithVtableSlotBackpatch())
     {
         EntryPointSlots::SlotType slotType;
-        TADDR slot = holder->stub()->implTargetSlot(&slotType);
+        TADDR slot = holderRX->stub()->implTargetSlot(&slotType);
         pMD->RecordAndBackpatchEntryPointSlot(m_loaderAllocator, slot, slotType);
 
         // RecordAndBackpatchEntryPointSlot() may exit and reenter cooperative GC mode
@@ -2852,21 +2862,21 @@ DispatchHolder *VirtualCallStubManager::GenerateDispatchStubLong(PCODE          
     }
 #endif
 
-    ClrFlushInstructionCache(holder->stub(), holder->stub()->size());
+    ClrFlushInstructionCache(holderRX->stub(), holderRX->stub()->size());
 
-    AddToCollectibleVSDRangeList(holder);
+    AddToCollectibleVSDRangeList(holderRX);
 
     //incr our counters
     stats.stub_mono_counter++;
     stats.stub_space += static_cast<UINT32>(DispatchHolder::GetHolderSize(DispatchStub::e_TYPE_LONG));
     LOG((LF_STUBS, LL_INFO10000, "GenerateDispatchStub for token" FMT_ADDR "and pMT" FMT_ADDR "at" FMT_ADDR "\n",
-                                 DBG_ADDR(dispatchToken), DBG_ADDR(pMTExpected), DBG_ADDR(holder->stub())));
+                                 DBG_ADDR(dispatchToken), DBG_ADDR(pMTExpected), DBG_ADDR(holderRX->stub())));
 
 #ifdef FEATURE_PERFMAP
-    PerfMap::LogStubs(__FUNCTION__, "GenerateDispatchStub", (PCODE)holder->stub(), holder->stub()->size());
+    PerfMap::LogStubs(__FUNCTION__, "GenerateDispatchStub", (PCODE)holderRX->stub(), holderRX->stub()->size());
 #endif
 
-    RETURN (holder);
+    RETURN (holderRX);
 }
 #endif
 
@@ -2940,31 +2950,35 @@ ResolveHolder *VirtualCallStubManager::GenerateResolveStub(PCODE            addr
     *counterAddr = STUB_MISS_COUNT_VALUE;
 
     //allocate from the requisite heap and copy the templates for each piece over it.
-    ResolveHolder * holder = (ResolveHolder*) (void*)
+    TaggedMemAllocPtr holder = 
         resolve_heap->AllocAlignedMem(sizeof(ResolveHolder), CODE_SIZE_ALIGN);
 
-    holder->Initialize(addrOfResolver, addrOfPatcher,
+    ResolveHolder * holderRX = (ResolveHolder*)(void*)holder;
+    ExecutableWriterHolder<ResolveHolder> resolveHolderHolder(holderRX, sizeof(ResolveHolder));
+
+    resolveHolderHolder.GetRW()->Initialize(addrOfResolver, addrOfPatcher,
                        dispatchToken, DispatchCache::HashToken(dispatchToken),
                        g_resolveCache->GetCacheBaseAddr(), counterAddr
 #if defined(TARGET_X86) && !defined(UNIX_X86_ABI)
                        , stackArgumentsSize
 #endif
                        );
-    ClrFlushInstructionCache(holder->stub(), holder->stub()->size());
 
-    AddToCollectibleVSDRangeList(holder);
+    ClrFlushInstructionCache(holderRX->stub(), holderRX->stub()->size());
+
+    AddToCollectibleVSDRangeList(holderRX);
 
     //incr our counters
     stats.stub_poly_counter++;
     stats.stub_space += sizeof(ResolveHolder)+sizeof(size_t);
     LOG((LF_STUBS, LL_INFO10000, "GenerateResolveStub  for token" FMT_ADDR "at" FMT_ADDR "\n",
-                                 DBG_ADDR(dispatchToken), DBG_ADDR(holder->stub())));
+                                 DBG_ADDR(dispatchToken), DBG_ADDR(holderRX->stub())));
 
 #ifdef FEATURE_PERFMAP
-    PerfMap::LogStubs(__FUNCTION__, "GenerateResolveStub", (PCODE)holder->stub(), holder->stub()->size());
+    PerfMap::LogStubs(__FUNCTION__, "GenerateResolveStub", (PCODE)holderRX->stub(), holderRX->stub()->size());
 #endif
 
-    RETURN (holder);
+    RETURN (holderRX);
 }
 
 //----------------------------------------------------------------------------
@@ -2985,24 +2999,27 @@ LookupHolder *VirtualCallStubManager::GenerateLookupStub(PCODE addrOfResolver, s
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
 
     //allocate from the requisite heap and copy the template over it.
-    LookupHolder * holder     = (LookupHolder*) (void*) lookup_heap->AllocAlignedMem(sizeof(LookupHolder), CODE_SIZE_ALIGN);
+    TaggedMemAllocPtr holder = lookup_heap->AllocAlignedMem(sizeof(LookupHolder), CODE_SIZE_ALIGN);
+    LookupHolder * holderRX = (LookupHolder*)(void*)holder;
+    ExecutableWriterHolder<LookupHolder> lookupHolderHolder(holderRX, sizeof(LookupHolder));
 
-    holder->Initialize(addrOfResolver, dispatchToken);
-    ClrFlushInstructionCache(holder->stub(), holder->stub()->size());
+    lookupHolderHolder.GetRW()->Initialize(addrOfResolver, dispatchToken);
 
-    AddToCollectibleVSDRangeList(holder);
+    ClrFlushInstructionCache(holderRX->stub(), holderRX->stub()->size());
+
+    AddToCollectibleVSDRangeList(holderRX);
 
     //incr our counters
     stats.stub_lookup_counter++;
     stats.stub_space += sizeof(LookupHolder);
     LOG((LF_STUBS, LL_INFO10000, "GenerateLookupStub   for token" FMT_ADDR "at" FMT_ADDR "\n",
-                                 DBG_ADDR(dispatchToken), DBG_ADDR(holder->stub())));
+                                 DBG_ADDR(dispatchToken), DBG_ADDR(holderRX->stub())));
 
 #ifdef FEATURE_PERFMAP
-    PerfMap::LogStubs(__FUNCTION__, "GenerateLookupStub", (PCODE)holder->stub(), holder->stub()->size());
+    PerfMap::LogStubs(__FUNCTION__, "GenerateLookupStub", (PCODE)holderRX->stub(), holderRX->stub()->size());
 #endif
 
-    RETURN (holder);
+    RETURN (holderRX);
 }
 
 //----------------------------------------------------------------------------

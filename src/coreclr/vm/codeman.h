@@ -303,10 +303,14 @@ public:
     }
     void SetEHInfo(PTR_EE_ILEXCEPTION pEH)
     {
+        // ExecutableWriterHolder<RealCodeHeader> realCodeHeaderHolder(pRealCodeHeader, sizeof(RealCodeHeader));
+        // realCodeHeaderHolder.GetRW()->phdrJitEHInfo = pEH;
         pRealCodeHeader->phdrJitEHInfo = pEH;
     }
     void SetGCInfo(PTR_BYTE pGC)
     {
+        // ExecutableWriterHolder<RealCodeHeader> realCodeHeaderHolder(pRealCodeHeader, sizeof(RealCodeHeader));
+        // realCodeHeaderHolder.GetRW()->phdrJitGCInfo = pGC;
         pRealCodeHeader->phdrJitGCInfo = pGC;
     }
     void SetMethodDesc(PTR_MethodDesc pMD)
@@ -478,11 +482,16 @@ typedef struct _HeapList
     size_t              maxCodeHeapSize;// Size of the entire contiguous block of memory
     size_t              reserveForJumpStubs; // Amount of memory reserved for jump stubs in this block
 
-#if defined(TARGET_AMD64)
-    BYTE        CLRPersonalityRoutine[JUMP_ALLOCATE_SIZE];                 // jump thunk to personality routine
-#elif defined(TARGET_ARM64)
-    UINT32      CLRPersonalityRoutine[JUMP_ALLOCATE_SIZE/sizeof(UINT32)];  // jump thunk to personality routine
+    BYTE*               CLRPersonalityRoutine;  // jump thunk to personality routine
+
+    TADDR GetModuleBase()
+    {
+#if defined(TARGET_AMD64) || defined(TARGET_ARM64)
+        return (TADDR)CLRPersonalityRoutine;
+#else
+        return (TADDR)mapBase;
 #endif
+    }
 
     PTR_HeapList GetNext()
     { SUPPORTS_DAC; return hpNext; }
@@ -662,6 +671,7 @@ class CodeFragmentHeap : public ILoaderHeapBackout
     struct FreeBlock
     {
         DPTR(FreeBlock) m_pNext;    // Next block
+        void  *m_pBlock;
         SIZE_T m_dwSize;            // Size of this block (includes size of FreeBlock)
     };
     typedef DPTR(FreeBlock) PTR_FreeBlock;
@@ -1241,9 +1251,7 @@ public:
     static ULONG          GetCLRPersonalityRoutineValue()
     {
         LIMITED_METHOD_CONTRACT;
-        static_assert_no_msg(offsetof(HeapList, CLRPersonalityRoutine) ==
-            (size_t)((ULONG)offsetof(HeapList, CLRPersonalityRoutine)));
-        return offsetof(HeapList, CLRPersonalityRoutine);
+        return 0;
     }
 #endif // TARGET_64BIT
 

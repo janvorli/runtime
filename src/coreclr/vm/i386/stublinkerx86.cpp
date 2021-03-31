@@ -5193,7 +5193,7 @@ void FixupPrecode::EnumMemoryRegions(CLRDataEnumMemoryFlags flags)
 
 #ifndef DACCESS_COMPILE
 
-void rel32SetInterlocked(/*PINT32*/ PVOID pRel32, TADDR target, MethodDesc* pMD)
+void rel32SetInterlocked(/*PINT32*/ PVOID pRel32, /*PINT32*/ PVOID pRel32RW, TADDR target, MethodDesc* pMD)
 {
     CONTRACTL
     {
@@ -5201,14 +5201,16 @@ void rel32SetInterlocked(/*PINT32*/ PVOID pRel32, TADDR target, MethodDesc* pMD)
         GC_NOTRIGGER;
     }
     CONTRACTL_END;
+
+    _ASSERTE(pRel32 != pRel32RW);
 
     INT32 targetRel32 = rel32UsingJumpStub((INT32*)pRel32, target, pMD);
 
-    _ASSERTE(IS_ALIGNED(pRel32, sizeof(INT32)));
-    FastInterlockExchange((LONG*)pRel32, (LONG)targetRel32);
+    _ASSERTE(IS_ALIGNED(pRel32RW, sizeof(INT32)));
+    FastInterlockExchange((LONG*)pRel32RW, (LONG)targetRel32);
 }
 
-BOOL rel32SetInterlocked(/*PINT32*/ PVOID pRel32, TADDR target, TADDR expected, MethodDesc* pMD)
+BOOL rel32SetInterlocked(/*PINT32*/ PVOID pRel32, /*PINT32*/ PVOID pRel32RW, TADDR target, TADDR expected, MethodDesc* pMD)
 {
     CONTRACTL
     {
@@ -5216,20 +5218,26 @@ BOOL rel32SetInterlocked(/*PINT32*/ PVOID pRel32, TADDR target, TADDR expected, 
         GC_NOTRIGGER;
     }
     CONTRACTL_END;
+
+    _ASSERTE(pRel32 != pRel32RW);
 
     BYTE* callAddrAdj = (BYTE*)pRel32 + 4;
     INT32 expectedRel32 = static_cast<INT32>((BYTE*)expected - callAddrAdj);
 
     INT32 targetRel32 = rel32UsingJumpStub((INT32*)pRel32, target, pMD);
 
-    _ASSERTE(IS_ALIGNED(pRel32, sizeof(INT32)));
-    return FastInterlockCompareExchange((LONG*)pRel32, (LONG)targetRel32, (LONG)expectedRel32) == (LONG)expectedRel32;
+    _ASSERTE(IS_ALIGNED(pRel32RW, sizeof(INT32)));
+    return FastInterlockCompareExchange((LONG*)pRel32RW, (LONG)targetRel32, (LONG)expectedRel32) == (LONG)expectedRel32;
 }
 
-void StubPrecode::Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocator /* = NULL */,
+void StubPrecode::Init(StubPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator /* = NULL */,
     BYTE type /* = StubPrecode::Type */, TADDR target /* = NULL */)
 {
     WRAPPER_NO_CONTRACT;
+
+#ifndef CROSSGEN_COMPILE
+    _ASSERTE(this != pPrecodeRX);
+#endif
 
     IN_TARGET_64BIT(m_movR10 = X86_INSTR_MOV_R10_IMM64);   // mov r10, pMethodDesc
     IN_TARGET_32BIT(m_movEAX = X86_INSTR_MOV_EAX_IMM32);   // mov eax, pMethodDesc
@@ -5244,25 +5252,29 @@ void StubPrecode::Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocator /* = N
         // that has the same lifetime like as the precode itself
         if (target == NULL)
             target = GetPreStubEntryPoint();
-        m_rel32 = rel32UsingJumpStub(&m_rel32, target, NULL /* pMD */, pLoaderAllocator);
+        m_rel32 = rel32UsingJumpStub(&pPrecodeRX->m_rel32, target, NULL /* pMD */, pLoaderAllocator);
     }
 }
 
 #ifdef HAS_NDIRECT_IMPORT_PRECODE
 
-void NDirectImportPrecode::Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocator)
+void NDirectImportPrecode::Init(NDirectImportPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator)
 {
     WRAPPER_NO_CONTRACT;
-    StubPrecode::Init(pMD, pLoaderAllocator, NDirectImportPrecode::Type, GetEEFuncEntryPoint(NDirectImportThunk));
+    StubPrecode::Init(pPrecodeRX, pMD, pLoaderAllocator, NDirectImportPrecode::Type, GetEEFuncEntryPoint(NDirectImportThunk));
 }
 
 #endif // HAS_NDIRECT_IMPORT_PRECODE
 
 
 #ifdef HAS_FIXUP_PRECODE
-void FixupPrecode::Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocator, int iMethodDescChunkIndex /*=0*/, int iPrecodeChunkIndex /*=0*/)
+void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator, int iMethodDescChunkIndex /*=0*/, int iPrecodeChunkIndex /*=0*/)
 {
     WRAPPER_NO_CONTRACT;
+
+#ifndef CROSSGEN_COMPILE
+    _ASSERTE(this != pPrecodeRX);
+#endif
 
     m_op   = X86_INSTR_CALL_REL32;       // call PrecodeFixupThunk
     m_type = FixupPrecode::TypePrestub;
@@ -5292,17 +5304,17 @@ void FixupPrecode::Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocator, int 
 #ifdef FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
     if (pMD->IsLCGMethod())
     {
-        m_rel32 = rel32UsingPreallocatedJumpStub(&m_rel32, target, GetDynamicMethodPrecodeFixupJumpStub(), false /* emitJump */);
+        m_rel32 = rel32UsingPreallocatedJumpStub(&pPrecodeRX->m_rel32, target, pPrecodeRX->GetDynamicMethodPrecodeFixupJumpStub(), GetDynamicMethodPrecodeFixupJumpStub(), false /* emitJump */);
         return;
     }
 #endif // FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
     if (pLoaderAllocator != NULL)
     {
-        m_rel32 = rel32UsingJumpStub(&m_rel32, target, NULL /* pMD */, pLoaderAllocator);
+        m_rel32 = rel32UsingJumpStub(&pPrecodeRX->m_rel32, target, NULL /* pMD */, pLoaderAllocator);
     }
 }
 
-void FixupPrecode::ResetTargetInterlocked()
+void FixupPrecode::ResetTargetInterlocked(FixupPrecode* pPrecodeRW)
 {
     CONTRACTL
     {
@@ -5310,6 +5322,8 @@ void FixupPrecode::ResetTargetInterlocked()
         GC_NOTRIGGER;
     }
     CONTRACTL_END;
+
+    ASSERT(this != pPrecodeRW);
 
     FixupPrecode newValue = *this;
     newValue.m_op = X86_INSTR_CALL_REL32; // call PrecodeFixupThunk
@@ -5328,7 +5342,7 @@ void FixupPrecode::ResetTargetInterlocked()
     newValue.m_rel32 = rel32UsingJumpStub(&m_rel32, target, pMD);
 
     _ASSERTE(IS_ALIGNED(this, sizeof(INT64)));
-    FastInterlockExchangeLong((INT64*)this, *(INT64*)&newValue);
+    FastInterlockExchangeLong((INT64*)pPrecodeRW, *(INT64*)&newValue);
 }
 
 BOOL FixupPrecode::SetTargetInterlocked(TADDR target, TADDR expected)
@@ -5376,15 +5390,25 @@ BOOL FixupPrecode::SetTargetInterlocked(TADDR target, TADDR expected)
         return FALSE;
     }
 
+#ifdef FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
+    ExecutableWriterHolder<void> dynamicMethodEntryJumpStubHolder;
+    if (pMD->IsLCGMethod())
+    {
+        // TODO: where to get the 12?
+        dynamicMethodEntryJumpStubHolder = ExecutableWriterHolder<void>((void*)GetDynamicMethodEntryJumpStub(), 12);
+    }
+#endif    
     *(INT32*)(&pNewValue[offsetof(FixupPrecode, m_rel32)]) =
 #ifdef FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
         pMD->IsLCGMethod() ?
-            rel32UsingPreallocatedJumpStub(&m_rel32, target, GetDynamicMethodEntryJumpStub(), true /* emitJump */) :
+            rel32UsingPreallocatedJumpStub(&m_rel32, target, GetDynamicMethodEntryJumpStub(), (PCODE)dynamicMethodEntryJumpStubHolder.GetRW(), true /* emitJump */) :
 #endif // FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
             rel32UsingJumpStub(&m_rel32, target, pMD);
 
     _ASSERTE(IS_ALIGNED(this, sizeof(INT64)));
-    return FastInterlockCompareExchangeLong((INT64*) this, newValue, oldValue) == oldValue;
+
+    ExecutableWriterHolder<FixupPrecode> precodeHolder(this, sizeof(FixupPrecode));
+    return FastInterlockCompareExchangeLong((INT64*)precodeHolder.GetRW(), newValue, oldValue) == oldValue;
 }
 
 #ifdef FEATURE_NATIVE_IMAGE_GENERATION
@@ -5488,7 +5512,9 @@ BOOL ThisPtrRetBufPrecode::SetTargetInterlocked(TADDR target, TADDR expected)
     INT32 newRel32 = rel32UsingJumpStub(&m_rel32, target, NULL /* pMD */, ((MethodDesc *)GetMethodDesc())->GetLoaderAllocator());
 
     _ASSERTE(IS_ALIGNED(&m_rel32, sizeof(INT32)));
-    FastInterlockExchange((LONG *)&m_rel32, (LONG)newRel32);
+    ExecutableWriterHolder<INT32> rel32Holder(&m_rel32, sizeof(INT32));
+    FastInterlockExchange((LONG*)rel32Holder.GetRW(), (LONG)newRel32);
+
     return TRUE;
 }
 #endif // !DACCESS_COMPILE

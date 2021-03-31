@@ -32,6 +32,9 @@ void EntryPointSlots::Backpatch_Locked(TADDR slot, SlotType slotType, PCODE entr
     auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
 
+    // TODO: pass in the slot double pointer instead? It seems it is available up the call chain
+//    ExecutableWriterHolder<void> slotHolder((void*)slot, sizeof(PCODE*));
+
     switch (slotType)
     {
         case SlotType_Normal:
@@ -43,14 +46,20 @@ void EntryPointSlots::Backpatch_Locked(TADDR slot, SlotType slotType, PCODE entr
             break;
 
         case SlotType_Executable:
-            *(PCODE *)slot = entryPoint;
+        {
+            ExecutableWriterHolder<void> slotHolder((void*)slot, sizeof(PCODE*));
+            *(PCODE *)slotHolder.GetRW() = entryPoint;
+        }
             goto Flush;
 
         case SlotType_ExecutableRel32:
+        {
             // A rel32 may require a jump stub on some architectures, and is currently not supported
             _ASSERTE(sizeof(void *) <= 4);
 
-            *(PCODE *)slot = entryPoint - ((PCODE)slot + sizeof(PCODE));
+            ExecutableWriterHolder<void> slotHolder((void*)slot, sizeof(PCODE*));
+            *(PCODE *)slotHolder.GetRW() = entryPoint - ((PCODE)slot + sizeof(PCODE));
+        }
             // fall through
 
         Flush:
