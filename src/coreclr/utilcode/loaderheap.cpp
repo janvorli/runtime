@@ -1240,27 +1240,27 @@ BOOL UnlockedLoaderHeap::GetMoreCommittedPages(size_t dwMinSize)
     return UnlockedReservePages(dwMinSize);
 }
 
-void *UnlockedLoaderHeap::UnlockedAllocMem(size_t dwSize
+DoublePtr UnlockedLoaderHeap::UnlockedAllocMem(size_t dwSize
                                            COMMA_INDEBUG(__in const char *szFile)
                                            COMMA_INDEBUG(int  lineNum))
 {
-    CONTRACT(void*)
+    CONTRACT(DoublePtr)
     {
         INSTANCE_CHECK;
         THROWS;
         GC_NOTRIGGER;
         INJECT_FAULT(ThrowOutOfMemory(););
-        POSTCONDITION(CheckPointer(RETVAL));
+        POSTCONDITION(CheckPointer(RETVAL.GetRX()));
     }
     CONTRACT_END;
 
-    void *pResult = UnlockedAllocMem_NoThrow(
+    DoublePtr result = UnlockedAllocMem_NoThrow(
         dwSize COMMA_INDEBUG(szFile) COMMA_INDEBUG(lineNum));
 
-    if (pResult == NULL)
+    if (result.IsNull())
         ThrowOutOfMemory();
 
-    RETURN pResult;
+    RETURN result;
 }
 
 #ifdef _DEBUG
@@ -1292,22 +1292,22 @@ static DWORD ShouldInjectFault()
 
 #endif
 
-void *UnlockedLoaderHeap::UnlockedAllocMem_NoThrow(size_t dwSize
+DoublePtr UnlockedLoaderHeap::UnlockedAllocMem_NoThrow(size_t dwSize
                                                    COMMA_INDEBUG(__in const char *szFile)
                                                    COMMA_INDEBUG(int lineNum))
 {
-    CONTRACT(void*)
+    CONTRACT(DoublePtr)
     {
         INSTANCE_CHECK;
         NOTHROW;
         GC_NOTRIGGER;
-        INJECT_FAULT(CONTRACT_RETURN NULL;);
+        INJECT_FAULT(CONTRACT_RETURN DoublePtr(NULL, NULL, NULL););
         PRECONDITION(dwSize != 0);
-        POSTCONDITION(CheckPointer(RETVAL, NULL_OK));
+        POSTCONDITION(CheckPointer(RETVAL.GetRX(), NULL_OK));
     }
     CONTRACT_END;
 
-    SHOULD_INJECT_FAULT(RETURN NULL);
+    SHOULD_INJECT_FAULT(RETURN DoublePtr(NULL, NULL, NULL));
 
     INDEBUG(size_t dwRequestedSize = dwSize;)
 
@@ -1376,7 +1376,8 @@ again:
 #endif
 
             EtwAllocRequest(this, pData, dwSize);
-            RETURN pData;
+            // TODO: Get the RW mapping
+            RETURN DoublePtr(pData, pData, this);
         }
     }
 
@@ -1386,7 +1387,7 @@ again:
         goto again;
 
     // We could not satisfy this allocation request
-    RETURN NULL;
+    RETURN DoublePtr::Null();
 }
 
 void UnlockedLoaderHeap::UnlockedBackoutMem(void *pMem,
@@ -1553,13 +1554,13 @@ void UnlockedLoaderHeap::UnlockedBackoutMem(void *pMem,
 // behind the scenes.
 //
 //
-void *UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSize,
+DoublePtr UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSize,
                                                           size_t  alignment,
                                                           size_t *pdwExtra
                                                           COMMA_INDEBUG(__in const char *szFile)
                                                           COMMA_INDEBUG(int  lineNum))
 {
-    CONTRACT(void*)
+    CONTRACT(DoublePtr)
     {
         NOTHROW;
 
@@ -1568,8 +1569,8 @@ void *UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSiz
 
         PRECONDITION( alignment != 0 );
         PRECONDITION(0 == (alignment & (alignment - 1))); // require power of 2
-        POSTCONDITION( (RETVAL) ?
-                       (0 == ( ((UINT_PTR)(RETVAL)) & (alignment - 1))) : // If non-null, pointer must be aligned
+        POSTCONDITION( (!RETVAL.IsNull()) ?
+                       (0 == ( ((UINT_PTR)(RETVAL.GetRX())) & (alignment - 1))) : // If non-null, pointer must be aligned
                        (pdwExtra == NULL || 0 == *pdwExtra)    //   or else *pdwExtra must be set to 0
                      );
     }
@@ -1583,7 +1584,7 @@ void *UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSiz
                 *pdwExtra = 0;
             }
 
-    SHOULD_INJECT_FAULT(RETURN NULL);
+    SHOULD_INJECT_FAULT(RETURN DoublePtr::Null());
 
     void *pResult;
 
@@ -1592,7 +1593,7 @@ void *UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSiz
     // Check for overflow if we align the allocation
     if (dwRequestedSize + alignment < dwRequestedSize)
     {
-        RETURN NULL;
+        RETURN DoublePtr::Null();
     }
 
     // We don't know how much "extra" we need to satisfy the alignment until we know
@@ -1605,7 +1606,7 @@ void *UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSiz
     {
         if (!GetMoreCommittedPages(dwRoomSize))
         {
-            RETURN NULL;
+            RETURN DoublePtr::Null();
         }
     }
 
@@ -1624,7 +1625,7 @@ void *UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSiz
     S_SIZE_T cbAllocSize = S_SIZE_T( dwRequestedSize ) + S_SIZE_T( extra );
     if( cbAllocSize.IsOverflow() )
     {
-        RETURN NULL;
+        RETURN DoublePtr::Null();
     }
 
     size_t dwSize = AllocMem_TotalSize( cbAllocSize.Value(), this);
@@ -1677,13 +1678,13 @@ void *UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSiz
         *pdwExtra = extra;
     }
 
-    RETURN pResult;
-
+    // TODO: Get the RW mapping
+    RETURN DoublePtr(pResult, pResult, this);
 }
 
 
 
-void *UnlockedLoaderHeap::UnlockedAllocAlignedMem(size_t  dwRequestedSize,
+DoublePtr UnlockedLoaderHeap::UnlockedAllocAlignedMem(size_t  dwRequestedSize,
                                                   size_t  dwAlignment,
                                                   size_t *pdwExtra
                                                   COMMA_INDEBUG(__in const char *szFile)
@@ -1696,33 +1697,33 @@ void *UnlockedLoaderHeap::UnlockedAllocAlignedMem(size_t  dwRequestedSize,
     }
     CONTRACTL_END
 
-    void *pResult = UnlockedAllocAlignedMem_NoThrow(dwRequestedSize,
+    DoublePtr result = UnlockedAllocAlignedMem_NoThrow(dwRequestedSize,
                                                     dwAlignment,
                                                     pdwExtra
                                                     COMMA_INDEBUG(szFile)
                                                     COMMA_INDEBUG(lineNum));
 
-    if (!pResult)
+    if (result.IsNull())
     {
         ThrowOutOfMemory();
     }
 
-    return pResult;
+    return result;
 
 
 }
 
 
 
-void *UnlockedLoaderHeap::UnlockedAllocMemForCode_NoThrow(size_t dwHeaderSize, size_t dwCodeSize, DWORD dwCodeAlignment, size_t dwReserveForJumpStubs)
+DoublePtr UnlockedLoaderHeap::UnlockedAllocMemForCode_NoThrow(size_t dwHeaderSize, size_t dwCodeSize, DWORD dwCodeAlignment, size_t dwReserveForJumpStubs)
 {
-    CONTRACT(void*)
+    CONTRACT(DoublePtr)
     {
         INSTANCE_CHECK;
         NOTHROW;
-        INJECT_FAULT(CONTRACT_RETURN NULL;);
+        INJECT_FAULT(CONTRACT_RETURN DoublePtr::Null(););
         PRECONDITION(0 == (dwCodeAlignment & (dwCodeAlignment - 1))); // require power of 2
-        POSTCONDITION(CheckPointer(RETVAL, NULL_OK));
+        POSTCONDITION(CheckPointer(RETVAL.GetRX(), NULL_OK));
     }
     CONTRACT_END;
 
@@ -1739,14 +1740,14 @@ void *UnlockedLoaderHeap::UnlockedAllocMemForCode_NoThrow(size_t dwHeaderSize, s
     S_SIZE_T cbAllocSize = S_SIZE_T(dwHeaderSize) + S_SIZE_T(dwCodeSize) + S_SIZE_T(dwCodeAlignment - 1) + S_SIZE_T(dwReserveForJumpStubs);
     if( cbAllocSize.IsOverflow() )
     {
-        RETURN NULL;
+        RETURN DoublePtr::Null();
     }
 
     if (cbAllocSize.Value() > GetBytesAvailCommittedRegion())
     {
         if (GetMoreCommittedPages(cbAllocSize.Value()) == FALSE)
         {
-            RETURN NULL;
+            RETURN DoublePtr::Null();
         }
     }
 
@@ -1754,7 +1755,8 @@ void *UnlockedLoaderHeap::UnlockedAllocMemForCode_NoThrow(size_t dwHeaderSize, s
     EtwAllocRequest(this, pResult, (pResult + dwCodeSize) - m_pAllocPtr);
     m_pAllocPtr = pResult + dwCodeSize;
 
-    RETURN pResult;
+    // TODO: Get the RW mapping
+    RETURN DoublePtr(pResult, pResult, this);
 }
 
 
@@ -2201,7 +2203,7 @@ void *AllocMemTracker::Track_NoThrow(TaggedMemAllocPtr tmap)
     _ASSERTE( (!m_fReleased) && "You've already called SuppressRelease on this AllocMemTracker which implies you've passed your point of no failure. Why are you still doing allocations?");
 
 
-    if (tmap.m_pMem != NULL)
+    if (!tmap.m_pMem.IsNull())
     {
         AllocMemHolder<void*> holder(tmap);  // If anything goes wrong in here, this holder will backout the allocation for the caller.
         if (m_fReleased)
@@ -2227,7 +2229,8 @@ void *AllocMemTracker::Track_NoThrow(TaggedMemAllocPtr tmap)
 
         // From here on, we can't fail
         pBlock->m_Node[pBlock->m_nextFree].m_pHeap           = tmap.m_pHeap;
-        pBlock->m_Node[pBlock->m_nextFree].m_pMem            = tmap.m_pMem;
+        // TODO: does this need both RX and RW?
+        pBlock->m_Node[pBlock->m_nextFree].m_pMem            = tmap.m_pMem.GetRX();
         pBlock->m_Node[pBlock->m_nextFree].m_dwRequestedSize = tmap.m_dwRequestedSize;
 #ifdef _DEBUG
         pBlock->m_Node[pBlock->m_nextFree].m_szAllocFile     = tmap.m_szFile;

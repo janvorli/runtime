@@ -858,6 +858,54 @@ Stub *StubLinker::LinkInterceptor(LoaderHeap *pHeap, Stub* interceptee, void *pR
     return pStub.Extract();
 }
 
+class StubHolder2
+{
+    DoublePtrT<Stub> m_stub;
+public:
+    
+    StubHolder2& operator=(DoublePtrT<Stub> stub)
+    {
+        m_stub = stub;
+        return *this;
+    }
+
+    StubHolder2() : m_stub(NULL, NULL, NULL)
+    {
+
+    }
+    ~StubHolder2()
+    {
+        if (m_stub.GetRW() != NULL)
+        {
+            // TODO: unmap the RW?
+            m_stub.GetRW()->DecRef();
+        }
+    }
+
+    void SuppressRelease()
+    {
+        // TODO
+    }
+
+    Stub* GetRW()
+    {
+        return m_stub.GetRW();
+    }
+    Stub* Extract()
+    {
+        // TODO: is this correct?
+        // TODO: Release the RW mapping?
+        Stub* rx = m_stub.GetRX();
+        m_stub = DoublePtrT<Stub>();
+        return rx;
+    } 
+
+    bool IsNull()
+    {
+        return m_stub.IsNull();
+    }   
+};
+
 //---------------------------------------------------------------
 // Generate the actual stub. The returned stub has a refcount of 1.
 // No other methods (other than the destructor) should be called
@@ -876,7 +924,8 @@ Stub *StubLinker::Link(LoaderHeap *pHeap, DWORD flags)
     _ASSERTE(!pHeap || pHeap->IsExecutable());
 #endif
 
-    StubHolder<Stub> pStub;
+    //StubHolder<Stub> pStub;
+    StubHolder2 pStub;
 
 #ifdef STUBLINKER_GENERATES_UNWIND_INFO
     StubUnwindInfoSegmentBoundaryReservationList ReservedStubs;
@@ -892,9 +941,9 @@ Stub *StubLinker::Link(LoaderHeap *pHeap, DWORD flags)
                 , UnwindInfoSize(globalsize)
 #endif
                 );
-        ASSERT(pStub != NULL);
+        ASSERT(!pStub.IsNull());
 
-        bool fSuccess; fSuccess = EmitStub(pStub, globalsize, pHeap);
+        bool fSuccess = EmitStub(pStub.GetRW(), globalsize, pHeap);
 
 #ifdef STUBLINKER_GENERATES_UNWIND_INFO
         if (fSuccess)
@@ -903,13 +952,15 @@ Stub *StubLinker::Link(LoaderHeap *pHeap, DWORD flags)
         }
         else
         {
-            ReservedStubs.AddStub(pStub);
-            pStub.SuppressRelease();
+            ReservedStubs.AddStub(pStub.Extract());
+//            pStub.SuppressRelease();
         }
 #else
         CONSISTENCY_CHECK_MSG(fSuccess, ("EmitStub should always return true"));
 #endif
     }
+
+    // TODO: unmap the RW?
 
     return pStub.Extract();
 }
@@ -2105,7 +2156,7 @@ TADDR Stub::GetAllocationBase()
     return info - cbPrefix;
 }
 
-Stub* Stub::NewStub(PTR_VOID pCode, DWORD flags)
+DoublePtrT<Stub> Stub::NewStub(PTR_VOID pCode, DWORD flags)
 {
     CONTRACTL
     {
@@ -2114,10 +2165,10 @@ Stub* Stub::NewStub(PTR_VOID pCode, DWORD flags)
     }
     CONTRACTL_END;
 
-    Stub* pStub = NewStub(NULL, 0, flags | NEWSTUB_FL_EXTERNAL);
-    _ASSERTE(pStub->HasExternalEntryPoint());
+    DoublePtrT<Stub> pStub = NewStub(NULL, 0, flags | NEWSTUB_FL_EXTERNAL);
+    _ASSERTE(pStub.GetRX()->HasExternalEntryPoint());
 
-    *(PTR_VOID *)(pStub + 1) = pCode;
+    *(PTR_VOID *)(pStub.GetRW() + 1) = pCode;
 
     return pStub;
 }
@@ -2125,7 +2176,7 @@ Stub* Stub::NewStub(PTR_VOID pCode, DWORD flags)
 //-------------------------------------------------------------------
 // Stub allocation done here.
 //-------------------------------------------------------------------
-/*static*/ Stub* Stub::NewStub(
+/*static*/ DoublePtrT<Stub> Stub::NewStub(
         LoaderHeap *pHeap,
         UINT numCodeBytes,
         DWORD flags
@@ -2175,26 +2226,36 @@ Stub* Stub::NewStub(PTR_VOID pCode, DWORD flags)
 
     size_t totalSize = size.Value();
 
-    BYTE *pBlock;
+    BYTE *pBlockRW;
+    BYTE *pBlockRX;
+
     if (pHeap == NULL)
     {
+        // TODO: It seems this is a case when there is no code in the stub itself, thus no stub RW release would be needed.
+        // Maybe store the allocator in the DoublePtr and have it NULL for this case.
 #ifndef TARGET_UNIX
-        pBlock = new (executable) BYTE[totalSize];
+        pBlockRW = new (executable) BYTE[totalSize];
 #else
-        pBlock = new BYTE[totalSize];
+        pBlockRW = new BYTE[totalSize];
 #endif
+        pBlockRX = pBlockRW;
     }
     else
     {
-        pBlock = (BYTE*)(void*) pHeap->AllocAlignedMem(totalSize, CODE_SIZE_ALIGN);
+        TaggedMemAllocPtr ptr = pHeap->AllocAlignedMem(totalSize, CODE_SIZE_ALIGN);
+        pBlockRW = (BYTE*)(void*)ptr;
+        pBlockRX = (BYTE*)ptr.GetRX();
         flags |= NEWSTUB_FL_LOADERHEAP;
     }
 
-    // Make sure that the payload of the stub is aligned
-    Stub* pStub = (Stub*)((pBlock + totalSize) -
-        (sizeof(Stub) + ((flags & NEWSTUB_FL_EXTERNAL) ? sizeof(PTR_PCODE) : numCodeBytes)));
+    size_t stubPayloadOffset = totalSize -
+        (sizeof(Stub) + ((flags & NEWSTUB_FL_EXTERNAL) ? sizeof(PTR_PCODE) : numCodeBytes));
 
-    pStub->SetupStub(
+    // Make sure that the payload of the stub is aligned
+    Stub* pStubRW = (Stub*)(pBlockRW + stubPayloadOffset);
+    Stub* pStubRX = (Stub*)(pBlockRX + stubPayloadOffset);
+
+    pStubRW->SetupStub(
             numCodeBytes,
             flags
 #ifdef STUBLINKER_GENERATES_UNWIND_INFO
@@ -2202,9 +2263,9 @@ Stub* Stub::NewStub(PTR_VOID pCode, DWORD flags)
 #endif
             );
 
-    _ASSERTE((BYTE *)pStub->GetAllocationBase() == pBlock);
+    _ASSERTE((BYTE *)pStubRX->GetAllocationBase() == pBlockRX);
 
-    return pStub;
+    return DoublePtrT<Stub>(pStubRX, pStubRW, pHeap);
 }
 
 void Stub::SetupStub(int numCodeBytes, DWORD flags
@@ -2284,15 +2345,17 @@ void Stub::SetupStub(int numCodeBytes, DWORD flags
     }
     CONTRACTL_END;
 
-    InterceptStub *pStub = (InterceptStub *) NewStub(pCode, NEWSTUB_FL_INTERCEPT);
+    DoublePtrT<Stub> pStub = NewStub(pCode, NEWSTUB_FL_INTERCEPT);
+    InterceptStub *pStubRW = (InterceptStub *)pStub.GetRW();
 
-    *pStub->GetInterceptedStub() = interceptee;
-    *pStub->GetRealAddr() = (TADDR)pRealAddr;
+    *pStubRW->GetInterceptedStub() = interceptee;
+    *pStubRW->GetRealAddr() = (TADDR)pRealAddr;
 
     LOG((LF_CORDB, LL_INFO10000, "For Stub 0x%x, set intercepted stub to 0x%x\n",
-        pStub, interceptee));
+        pStub.GetRX(), interceptee));
 
-    return pStub;
+    // TODO: return the double ptr
+    return pStub.GetRX();
 }
 
 //-------------------------------------------------------------------
@@ -2314,7 +2377,7 @@ void Stub::SetupStub(int numCodeBytes, DWORD flags
     }
     CONTRACTL_END;
 
-    InterceptStub *pStub = (InterceptStub *) NewStub(
+    DoublePtrT<Stub> pStub = NewStub(
             pHeap,
             numCodeBytes,
             NEWSTUB_FL_INTERCEPT
@@ -2323,13 +2386,16 @@ void Stub::SetupStub(int numCodeBytes, DWORD flags
 #endif
             );
 
-    *pStub->GetInterceptedStub() = interceptee;
-    *pStub->GetRealAddr() = (TADDR)pRealAddr;
+    InterceptStub *pStubRW = (InterceptStub *)pStub.GetRW();
+
+    *pStubRW->GetInterceptedStub() = interceptee;
+    *pStubRW->GetRealAddr() = (TADDR)pRealAddr;
 
     LOG((LF_CORDB, LL_INFO10000, "For Stub 0x%x, set intercepted stub to 0x%x\n",
-        pStub, interceptee));
+        pStub.GetRX(), interceptee));
 
-    return pStub;
+    // TODO: return the double ptr
+    return pStub.GetRX();
 }
 
 //-------------------------------------------------------------------

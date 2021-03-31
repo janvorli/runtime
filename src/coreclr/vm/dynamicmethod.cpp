@@ -638,7 +638,7 @@ void HostCodeHeap::AddToFreeList(TrackAllocation *pBlockToInsert)
                                                         m_pFreeList, m_pFreeList->size));
 }
 
-void* HostCodeHeap::AllocMemForCode_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs)
+DoublePtr HostCodeHeap::AllocMemForCode_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs)
 {
     CONTRACTL
     {
@@ -661,7 +661,7 @@ void* HostCodeHeap::AllocMemForCode_NoThrow(size_t header, size_t size, DWORD al
 
     TrackAllocation* pTracker = AllocMemory_NoThrow(header, size, alignment, reserveForJumpStubs);
     if (pTracker == NULL)
-        return NULL;
+        return DoublePtr::Null();
 
     BYTE * pCode = ALIGN_UP((BYTE*)(pTracker + 1) + header, alignment);
 
@@ -675,7 +675,10 @@ void* HostCodeHeap::AllocMemForCode_NoThrow(size_t header, size_t size, DWORD al
     m_AllocationCount++;
     LOG((LF_BCL, LL_INFO100, "Level2 - CodeHeap [0x%p] - ref count %d\n", this, m_AllocationCount));
 
-    return pCode;
+    // TODO: Get the RW mapping
+    // TODO: the heap argument? Or how about to stop passing the heap inside the ptr? is there a place where we don't know the originating heap?
+    // Maybe really an interface for unmapping would do
+    return DoublePtr(pCode, pCode, NULL);
 }
 
 HostCodeHeap::TrackAllocation* HostCodeHeap::AllocMemory_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs)

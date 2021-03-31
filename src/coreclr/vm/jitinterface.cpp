@@ -11130,7 +11130,7 @@ void CEEJitInfo::BackoutJitData(EEJitManager * jitMgr)
         GC_TRIGGERS;
     } CONTRACTL_END;
 
-    CodeHeader* pCodeHeader = GetCodeHeader();
+    CodeHeader* pCodeHeader = GetCodeHeader().GetRW();
     if (pCodeHeader)
         jitMgr->RemoveJitData(pCodeHeader, m_GCinfo_len, m_EHinfo_len);
 }
@@ -11253,7 +11253,7 @@ void CEEJitInfo::CompressDebugInfo()
             NULL,
             m_pMethodBeingCompiled->GetLoaderAllocator()->GetLowFrequencyHeap());
 
-        GetCodeHeader()->SetDebugInfo(pDebugInfo);
+        GetCodeHeader().GetRW()->SetDebugInfo(pDebugInfo);
     }
     EX_CATCH
     {
@@ -11397,7 +11397,7 @@ void CEEJitInfo::allocUnwindInfo (
         _ASSERTE(m_usedUnwindInfos > 0);
     }
 
-    PT_RUNTIME_FUNCTION pRuntimeFunction = m_CodeHeader->GetUnwindInfo(m_usedUnwindInfos);
+    PT_RUNTIME_FUNCTION pRuntimeFunction = m_CodeHeader.GetRW()->GetUnwindInfo(m_usedUnwindInfos);
     m_usedUnwindInfos++;
 
     // Make sure that the RUNTIME_FUNCTION is aligned on a DWORD sized boundary
@@ -11462,7 +11462,7 @@ void CEEJitInfo::allocUnwindInfo (
 
         for (ULONG iUnwindInfo = 0; iUnwindInfo < m_usedUnwindInfos - 1; iUnwindInfo++)
         {
-            PT_RUNTIME_FUNCTION pOtherFunction = m_CodeHeader->GetUnwindInfo(iUnwindInfo);
+            PT_RUNTIME_FUNCTION pOtherFunction = m_CodeHeader.GetRW()->GetUnwindInfo(iUnwindInfo);
             _ASSERTE((   RUNTIME_FUNCTION__BeginAddress(pOtherFunction) >= RUNTIME_FUNCTION__EndAddress(pRuntimeFunction, baseAddress)
                      || RUNTIME_FUNCTION__EndAddress(pOtherFunction, baseAddress) <= RUNTIME_FUNCTION__BeginAddress(pRuntimeFunction)));
         }
@@ -11502,7 +11502,7 @@ void CEEJitInfo::allocUnwindInfo (
 #if defined(TARGET_AMD64)
     // Publish the new unwind information in a way that the ETW stack crawler can find
     if (m_usedUnwindInfos == m_totalUnwindInfos)
-        UnwindInfoTable::PublishUnwindInfoForMethod(baseAddress, m_CodeHeader->GetUnwindInfo(0), m_totalUnwindInfos);
+        UnwindInfoTable::PublishUnwindInfoForMethod(baseAddress, m_CodeHeader.GetRW()->GetUnwindInfo(0), m_totalUnwindInfos);
 #endif // defined(TARGET_AMD64)
 
     EE_TO_JIT_TRANSITION();
@@ -12235,7 +12235,7 @@ void CEEJitInfo::allocMem (
     totalSize += m_totalUnwindSize;
 #endif
 
-    _ASSERTE(m_CodeHeader == 0 &&
+    _ASSERTE(m_CodeHeader.IsNull() &&
             // The jit-compiler sometimes tries to compile a method a second time
             // if it failed the first time. In such a situation, m_CodeHeader may
             // have already been assigned. Its OK to ignore this assert in such a
@@ -12270,8 +12270,11 @@ void CEEJitInfo::allocMem (
                                            , &m_moduleBase
 #endif
                                            );
-
-    BYTE* current = (BYTE *)m_CodeHeader->GetCodeStartAddress();
+    
+    // TODO: store the m_CodeHeader as double pointer and release the memory all at once after the JIT writes the code?
+    // Seems we will need that unless the other stuff allocated from this memory like the GC info is accessed out of the 
+    // method that calls the allocMem.
+    BYTE* current = (BYTE *)m_CodeHeader.GetRW()->GetCodeStartAddress();
 
     *codeBlock = current;
     current += codeSize;
@@ -12294,7 +12297,7 @@ void CEEJitInfo::allocMem (
     current += m_totalUnwindSize;
 #endif
 
-    _ASSERTE((SIZE_T)(current - (BYTE *)m_CodeHeader->GetCodeStartAddress()) <= totalSize.Value());
+    _ASSERTE((SIZE_T)(current - (BYTE *)m_CodeHeader.GetRW()->GetCodeStartAddress()) <= totalSize.Value());
 
 #ifdef _DEBUG
     m_codeSize = codeSize;
@@ -12316,8 +12319,8 @@ void * CEEJitInfo::allocGCInfo (size_t size)
 
     JIT_TO_EE_TRANSITION();
 
-    _ASSERTE(m_CodeHeader != 0);
-    _ASSERTE(m_CodeHeader->GetGCInfo() == 0);
+    _ASSERTE(!m_CodeHeader.IsNull());
+    _ASSERTE(m_CodeHeader.GetRW()->GetGCInfo() == 0);
 
 #ifdef HOST_64BIT
     if (size & 0xFFFFFFFF80000000LL)
@@ -12326,13 +12329,13 @@ void * CEEJitInfo::allocGCInfo (size_t size)
     }
 #endif // HOST_64BIT
 
-    block = m_jitManager->allocGCInfo(m_CodeHeader,(DWORD)size, &m_GCinfo_len);
+    block = m_jitManager->allocGCInfo(m_CodeHeader.GetRW(),(DWORD)size, &m_GCinfo_len);
     if (!block)
     {
         COMPlusThrowHR(CORJIT_OUTOFMEM);
     }
 
-    _ASSERTE(m_CodeHeader->GetGCInfo() != 0 && block == m_CodeHeader->GetGCInfo());
+    _ASSERTE(m_CodeHeader.GetRW()->GetGCInfo() != 0 && block == m_CodeHeader.GetRW()->GetGCInfo());
 
     EE_TO_JIT_TRANSITION();
 
@@ -12352,14 +12355,14 @@ void CEEJitInfo::setEHcount (
     JIT_TO_EE_TRANSITION();
 
     _ASSERTE(cEH != 0);
-    _ASSERTE(m_CodeHeader != 0);
-    _ASSERTE(m_CodeHeader->GetEHInfo() == 0);
+    _ASSERTE(!m_CodeHeader.IsNull());
+    _ASSERTE(m_CodeHeader.GetRW()->GetEHInfo() == 0);
 
     EE_ILEXCEPTION* ret;
-    ret = m_jitManager->allocEHInfo(m_CodeHeader,cEH, &m_EHinfo_len);
+    ret = m_jitManager->allocEHInfo(m_CodeHeader.GetRW(),cEH, &m_EHinfo_len);
     _ASSERTE(ret);      // allocEHInfo throws if there's not enough memory
 
-    _ASSERTE(m_CodeHeader->GetEHInfo() != 0 && m_CodeHeader->GetEHInfo()->EHCount() == cEH);
+    _ASSERTE(m_CodeHeader.GetRW()->GetEHInfo() != 0 && m_CodeHeader.GetRW()->GetEHInfo()->EHCount() == cEH);
 
     EE_TO_JIT_TRANSITION();
 }
@@ -12378,9 +12381,9 @@ void CEEJitInfo::setEHinfo (
     JIT_TO_EE_TRANSITION();
 
     // <REVISIT_TODO> Fix make the Code Manager EH clauses EH_INFO+</REVISIT_TODO>
-    _ASSERTE(m_CodeHeader->GetEHInfo() != 0 && EHnumber < m_CodeHeader->GetEHInfo()->EHCount());
+    _ASSERTE(m_CodeHeader.GetRW()->GetEHInfo() != 0 && EHnumber < m_CodeHeader.GetRW()->GetEHInfo()->EHCount());
 
-    EE_ILEXCEPTION_CLAUSE* pEHClause = m_CodeHeader->GetEHInfo()->EHClause(EHnumber);
+    EE_ILEXCEPTION_CLAUSE* pEHClause = m_CodeHeader.GetRW()->GetEHInfo()->EHClause(EHnumber);
 
     pEHClause->TryStartPC     = clause->TryOffset;
     pEHClause->TryEndPC       = clause->TryLength;

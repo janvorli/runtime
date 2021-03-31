@@ -750,17 +750,21 @@ class Stub
         //-------------------------------------------------------------------
         // This creates stubs.
         //-------------------------------------------------------------------
-        static Stub* NewStub(LoaderHeap *pLoaderHeap, UINT numCodeBytes,
+        static DoublePtrT<Stub> NewStub(LoaderHeap *pLoaderHeap, UINT numCodeBytes,
                              DWORD flags = 0
 #ifdef STUBLINKER_GENERATES_UNWIND_INFO
                              , UINT nUnwindInfoSize = 0
 #endif
                              );
 
-        static Stub* NewStub(PTR_VOID pCode, DWORD flags = 0);
+        static DoublePtrT<Stub> NewStub(PTR_VOID pCode, DWORD flags = 0);
         static Stub* NewStub(PCODE pCode, DWORD flags = 0)
         {
-            return NewStub((PTR_VOID)pCode, flags);
+            DoublePtrT<Stub> stub = NewStub((PTR_VOID)pCode, flags);
+
+            // TODO: release the RW. Q: Store the allocator * in the DoublePtr?
+            // Hmm, this stub doesn't use any heap! Maybe we don't need the DoublePtr for this kind of stub?
+            return stub.GetRX();
         }
 
         //-------------------------------------------------------------------

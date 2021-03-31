@@ -17,6 +17,147 @@
 #include "utilcode.h"
 #include "ex.h"
 
+class UnlockedLoaderHeap;
+
+// class DoublePtr
+// {
+//     void* m_pRW;
+//     void* m_pRX;
+//     LoaderHeap* m_pHeap;
+
+// public:
+//     DoublePtr() : m_pRW(NULL), m_pRX(NULL), m_pHeap(NULL)
+//     {
+//     }
+
+//     // TODO: get separate RX and RW
+//     DoublePtr(void* pRX) : m_pRW(pRX), m_pRX(pRX)
+//     {
+//     }
+
+//     DoublePtr(void* pRX, void* pRW, LoaderHeap* pHeap) : m_pRW(pRX), m_pRX(pRW), m_pHeap(pHeap)
+//     {
+//     }
+
+//     void* GetRX() const
+//     {
+//         return m_pRX;
+//     }
+
+//     void* GetRW() const
+//     {
+//         return m_pRW;
+//     }
+
+//     LoaderHeap* Heap() const
+//     {
+//         return m_pHeap;
+//     }
+
+//     bool IsNull() const
+//     {
+//         return m_pRX == NULL;
+//     }
+
+//     // operator const void*()
+//     // {
+//     //     return m_pRX;
+//     // }
+
+//     // operator void*()
+//     // {
+//     //     return m_pRW;
+//     // }
+
+//     DoublePtr& operator=(const DoublePtr& other)
+//     {
+//         m_pRW = other.m_pRW;
+//         m_pRX = other.m_pRX;
+
+//         return *this;
+//     }
+// };
+
+template<typename T>
+class DoublePtrT
+{
+    T* m_pRW;
+    T* m_pRX;
+    UnlockedLoaderHeap* m_pHeap;
+
+public:
+    DoublePtrT() : m_pRW(NULL), m_pRX(NULL), m_pHeap(NULL)
+    {
+    }
+
+    DoublePtrT(T* pRX, T* pRW, UnlockedLoaderHeap* pHeap) : m_pRW(pRX), m_pRX(pRW), m_pHeap(pHeap)
+    {
+    }
+
+    static DoublePtrT Null()
+    {
+        return DoublePtrT();
+    }
+
+    DoublePtrT& operator=(const DoublePtrT& other)
+    {
+        m_pRW = other.m_pRW;
+        m_pRX = other.m_pRX;
+
+        return *this;
+    }
+
+    T* GetRX() const
+    {
+        return m_pRX;
+    }
+
+    T* GetRW() const
+    {
+        return m_pRW;
+    }
+
+    UnlockedLoaderHeap* Heap() const
+    {
+        return m_pHeap;
+    }
+
+    bool IsNull() const
+    {
+        return m_pRX == NULL;
+    }
+};
+
+typedef DoublePtrT<void> DoublePtr;
+
+// template<typename T>
+// class DoublePtrT : public DoublePtr
+// {
+// public:
+//     DoublePtrT(T* pRX, T* pRW, LoaderHeap* pHeap) : DoublePtr(pRX, pRW, pHeap)
+//     {
+//     }
+
+//     DoublePtrT& operator=(const DoublePtr& other)
+//     {
+//         m_pRW = other.m_pRW;
+//         m_pRX = other.m_pRX;
+
+//         return *this;
+//     }
+
+//     T* GetRX() const
+//     {
+//         return (T*)DoublePtr::GetRX();
+//     }
+
+//     T* GetRW() const
+//     {
+//         return (T*)DoublePtr::GetRW();
+//     }
+// };
+
+
 //==============================================================================
 // Interface used to back out loader heap allocations.
 //==============================================================================
@@ -50,7 +191,7 @@ struct TaggedMemAllocPtr
 {
     // Note: For AllocAlignedMem blocks, m_pMem and m_dwRequestedSize are the actual values to pass
     // to BackoutMem. Do not add "m_dwExtra"
-    void        *m_pMem;                //Pointer to AllocMem'd block (needed to pass back to BackoutMem)
+    DoublePtr    m_pMem;                //Pointer to AllocMem'd block (needed to pass back to BackoutMem)
     size_t       m_dwRequestedSize;     //Requested allocation size (needed to pass back to BackoutMem)
 
     ILoaderHeapBackout  *m_pHeap;          //The heap that alloc'd the block (needed to know who to call BackoutMem on)
@@ -78,7 +219,14 @@ struct TaggedMemAllocPtr
     operator void*() const
     {
         LIMITED_METHOD_CONTRACT;
-        return (void*)(m_dwExtra + (BYTE*)m_pMem);
+        return (void*)(m_dwExtra + (BYTE*)m_pMem.GetRW());
+    }
+
+    void* GetRX()
+    {
+        LIMITED_METHOD_CONTRACT;
+        _ASSERTE(m_pMem.GetRX() != NULL);
+        return (void*)(m_dwExtra + (BYTE*)m_pMem.GetRX());
     }
 
     template < typename T >
@@ -89,7 +237,116 @@ struct TaggedMemAllocPtr
     }
 };
 
+// class DoubleMappedAllocator
+// {
+//     // Let's use one allocator per virtual memory block?
+//     HANDLE hSharedMemoryFile;
+//     size_t maxSize = 1024*1024;
+//     size_t freeOffset;
 
+//     struct RWMappedBlock
+//     {
+//         RWMappedBlock *next;
+//         void* pBase;
+//         size_t size;
+//         int refCount;
+//     };
+
+//     struct Segment
+//     {
+//         size_t offset; // in the shared memory
+//         void* pRXBase;
+//         size_t size;
+
+//         RWMappedBlock *rwMappedBlocks; // TODO: maybe just an array of addresses or offsets and refcounts
+//     };
+
+//     struct RWMappedBlock2 // each block is allocation granularity sized
+//     {
+//         void* pBase; // Or offset
+//         int refCount;
+//     };
+
+//     struct Segment2 // dynamically sized struct based on the size
+//     {
+//         size_t offset; // in the shared memory
+//         void* pRXBase;
+//         size_t size;
+
+//         RWMappedBlock2 rwMappedBlocks[1]; // each block is allocation granularity sized
+//     };
+
+//     size_t Granularity()
+//     {
+//         return 64 * 1024;
+//     }
+
+// public:
+
+//     ~DoubleMappedAllocator()
+//     {
+
+//     }
+
+//     bool Initialize()
+//     {
+//         hSharedMemoryFile = WszCreateFileMapping(
+//                  INVALID_HANDLE_VALUE,    // use paging file
+//                  NULL,                    // default security
+//                  PAGE_EXECUTE_READWRITE,  // read/write/execute access
+//                  0,                       // maximum object size (high-order DWORD)
+//                  1024*1024,               // maximum object size (low-order DWORD)
+//                  NULL);        
+//     }
+
+//     void* Reserve(size_t size) // MapViewOfFile2 seems to allow reserving, Unix has it too
+//     {
+//         // TODO: interlocked
+//         if (freeOffset + size > maxSize)
+//         {
+//             return NULL;
+//         }
+
+//         size_t offset = freeOffset;
+//         freeOffset += size;
+
+//         void* base = WszMapViewOfFile(hSharedMemoryFile
+//                         FILE_MAP_EXECUTE,
+//                         offset / ((size_t)1) >> 32,
+//                         offset & 0xFFFFFFFFUL,
+//                         size);
+
+//         size_t blockCount = (size + Granularity() - 1) / Granularity();
+//         Segment2 *pSegment = (Segment2*)new uint8_t[sizeof(Segment2) + sizeof(RWMappedBlock2) * (blockCount - 1)];
+//         pSegment->offset = offset;
+//         pSegment->size = size;
+//         pSegment->pRXBase = base;
+//         memset(pSegment->rwMappedBlocks, 0, sizeof(RWMappedBlock2) * blockCount);
+
+//         return base;
+//     }
+
+//     DoublePtr Map(void* pRX, size_t size)
+//     {
+
+//     }
+
+//     void Free(void* pBase) // TODO: maybe allow just freeing all in the destructor
+//     {
+
+//     }
+
+//     void* MapRW(void* pRX, size_t size)
+//     {
+
+//     }
+
+//     // TODO: or should we pass in the RX pointer? Might be easier from the lookup point of view
+//     void ReleaseRW(void* pRW, void* size)
+//     {
+
+//     }
+// };
 
 // # bytes to leave between allocations in debug mode
 // Set to a > 0 boundary to debug problems - I've made this zero, otherwise a 1 byte allocation becomes
@@ -149,11 +406,6 @@ struct LoaderHeapFreeBlock;
 class  LoaderHeapSniffer;
 struct LoaderHeapEvent;
 #endif
-
-
-
-
-
 
 
 
@@ -316,13 +568,13 @@ protected:
     // get careless, and end up reading from memory that it doesn't own - but since it will be
     // reading some other allocation's vtable, no crash will occur.  By keeping a gap between
     // allocations, it is more likely that these errors will be encountered.
-    void *UnlockedAllocMem(size_t dwSize
+    DoublePtr UnlockedAllocMem(size_t dwSize
 #ifdef _DEBUG
                           ,__in __in_z const char *szFile
                           ,int  lineNum
 #endif
                           );
-    void *UnlockedAllocMem_NoThrow(size_t dwSize
+    DoublePtr UnlockedAllocMem_NoThrow(size_t dwSize
 #ifdef _DEBUG
                                    ,__in __in_z const char *szFile
                                    ,int  lineNum
@@ -354,7 +606,7 @@ protected:
     // behind the scenes.
     //
     //
-    void *UnlockedAllocAlignedMem(size_t  dwRequestedSize
+    DoublePtr UnlockedAllocAlignedMem(size_t  dwRequestedSize
                                  ,size_t  dwAlignment
                                  ,size_t *pdwExtra
 #ifdef _DEBUG
@@ -363,7 +615,7 @@ protected:
 #endif
                                  );
 
-    void *UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSize
+    DoublePtr UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSize
                                          ,size_t  dwAlignment
                                          ,size_t *pdwExtra
 #ifdef _DEBUG
@@ -410,7 +662,7 @@ public:
 #endif
 
 protected:
-    void *UnlockedAllocMemForCode_NoThrow(size_t dwHeaderSize, size_t dwCodeSize, DWORD dwCodeAlignment, size_t dwReserveForJumpStubs);
+    DoublePtr UnlockedAllocMemForCode_NoThrow(size_t dwHeaderSize, size_t dwCodeSize, DWORD dwCodeAlignment, size_t dwReserveForJumpStubs);
 
     void UnlockedSetReservedRegion(BYTE* dwReservedRegionAddress, SIZE_T dwReservedRegionSize, BOOL fReleaseMemory);
 };
@@ -524,7 +776,7 @@ public:
 
         if(dwSize.IsOverflow()) {
             TaggedMemAllocPtr tmap;
-            tmap.m_pMem             = NULL;
+            tmap.m_pMem             = DoublePtr(NULL, NULL, NULL);
             tmap.m_dwRequestedSize  = dwSize.Value();
             tmap.m_pHeap            = this;
             tmap.m_dwExtra          = 0;
@@ -553,7 +805,7 @@ private:
         auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
 
-        void *pResult;
+        DoublePtr pResult;
         TaggedMemAllocPtr tmap;
 
         CRITSEC_Holder csh(m_CriticalSection);
@@ -584,7 +836,7 @@ private:
     {
         WRAPPER_NO_CONTRACT;
 
-        void *pResult;
+        DoublePtr pResult;
         TaggedMemAllocPtr tmap;
 
         CRITSEC_Holder csh(m_CriticalSection);
@@ -637,7 +889,7 @@ public:
 
 
         TaggedMemAllocPtr tmap;
-        void *pResult;
+        DoublePtr pResult;
         size_t dwExtra;
 
         pResult = UnlockedAllocAlignedMem(dwRequestedSize
@@ -649,7 +901,7 @@ public:
 #endif
                                      );
 
-        tmap.m_pMem             = (void*)(((BYTE*)pResult) - dwExtra);
+        tmap.m_pMem             = DoublePtr((void*)(((BYTE*)pResult.GetRX()) - dwExtra), (void*)(((BYTE*)pResult.GetRW()) - dwExtra), this);
         tmap.m_dwRequestedSize  = dwRequestedSize + dwExtra;
         tmap.m_pHeap            = this;
         tmap.m_dwExtra          = dwExtra;
@@ -676,7 +928,7 @@ public:
 
 
         TaggedMemAllocPtr tmap;
-        void *pResult;
+        DoublePtr pResult;
         size_t dwExtra;
 
         pResult = UnlockedAllocAlignedMem_NoThrow(dwRequestedSize
@@ -688,9 +940,9 @@ public:
 #endif
                                             );
 
-        _ASSERTE(!(pResult == NULL && dwExtra != 0));
+        _ASSERTE(!(pResult.IsNull() && dwExtra != 0));
 
-        tmap.m_pMem             = (void*)(((BYTE*)pResult) - dwExtra);
+        tmap.m_pMem             = DoublePtr((void*)(((BYTE*)pResult.GetRX()) - dwExtra), (void*)(((BYTE*)pResult.GetRW()) - dwExtra), this);
         tmap.m_dwRequestedSize  = dwRequestedSize + dwExtra;
         tmap.m_pHeap            = this;
         tmap.m_dwExtra          = dwExtra;
@@ -787,7 +1039,7 @@ public:
 #endif // DACCESS_COMPILE
 
 public:
-    void *RealAllocMem(size_t dwSize
+    DoublePtr RealAllocMem(size_t dwSize
 #ifdef _DEBUG
                        ,__in __in_z const char *szFile
                        ,int  lineNum
@@ -796,7 +1048,7 @@ public:
     {
         WRAPPER_NO_CONTRACT;
 
-        void *pResult;
+        DoublePtr pResult;
 
         pResult = UnlockedAllocMem(dwSize
 #ifdef _DEBUG
@@ -807,7 +1059,7 @@ public:
         return pResult;
     }
 
-    void *RealAllocMem_NoThrow(size_t dwSize
+    DoublePtr RealAllocMem_NoThrow(size_t dwSize
 #ifdef _DEBUG
                                ,__in __in_z const char *szFile
                                ,int  lineNum
@@ -816,7 +1068,7 @@ public:
     {
         WRAPPER_NO_CONTRACT;
 
-        void *pResult;
+        DoublePtr pResult;
 
         pResult = UnlockedAllocMem_NoThrow(dwSize
 #ifdef _DEBUG
@@ -829,7 +1081,7 @@ public:
 
 
 public:
-    void *AllocMemForCode_NoThrow(size_t dwHeaderSize, size_t dwCodeSize, DWORD dwCodeAlignment, size_t dwReserveForJumpStubs)
+    DoublePtr AllocMemForCode_NoThrow(size_t dwHeaderSize, size_t dwCodeSize, DWORD dwCodeAlignment, size_t dwReserveForJumpStubs)
     {
         WRAPPER_NO_CONTRACT;
         return UnlockedAllocMemForCode_NoThrow(dwHeaderSize, dwCodeSize, dwCodeAlignment, dwReserveForJumpStubs);
@@ -885,7 +1137,7 @@ class AllocMemHolder
         {
             LIMITED_METHOD_CONTRACT;
 
-            m_value.m_pMem = NULL;
+            m_value.m_pMem = DoublePtr::Null();
             m_value.m_dwRequestedSize = 0;
             m_value.m_pHeap = 0;
             m_value.m_dwExtra = 0;
@@ -921,9 +1173,10 @@ class AllocMemHolder
         ~AllocMemHolder()
         {
             WRAPPER_NO_CONTRACT;
-            if (m_fAcquired && m_value.m_pMem)
+            if (m_fAcquired && !m_value.m_pMem.IsNull())
             {
-                m_value.m_pHeap->RealBackoutMem(m_value.m_pMem,
+                // TODO: do we need both RX and RW for the backout?
+                m_value.m_pHeap->RealBackoutMem(m_value.m_pMem.GetRX(),
                                                 m_value.m_dwRequestedSize
 #ifdef _DEBUG
                                                 ,__FILE__
@@ -945,7 +1198,7 @@ class AllocMemHolder
         {
             WRAPPER_NO_CONTRACT;
             // However, prevent repeated assignments as that would leak.
-            _ASSERTE(m_value.m_pMem == NULL && !m_fAcquired);
+            _ASSERTE(m_value.m_pMem.IsNull() && !m_fAcquired);
             m_value = value;
             m_fAcquired = TRUE;
         }

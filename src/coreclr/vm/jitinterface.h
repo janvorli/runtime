@@ -712,13 +712,13 @@ public:
 
     uint32_t getExpectedTargetArchitecture() override final;
 
-    CodeHeader* GetCodeHeader()
+    DoublePtrT<CodeHeader> GetCodeHeader()
     {
         LIMITED_METHOD_CONTRACT;
         return m_CodeHeader;
     }
 
-    void SetCodeHeader(CodeHeader* pValue)
+    void SetCodeHeader(DoublePtrT<CodeHeader> pValue)
     {
         LIMITED_METHOD_CONTRACT;
         m_CodeHeader = pValue;
@@ -731,7 +731,7 @@ public:
             GC_NOTRIGGER;
         } CONTRACTL_END;
 
-        m_CodeHeader = NULL;
+        m_CodeHeader = DoublePtrT<CodeHeader>();
 
         if (m_pOffsetMapping != NULL)
             delete [] ((BYTE*) m_pOffsetMapping);
@@ -830,7 +830,7 @@ public:
                EEJitManager* jm, bool fVerifyOnly, bool allowInlining = true)
         : CEEInfo(fd, fVerifyOnly, allowInlining),
           m_jitManager(jm),
-          m_CodeHeader(NULL),
+          //m_CodeHeader(NULL),
           m_ILHeader(header),
 #ifdef FEATURE_EH_FUNCLETS
           m_moduleBase(NULL),
@@ -960,7 +960,7 @@ protected :
 
 
     EEJitManager*           m_jitManager;   // responsible for allocating memory
-    CodeHeader*             m_CodeHeader;   // descriptor for JITTED code
+    DoublePtrT<CodeHeader>  m_CodeHeader;   // descriptor for JITTED code
     COR_ILMETHOD_DECODER *  m_ILHeader;     // the code header as exist in the file
 #ifdef FEATURE_EH_FUNCLETS
     TADDR                   m_moduleBase;       // Base for unwind Infos

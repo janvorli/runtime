@@ -442,7 +442,7 @@ public:
 
     // Alloc the specified numbers of bytes for code. Returns NULL if the request does not fit
     // Space for header is reserved immediately before. It is not included in size.
-    virtual void* AllocMemForCode_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs) = 0;
+    virtual DoublePtr AllocMemForCode_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs) = 0;
 
 #ifdef DACCESS_COMPILE
     virtual void EnumMemoryRegions(CLRDataEnumMemoryFlags flags) = 0;
@@ -522,7 +522,7 @@ public:
         WRAPPER_NO_CONTRACT;
     }
 
-    virtual void* AllocMemForCode_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs) DAC_EMPTY_RET(NULL);
+    virtual DoublePtr AllocMemForCode_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs) DAC_EMPTY_RET(DoublePtr::Null());
 
 #ifdef DACCESS_COMPILE
     virtual void EnumMemoryRegions(CLRDataEnumMemoryFlags flags)
@@ -966,7 +966,7 @@ public:
 
     BOOL                LoadJIT();
 
-    CodeHeader*         allocCode(MethodDesc* pFD, size_t blockSize, size_t reserveForJumpStubs, CorJitAllocMemFlag flag
+    DoublePtrT<CodeHeader> allocCode(MethodDesc* pFD, size_t blockSize, size_t reserveForJumpStubs, CorJitAllocMemFlag flag
 #ifdef FEATURE_EH_FUNCLETS
                                   , UINT nUnwindInfos
                                   , TADDR * pModuleBase
@@ -979,7 +979,7 @@ public:
                                             LoaderAllocator *pLoaderAllocator,
                                             bool throwOnOutOfMemoryWithinRange);
 
-    void *              allocCodeFragmentBlock(size_t blockSize, unsigned alignment, LoaderAllocator *pLoaderAllocator, StubCodeBlockKind kind);
+    DoublePtr           allocCodeFragmentBlock(size_t blockSize, unsigned alignment, LoaderAllocator *pLoaderAllocator, StubCodeBlockKind kind);
 #endif // !DACCESS_COMPILE && !CROSSGEN_COMPILE
 
     static CodeHeader * GetCodeHeader(const METHODTOKEN& MethodToken);
@@ -1044,7 +1044,7 @@ private :
 #ifndef CROSSGEN_COMPILE
     HeapList*   NewCodeHeap(CodeHeapRequestInfo *pInfo, DomainCodeHeapList *pADHeapList);
     bool        CanUseCodeHeap(CodeHeapRequestInfo *pInfo, HeapList *pCodeHeap);
-    void*       allocCodeRaw(CodeHeapRequestInfo *pInfo,
+    DoublePtr   allocCodeRaw(CodeHeapRequestInfo *pInfo,
                              size_t header, size_t blockSize, unsigned align,
                              HeapList ** ppCodeHeap);
 

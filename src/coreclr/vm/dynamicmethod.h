@@ -292,7 +292,7 @@ private:
 
 public:
     // Space for header is reserved immediately before. It is not included in size.
-    virtual void* AllocMemForCode_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs) DAC_EMPTY_RET(NULL);
+    virtual DoublePtr AllocMemForCode_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs) DAC_EMPTY_RET(DoublePtr::Null());
 
     virtual ~HostCodeHeap() DAC_EMPTY();
 
