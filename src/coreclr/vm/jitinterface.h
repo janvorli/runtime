@@ -626,7 +626,7 @@ protected:
 /*********************************************************************/
 
 class  EEJitManager;
-struct  HeapList;
+struct HeapList;
 struct _hpCodeHdr;
 typedef struct _hpCodeHdr CodeHeader;
 

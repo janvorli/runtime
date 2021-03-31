@@ -5202,6 +5202,8 @@ void rel32SetInterlocked(/*PINT32*/ PVOID pRel32, /*PINT32*/ PVOID pRel32RW, TAD
     }
     CONTRACTL_END;
 
+    _ASSERTE(pRel32 != pRel32RW);
+
     INT32 targetRel32 = rel32UsingJumpStub((INT32*)pRel32, target, pMD);
 
     _ASSERTE(IS_ALIGNED(pRel32RW, sizeof(INT32)));
@@ -5217,6 +5219,8 @@ BOOL rel32SetInterlocked(/*PINT32*/ PVOID pRel32, /*PINT32*/ PVOID pRel32RW, TAD
     }
     CONTRACTL_END;
 
+    _ASSERTE(pRel32 != pRel32RW);
+
     BYTE* callAddrAdj = (BYTE*)pRel32 + 4;
     INT32 expectedRel32 = static_cast<INT32>((BYTE*)expected - callAddrAdj);
 
@@ -5230,6 +5234,10 @@ void StubPrecode::Init(StubPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator
     BYTE type /* = StubPrecode::Type */, TADDR target /* = NULL */)
 {
     WRAPPER_NO_CONTRACT;
+
+#ifndef CROSSGEN_COMPILE
+    _ASSERTE(this != pPrecodeRX);
+#endif
 
     IN_TARGET_64BIT(m_movR10 = X86_INSTR_MOV_R10_IMM64);   // mov r10, pMethodDesc
     IN_TARGET_32BIT(m_movEAX = X86_INSTR_MOV_EAX_IMM32);   // mov eax, pMethodDesc
@@ -5263,6 +5271,10 @@ void NDirectImportPrecode::Init(NDirectImportPrecode* pPrecodeRX, MethodDesc* pM
 void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator, int iMethodDescChunkIndex /*=0*/, int iPrecodeChunkIndex /*=0*/)
 {
     WRAPPER_NO_CONTRACT;
+
+#ifndef CROSSGEN_COMPILE
+    _ASSERTE(this != pPrecodeRX);
+#endif
 
     m_op   = X86_INSTR_CALL_REL32;       // call PrecodeFixupThunk
     m_type = FixupPrecode::TypePrestub;

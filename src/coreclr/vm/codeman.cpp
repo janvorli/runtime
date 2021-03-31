@@ -2139,8 +2139,7 @@ VOID EEJitManager::EnsureJumpStubReserve(BYTE * pImageBase, SIZE_T imageSize, SI
                 return; // Unable to allocate the reserve - give up
             }
 
-            pNewReserve->m_ptr = ClrVirtualAllocWithinRange(loAddrCurrent, hiAddrCurrent,
-                                               allocChunk, MEM_RESERVE, PAGE_NOACCESS);
+            pNewReserve->m_ptr = (BYTE*)DoubleMappedAllocator::Instance()->ReserveWithinRange(allocChunk, loAddrCurrent, hiAddrCurrent);
 
             if (pNewReserve->m_ptr != NULL)
                 break;
@@ -2220,6 +2219,7 @@ HeapList* LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
     pBaseAddr = (BYTE *)pInfo->m_pAllocator->GetCodeHeapInitialBlock(loAddr, hiAddr, (DWORD)initialRequestSize, &dwSizeAcquiredFromInitialBlock);
     if (pBaseAddr != NULL)
     {
+        //printf("*** Allocated reserved block at %p using GetCodeHeapInitialBlock\n", pBaseAddr);
         pCodeHeap->m_LoaderHeap.SetReservedRegion(pBaseAddr, dwSizeAcquiredFromInitialBlock, FALSE);
     }
     else
@@ -2231,8 +2231,7 @@ HeapList* LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
             if (!pInfo->getThrowOnOutOfMemoryWithinRange() && PEDecoder::GetForceRelocs())
                 RETURN NULL;
 #endif
-            pBaseAddr = ClrVirtualAllocWithinRange(loAddr, hiAddr,
-                                                   reserveSize, MEM_RESERVE, PAGE_NOACCESS);
+            pBaseAddr = (BYTE*)DoubleMappedAllocator::Instance()->ReserveWithinRange(reserveSize, loAddr, hiAddr);
 
             if (!pBaseAddr)
             {
@@ -2241,6 +2240,7 @@ HeapList* LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
                     RETURN NULL;
 #ifdef TARGET_AMD64
                 pBaseAddr = ExecutionManager::GetEEJitManager()->AllocateFromEmergencyJumpStubReserve(loAddr, hiAddr, &reserveSize);
+                //printf("*** Allocated reserved block at %p using AllocateFromEmergencyJumpStubReserve\n", pBaseAddr);
                 if (!pBaseAddr)
                     ThrowOutOfMemoryWithinRange();
                 fAllocatedFromEmergencyJumpStubReserve = true;
@@ -2251,7 +2251,7 @@ HeapList* LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
         }
         else
         {
-            pBaseAddr = ClrVirtualAllocExecutable(reserveSize, MEM_RESERVE, PAGE_NOACCESS);
+            pBaseAddr = (BYTE*)DoubleMappedAllocator::Instance()->Reserve(reserveSize);
             if (!pBaseAddr)
                 ThrowOutOfMemory();
         }
@@ -2980,7 +2980,7 @@ EE_ILEXCEPTION* EEJitManager::allocEHInfo(CodeHeader* pCodeHeader, unsigned numC
     return(pCodeHeader->GetEHInfo());
 }
 
-JumpStubBlockHeader *  EEJitManager::allocJumpStubBlock(MethodDesc* pMD, DWORD numJumps,
+JumpStubBlockHeader * EEJitManager::allocJumpStubBlock(MethodDesc* pMD, DWORD numJumps,
                                                         BYTE * loAddr, BYTE * hiAddr,
                                                         LoaderAllocator *pLoaderAllocator,
                                                         bool throwOnOutOfMemoryWithinRange)
@@ -3347,7 +3347,7 @@ void EEJitManager::Unload(LoaderAllocator *pAllocator)
         }
     }
 
-    ResetCodeAllocHint();
+    DoubleMappedAllocator::ResetCodeAllocHint();
 }
 
 EEJitManager::DomainCodeHeapList::DomainCodeHeapList()
