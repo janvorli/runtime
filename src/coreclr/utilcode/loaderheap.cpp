@@ -1045,9 +1045,14 @@ size_t UnlockedLoaderHeap::GetBytesAvailReservedRegion()
         return 0;
 }
 
+// #define SETUP_NEW_BLOCK(pData, dwSizeToCommit, dwSizeToReserve)                     \
+//         m_pPtrToEndOfCommittedRegion = (BYTE *) (pData) + (dwSizeToCommit);         \
+//         m_pAllocPtr                  = (BYTE *) (pData) + sizeof(LoaderHeapBlock);  \
+//         m_pEndReservedRegion         = (BYTE *) (pData) + (dwSizeToReserve);
+
 #define SETUP_NEW_BLOCK(pData, dwSizeToCommit, dwSizeToReserve)                     \
         m_pPtrToEndOfCommittedRegion = (BYTE *) (pData) + (dwSizeToCommit);         \
-        m_pAllocPtr                  = (BYTE *) (pData) + sizeof(LoaderHeapBlock);  \
+        m_pAllocPtr                  = (BYTE *) (pData); \
         m_pEndReservedRegion         = (BYTE *) (pData) + (dwSizeToReserve);
 
 
@@ -1066,7 +1071,7 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
     size_t dwSizeToReserve;
 
     // Add sizeof(LoaderHeapBlock)
-    dwSizeToCommit += sizeof(LoaderHeapBlock);
+    //dwSizeToCommit += sizeof(LoaderHeapBlock);
 
     // Round to page size again
     dwSizeToCommit = ALIGN_UP(dwSizeToCommit, GetOsPageSize());
@@ -1164,7 +1169,8 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
     auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
 
-    pNewBlock = (LoaderHeapBlock *) pData;
+    //pNewBlock = (LoaderHeapBlock *) pData;
+    pNewBlock = new (nothrow) LoaderHeapBlock; // TODO: instead of C++ heap, let's have a separate allocator based on non-executable virtual memory? Or clean the blocks at the heap destruction time
 
     pNewBlock->dwVirtualSize    = dwSizeToReserve;
     pNewBlock->pVirtualAddress  = pData;
@@ -1827,16 +1833,16 @@ void UnlockedLoaderHeap::DumpFreeList()
             size_t dwsize = pBlock->m_dwSize;
             BOOL ccbad = FALSE;
             BOOL sizeunaligned = FALSE;
-            BOOL sizesmall = FALSE;
+//            BOOL sizesmall = FALSE;
 
             if ( 0 != (dwsize & ALLOC_ALIGN_CONSTANT) )
             {
                 sizeunaligned = TRUE;
             }
-            if ( dwsize < sizeof(LoaderHeapBlock))
-            {
-                sizesmall = TRUE;
-            }
+            // if ( dwsize < sizeof(LoaderHeapBlock))
+            // {
+            //     sizesmall = TRUE;
+            // }
 
             for (size_t i = sizeof(LoaderHeapFreeBlock); i < dwsize; i++)
             {
@@ -1850,7 +1856,7 @@ void UnlockedLoaderHeap::DumpFreeList()
             printf("Addr = %pxh, Size = %lxh", pBlock, ((ULONG)dwsize));
             if (ccbad) printf(" *** ERROR: NOT CC'd ***");
             if (sizeunaligned) printf(" *** ERROR: size not a multiple of ALLOC_ALIGN_CONSTANT ***");
-            if (sizesmall) printf(" *** ERROR: size smaller than sizeof(LoaderHeapFreeBlock) ***");
+//            if (sizesmall) printf(" *** ERROR: size smaller than sizeof(LoaderHeapFreeBlock) ***");
             printf("\n");
 
             pBlock = pBlock->m_pNext;

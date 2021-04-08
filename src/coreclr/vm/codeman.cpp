@@ -2418,7 +2418,7 @@ HeapList* EEJitManager::NewCodeHeap(CodeHeapRequestInfo *pInfo, DomainCodeHeapLi
     // SETUP_NEW_BLOCK reserves the first sizeof(LoaderHeapBlock) bytes for LoaderHeapBlock.
     // In other word, the first m_pAllocPtr starts at sizeof(LoaderHeapBlock) bytes
     // after the allocated memory. Therefore, we need to take it into account.
-    size_t requestAndHeadersSize = sizeof(LoaderHeapBlock) + sizeof(HeapList) + initialRequestSize;
+    size_t requestAndHeadersSize = /*sizeof(LoaderHeapBlock)*/ + sizeof(HeapList) + initialRequestSize;
 
     size_t reserveSize = requestAndHeadersSize;
     if (reserveSize < minReserveSize)
