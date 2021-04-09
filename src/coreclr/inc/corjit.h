@@ -218,8 +218,11 @@ public:
             uint32_t               xcptnsCount,    /* IN */
             CorJitAllocMemFlag  flag,           /* IN */
             void **             hotCodeBlock,   /* OUT */
+            void **             hotCodeBlockRW, /* OUT */
             void **             coldCodeBlock,  /* OUT */
-            void **             roDataBlock     /* OUT */
+            void **             coldCodeBlockRW,/* OUT */
+            void **             roDataBlock,     /* OUT */
+            void **             roDataBlockRW   /* OUT */
             ) = 0;
 
     // Reserve memory for the method/funclet's unwind information.
@@ -436,6 +439,7 @@ public:
     // A jump thunk may be inserted if we are jitting
     virtual void recordRelocation(
             void *                 location,   /* IN  */
+            void *                 locationRW, /* IN  */
             void *                 target,     /* IN  */
             uint16_t                   fRelocType, /* IN  */
             uint16_t                   slotNum = 0,  /* IN  */

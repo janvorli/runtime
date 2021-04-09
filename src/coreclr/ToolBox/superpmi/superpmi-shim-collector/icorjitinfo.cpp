@@ -1923,14 +1923,17 @@ void interceptor_ICJI::allocMem(uint32_t           hotCodeSize,   /* IN */
                                 uint32_t           roDataSize,    /* IN */
                                 uint32_t           xcptnsCount,   /* IN */
                                 CorJitAllocMemFlag flag,          /* IN */
-                                void**             hotCodeBlock,  /* OUT */
-                                void**             coldCodeBlock, /* OUT */
-                                void**             roDataBlock    /* OUT */
+                                void **             hotCodeBlock,   /* OUT */
+                                void **             hotCodeBlockRW, /* OUT */
+                                void **             coldCodeBlock,  /* OUT */
+                                void **             coldCodeBlockRW,/* OUT */
+                                void **             roDataBlock,    /* OUT */
+                                void **             roDataBlockRW   /* OUT */
                                 )
 {
     mc->cr->AddCall("allocMem");
-    original_ICorJitInfo->allocMem(hotCodeSize, coldCodeSize, roDataSize, xcptnsCount, flag, hotCodeBlock,
-                                   coldCodeBlock, roDataBlock);
+    original_ICorJitInfo->allocMem(hotCodeSize, coldCodeSize, roDataSize, xcptnsCount, flag, hotCodeBlock, hotCodeBlockRW,
+                                   coldCodeBlock, coldCodeBlockRW, roDataBlock, roDataBlockRW);
     mc->cr->recAllocMem(hotCodeSize, coldCodeSize, roDataSize, xcptnsCount, flag, hotCodeBlock, coldCodeBlock,
                         roDataBlock);
 }
@@ -2105,6 +2108,7 @@ void interceptor_ICJI::recordCallSite(uint32_t              instrOffset, /* IN *
 // A relocation is recorded if we are pre-jitting.
 // A jump thunk may be inserted if we are jitting
 void interceptor_ICJI::recordRelocation(void*    location,   /* IN  */
+                                        void*    locationRW, /* IN  */
                                         void*    target,     /* IN  */
                                         uint16_t fRelocType, /* IN  */
                                         uint16_t slotNum,    /* IN  */
@@ -2112,7 +2116,7 @@ void interceptor_ICJI::recordRelocation(void*    location,   /* IN  */
                                         )
 {
     mc->cr->AddCall("recordRelocation");
-    original_ICorJitInfo->recordRelocation(location, target, fRelocType, slotNum, addlDelta);
+    original_ICorJitInfo->recordRelocation(location, locationRW, target, fRelocType, slotNum, addlDelta);
     mc->cr->recRecordRelocation(location, target, fRelocType, slotNum, addlDelta);
 }
 

@@ -643,8 +643,11 @@ public:
             uint32_t            xcptnsCount,    /* IN */
             CorJitAllocMemFlag  flag,           /* IN */
             void **             hotCodeBlock,   /* OUT */
+            void **             hotCodeBlockRW, /* OUT */
             void **             coldCodeBlock,  /* OUT */
-            void **             roDataBlock     /* OUT */
+            void **             coldCodeBlockRW,/* OUT */
+            void **             roDataBlock,    /* OUT */
+            void **             roDataBlockRW   /* OUT */
             ) override final;
 
     void reserveUnwindInfo(bool isFunclet, bool isColdCode, uint32_t unwindSize) override final;
@@ -703,6 +706,7 @@ public:
 
     void recordRelocation(
             void                    *location,
+            void                    *locationRW,
             void                    *target,
             uint16_t                 fRelocType,
             uint16_t                 slot,
@@ -757,7 +761,7 @@ public:
         m_moduleBase = NULL;
         m_totalUnwindSize = 0;
         m_usedUnwindSize = 0;
-        m_theUnwindBlock = NULL;
+        m_theUnwindBlock = DoublePtr::Null();
         m_totalUnwindInfos = 0;
         m_usedUnwindInfos = 0;
 #endif // FEATURE_EH_FUNCLETS
@@ -836,7 +840,7 @@ public:
           m_moduleBase(NULL),
           m_totalUnwindSize(0),
           m_usedUnwindSize(0),
-          m_theUnwindBlock(NULL),
+          m_theUnwindBlock(DoublePtr::Null()),
           m_totalUnwindInfos(0),
           m_usedUnwindInfos(0),
 #endif
@@ -966,7 +970,7 @@ protected :
     TADDR                   m_moduleBase;       // Base for unwind Infos
     ULONG                   m_totalUnwindSize;  // Total reserved unwind space
     uint32_t                m_usedUnwindSize;   // used space in m_theUnwindBlock
-    BYTE *                  m_theUnwindBlock;   // start of the unwind memory block
+    DoublePtrT<BYTE>        m_theUnwindBlock;   // start of the unwind memory block
     ULONG                   m_totalUnwindInfos; // Number of RUNTIME_FUNCTION needed
     ULONG                   m_usedUnwindInfos;
 #endif

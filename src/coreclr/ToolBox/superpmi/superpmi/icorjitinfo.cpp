@@ -1598,9 +1598,12 @@ void MyICJI::allocMem(uint32_t           hotCodeSize,   /* IN */
                       uint32_t           roDataSize,    /* IN */
                       uint32_t           xcptnsCount,   /* IN */
                       CorJitAllocMemFlag flag,          /* IN */
-                      void**             hotCodeBlock,  /* OUT */
-                      void**             coldCodeBlock, /* OUT */
-                      void**             roDataBlock    /* OUT */
+                      void **             hotCodeBlock,   /* OUT */
+                      void **             hotCodeBlockRW, /* OUT */
+                      void **             coldCodeBlock,  /* OUT */
+                      void **             coldCodeBlockRW,/* OUT */
+                      void **             roDataBlock,    /* OUT */
+                      void **             roDataBlockRW   /* OUT */
                       )
 {
     jitInstance->mc->cr->AddCall("allocMem");
@@ -1846,6 +1849,7 @@ void MyICJI::recordCallSite(uint32_t              instrOffset, /* IN */
 // A relocation is recorded if we are pre-jitting.
 // A jump thunk may be inserted if we are jitting
 void MyICJI::recordRelocation(void*    location,   /* IN  */
+                              void*    locationRW, /* IN  */
                               void*    target,     /* IN  */
                               uint16_t fRelocType, /* IN  */
                               uint16_t slotNum,    /* IN  */

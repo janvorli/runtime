@@ -166,7 +166,7 @@ struct JitInterfaceCallbacks
     bool (* getTailCallHelpers)(void * thisHandle, CorInfoExceptionClass** ppException, CORINFO_RESOLVED_TOKEN* callToken, CORINFO_SIG_INFO* sig, CORINFO_GET_TAILCALL_HELPERS_FLAGS flags, CORINFO_TAILCALL_HELPERS* pResult);
     bool (* convertPInvokeCalliToCall)(void * thisHandle, CorInfoExceptionClass** ppException, CORINFO_RESOLVED_TOKEN* pResolvedToken, bool mustConvert);
     bool (* notifyInstructionSetUsage)(void * thisHandle, CorInfoExceptionClass** ppException, CORINFO_InstructionSet instructionSet, bool supportEnabled);
-    void (* allocMem)(void * thisHandle, CorInfoExceptionClass** ppException, uint32_t hotCodeSize, uint32_t coldCodeSize, uint32_t roDataSize, uint32_t xcptnsCount, CorJitAllocMemFlag flag, void** hotCodeBlock, void** coldCodeBlock, void** roDataBlock);
+    void (* allocMem)(void * thisHandle, CorInfoExceptionClass** ppException, uint32_t hotCodeSize, uint32_t coldCodeSize, uint32_t roDataSize, uint32_t xcptnsCount, CorJitAllocMemFlag flag, void** hotCodeBlock, void** hotCodeBlockRW, void** coldCodeBlock, void** coldCodeBlockRW, void** roDataBlock, void** roDataBlockRW);
     void (* reserveUnwindInfo)(void * thisHandle, CorInfoExceptionClass** ppException, bool isFunclet, bool isColdCode, uint32_t unwindSize);
     void (* allocUnwindInfo)(void * thisHandle, CorInfoExceptionClass** ppException, uint8_t* pHotCode, uint8_t* pColdCode, uint32_t startOffset, uint32_t endOffset, uint32_t unwindSize, uint8_t* pUnwindBlock, CorJitFuncKind funcKind);
     void* (* allocGCInfo)(void * thisHandle, CorInfoExceptionClass** ppException, size_t size);
@@ -179,7 +179,7 @@ struct JitInterfaceCallbacks
     JITINTERFACE_HRESULT (* allocPgoInstrumentationBySchema)(void * thisHandle, CorInfoExceptionClass** ppException, CORINFO_METHOD_HANDLE ftnHnd, ICorJitInfo::PgoInstrumentationSchema* pSchema, uint32_t countSchemaItems, uint8_t** pInstrumentationData);
     CORINFO_CLASS_HANDLE (* getLikelyClass)(void * thisHandle, CorInfoExceptionClass** ppException, CORINFO_METHOD_HANDLE ftnHnd, CORINFO_CLASS_HANDLE baseHnd, uint32_t ilOffset, uint32_t* pLikelihood, uint32_t* pNumberOfClasses);
     void (* recordCallSite)(void * thisHandle, CorInfoExceptionClass** ppException, uint32_t instrOffset, CORINFO_SIG_INFO* callSig, CORINFO_METHOD_HANDLE methodHandle);
-    void (* recordRelocation)(void * thisHandle, CorInfoExceptionClass** ppException, void* location, void* target, uint16_t fRelocType, uint16_t slotNum, int32_t addlDelta);
+    void (* recordRelocation)(void * thisHandle, CorInfoExceptionClass** ppException, void* location, void* locationRW, void* target, uint16_t fRelocType, uint16_t slotNum, int32_t addlDelta);
     uint16_t (* getRelocTypeHint)(void * thisHandle, CorInfoExceptionClass** ppException, void* target);
     uint32_t (* getExpectedTargetArchitecture)(void * thisHandle, CorInfoExceptionClass** ppException);
     uint32_t (* getJitFlags)(void * thisHandle, CorInfoExceptionClass** ppException, CORJIT_FLAGS* flags, uint32_t sizeInBytes);
@@ -1692,11 +1692,14 @@ public:
           uint32_t xcptnsCount,
           CorJitAllocMemFlag flag,
           void** hotCodeBlock,
+          void** hotCodeBlockRW,
           void** coldCodeBlock,
-          void** roDataBlock)
+          void** coldCodeBlockRW,
+          void** roDataBlock,
+          void** roDataBlockRW)
 {
     CorInfoExceptionClass* pException = nullptr;
-    _callbacks->allocMem(_thisHandle, &pException, hotCodeSize, coldCodeSize, roDataSize, xcptnsCount, flag, hotCodeBlock, coldCodeBlock, roDataBlock);
+    _callbacks->allocMem(_thisHandle, &pException, hotCodeSize, coldCodeSize, roDataSize, xcptnsCount, flag, hotCodeBlock, hotCodeBlockRW, coldCodeBlock, coldCodeBlockRW, roDataBlock, roDataBlockRW);
     if (pException != nullptr) throw pException;
 }
 
@@ -1829,13 +1832,14 @@ public:
 
     virtual void recordRelocation(
           void* location,
+          void* locationRW,
           void* target,
           uint16_t fRelocType,
           uint16_t slotNum,
           int32_t addlDelta)
 {
     CorInfoExceptionClass* pException = nullptr;
-    _callbacks->recordRelocation(_thisHandle, &pException, location, target, fRelocType, slotNum, addlDelta);
+    _callbacks->recordRelocation(_thisHandle, &pException, location, locationRW, target, fRelocType, slotNum, addlDelta);
     if (pException != nullptr) throw pException;
 }
 

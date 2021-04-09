@@ -11130,8 +11130,8 @@ void CEEJitInfo::BackoutJitData(EEJitManager * jitMgr)
         GC_TRIGGERS;
     } CONTRACTL_END;
 
-    CodeHeader* pCodeHeader = GetCodeHeader().GetRW();
-    if (pCodeHeader)
+    DoublePtrT<CodeHeader> pCodeHeader = GetCodeHeader();
+    if (!pCodeHeader.IsNull())
         jitMgr->RemoveJitData(pCodeHeader, m_GCinfo_len, m_EHinfo_len);
 }
 
@@ -11315,7 +11315,7 @@ void CEEJitInfo::reserveUnwindInfo(bool isFunclet, bool isColdCode, uint32_t unw
     JIT_TO_EE_TRANSITION_LEAF();
 
     CONSISTENCY_CHECK_MSG(!isColdCode, "Hot/Cold splitting is not supported in jitted code");
-    _ASSERTE_MSG(m_theUnwindBlock == NULL,
+    _ASSERTE_MSG(m_theUnwindBlock.IsNull(),
         "reserveUnwindInfo() can only be called before allocMem(), but allocMem() has already been called. "
         "This may indicate the JIT has hit a NO_WAY assert after calling allocMem(), and is re-JITting. "
         "Set COMPlus_JitBreakOnBadCode=1 and rerun to get the real error.");
@@ -11370,7 +11370,7 @@ void CEEJitInfo::allocUnwindInfo (
         THROWS;
         GC_TRIGGERS;
         MODE_PREEMPTIVE;
-        PRECONDITION(m_theUnwindBlock != NULL);
+        PRECONDITION(!m_theUnwindBlock.IsNull());
         PRECONDITION(m_usedUnwindSize < m_totalUnwindSize);
         PRECONDITION(m_usedUnwindInfos < m_totalUnwindInfos);
         PRECONDITION(endOffset <= m_codeSize);
@@ -11403,7 +11403,8 @@ void CEEJitInfo::allocUnwindInfo (
     // Make sure that the RUNTIME_FUNCTION is aligned on a DWORD sized boundary
     _ASSERTE(IS_ALIGNED(pRuntimeFunction, sizeof(DWORD)));
 
-    UNWIND_INFO * pUnwindInfo = (UNWIND_INFO *) &(m_theUnwindBlock[m_usedUnwindSize]);
+    UNWIND_INFO * pUnwindInfoRW = (UNWIND_INFO *) &(m_theUnwindBlock.GetRW()[m_usedUnwindSize]);
+    UNWIND_INFO * pUnwindInfoRX = (UNWIND_INFO *) &(m_theUnwindBlock.GetRX()[m_usedUnwindSize]);
     m_usedUnwindSize += unwindSize;
 
     reservePersonalityRoutineSpace(m_usedUnwindSize);
@@ -11411,7 +11412,7 @@ void CEEJitInfo::allocUnwindInfo (
     _ASSERTE(m_usedUnwindSize <= m_totalUnwindSize);
 
     // Make sure that the UnwindInfo is aligned
-    _ASSERTE(IS_ALIGNED(pUnwindInfo, sizeof(ULONG)));
+    _ASSERTE(IS_ALIGNED(pUnwindInfoRW, sizeof(ULONG)));
 
     /* Calculate Image Relative offset to add to the jit generated unwind offsets */
 
@@ -11436,7 +11437,7 @@ void CEEJitInfo::allocUnwindInfo (
     unsigned currentCodeOffset = (unsigned) currentCodeSizeT;
 
     /* Calculate Unwind Info delta */
-    size_t unwindInfoDeltaT = (size_t) pUnwindInfo - baseAddress;
+    size_t unwindInfoDeltaT = (size_t) pUnwindInfoRX - baseAddress;
 
     /* Check if unwindDeltaT offset fits in 32-bits */
     if (!FitsInU4(unwindInfoDeltaT))
@@ -11470,7 +11471,7 @@ void CEEJitInfo::allocUnwindInfo (
 #endif // _DEBUG
 
     /* Copy the UnwindBlock */
-    memcpy(pUnwindInfo, pUnwindBlock, unwindSize);
+    memcpy(pUnwindInfoRW, pUnwindBlock, unwindSize);
 
 #if defined(TARGET_X86)
 
@@ -11478,23 +11479,23 @@ void CEEJitInfo::allocUnwindInfo (
 
 #elif defined(TARGET_AMD64)
 
-    pUnwindInfo->Flags = UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER;
+    pUnwindInfoRW->Flags = UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER;
 
-    ULONG * pPersonalityRoutine = (ULONG*)ALIGN_UP(&(pUnwindInfo->UnwindCode[pUnwindInfo->CountOfUnwindCodes]), sizeof(ULONG));
+    ULONG * pPersonalityRoutine = (ULONG*)ALIGN_UP(&(pUnwindInfoRW->UnwindCode[pUnwindInfoRX->CountOfUnwindCodes]), sizeof(ULONG));
     *pPersonalityRoutine = ExecutionManager::GetCLRPersonalityRoutineValue();
 
 #elif defined(TARGET_ARM64)
 
-    *(LONG *)pUnwindInfo |= (1 << 20); // X bit
+    *(LONG *)pUnwindInfoRW |= (1 << 20); // X bit
 
-    ULONG * pPersonalityRoutine = (ULONG*)((BYTE *)pUnwindInfo + ALIGN_UP(unwindSize, sizeof(ULONG)));
+    ULONG * pPersonalityRoutine = (ULONG*)((BYTE *)pUnwindInfoRW + ALIGN_UP(unwindSize, sizeof(ULONG)));
     *pPersonalityRoutine = ExecutionManager::GetCLRPersonalityRoutineValue();
 
 #elif defined(TARGET_ARM)
 
-    *(LONG *)pUnwindInfo |= (1 << 20); // X bit
+    *(LONG *)pUnwindInfoRW |= (1 << 20); // X bit
 
-    ULONG * pPersonalityRoutine = (ULONG*)((BYTE *)pUnwindInfo + ALIGN_UP(unwindSize, sizeof(ULONG)));
+    ULONG * pPersonalityRoutine = (ULONG*)((BYTE *)pUnwindInfoRW + ALIGN_UP(unwindSize, sizeof(ULONG)));
     *pPersonalityRoutine = (TADDR)ProcessCLRException - baseAddress;
 
 #endif
@@ -11528,6 +11529,7 @@ void CEEJitInfo::recordCallSite(uint32_t              instrOffset,
 // A jump thunk may be inserted if we are jitting
 
 void CEEJitInfo::recordRelocation(void * location,
+                                  void * locationRW,
                                   void * target,
                                   WORD   fRelocType,
                                   WORD   slot,
@@ -11548,7 +11550,7 @@ void CEEJitInfo::recordRelocation(void * location,
     {
     case IMAGE_REL_BASED_DIR64:
         // Write 64-bits into location
-        *((UINT64 *) ((BYTE *) location + slot)) = (UINT64) target;
+        *((UINT64 *) ((BYTE *) locationRW + slot)) = (UINT64) target;
         break;
 
 #ifdef TARGET_AMD64
@@ -11557,6 +11559,7 @@ void CEEJitInfo::recordRelocation(void * location,
             target = (BYTE *)target + addlDelta;
 
             INT32 * fixupLocation = (INT32 *) ((BYTE *) location + slot);
+            INT32 * fixupLocationRW = (INT32 *) ((BYTE *) locationRW + slot);
             BYTE * baseAddr = (BYTE *)fixupLocation + sizeof(INT32);
 
             delta  = (INT64)((BYTE *)target - baseAddr);
@@ -11602,7 +11605,7 @@ void CEEJitInfo::recordRelocation(void * location,
                  DBG_ADDR(fixupLocation), DBG_ADDR(target), addlDelta, delta));
 
             // Write the 32-bits pc-relative delta into location
-            *fixupLocation = (INT32) delta;
+            *fixupLocationRW = (INT32) delta;
         }
         break;
 #endif // TARGET_AMD64
@@ -11680,7 +11683,7 @@ void CEEJitInfo::recordRelocation(void * location,
 
             _ASSERTE(FitsInRel28(delta));
 
-            PutArm64Rel28((UINT32*) fixupLocation, (INT32)delta);
+            PutArm64Rel28((UINT32*) fixupLocationRW, (INT32)delta);
         }
         break;
 
@@ -11694,7 +11697,7 @@ void CEEJitInfo::recordRelocation(void * location,
             INT64 locationPage = (INT64)location & 0xFFFFFFFFFFFFF000LL;
             INT64 relPage = (INT64)(targetPage - locationPage);
             INT32 imm21 = (INT32)(relPage >> 12) & 0x1FFFFF;
-            PutArm64Rel21((UINT32 *)location, imm21);
+            PutArm64Rel21((UINT32 *)locationRW, imm21);
         }
         break;
 
@@ -11705,7 +11708,7 @@ void CEEJitInfo::recordRelocation(void * location,
 
             // Write the 12 bits page offset into location.
             INT32 imm12 = (INT32)(SIZE_T)target & 0xFFFLL;
-            PutArm64Rel12((UINT32 *)location, imm12);
+            PutArm64Rel12((UINT32 *)locationRW, imm12);
         }
         break;
 
@@ -12173,8 +12176,11 @@ void CEEJitInfo::allocMem (
     uint32_t            xcptnsCount,    /* IN */
     CorJitAllocMemFlag  flag,           /* IN */
     void **             hotCodeBlock,   /* OUT */
+    void **             hotCodeBlockRW, /* OUT */
     void **             coldCodeBlock,  /* OUT */
-    void **             roDataBlock     /* OUT */
+    void **             coldCodeBlockRW,/* OUT */
+    void **             roDataBlock,    /* OUT */
+    void **             roDataBlockRW   /* OUT */   
             )
 {
     CONTRACTL {
@@ -12193,6 +12199,7 @@ void CEEJitInfo::allocMem (
 
     ULONG codeSize      = hotCodeSize;
     void **codeBlock    = hotCodeBlock;
+    void **codeBlockRW  = hotCodeBlockRW;
 
     S_SIZE_T totalSize = S_SIZE_T(codeSize);
 
@@ -12274,30 +12281,41 @@ void CEEJitInfo::allocMem (
     // TODO: store the m_CodeHeader as double pointer and release the memory all at once after the JIT writes the code?
     // Seems we will need that unless the other stuff allocated from this memory like the GC info is accessed out of the 
     // method that calls the allocMem.
-    BYTE* current = (BYTE *)m_CodeHeader.GetRW()->GetCodeStartAddress();
+    // TODO: the current method will ned to return both RX and RW addresses for the blocks
+    BYTE* current = (BYTE *)m_CodeHeader.GetRX()->GetCodeStartAddress();
+    BYTE* currentRW = (BYTE *)m_CodeHeader.GetRW()->GetCodeStartAddress();
 
     *codeBlock = current;
+    *codeBlockRW = currentRW;
     current += codeSize;
+    currentRW += codeSize;
 
     if (roDataSize > 0)
     {
         current = (BYTE *)ALIGN_UP(current, roDataAlignment);
+        currentRW = (BYTE *)ALIGN_UP(currentRW, roDataAlignment);
         *roDataBlock = current;
+        *roDataBlockRW = currentRW;
         current += roDataSize;
+        currentRW += roDataSize;
     }
     else
     {
         *roDataBlock = NULL;
+        *roDataBlockRW = NULL;
     }
 
 #ifdef FEATURE_EH_FUNCLETS
     current = (BYTE *)ALIGN_UP(current, sizeof(DWORD));
+    currentRW = (BYTE *)ALIGN_UP(currentRW, sizeof(DWORD));
 
-    m_theUnwindBlock = current;
+    m_theUnwindBlock = DoublePtrT<BYTE>(current, currentRW, NULL);
     current += m_totalUnwindSize;
+    currentRW += m_totalUnwindSize;
 #endif
 
-    _ASSERTE((SIZE_T)(current - (BYTE *)m_CodeHeader.GetRW()->GetCodeStartAddress()) <= totalSize.Value());
+    _ASSERTE((SIZE_T)(current - (BYTE *)m_CodeHeader.GetRX()->GetCodeStartAddress()) <= totalSize.Value());
+    _ASSERTE((SIZE_T)(currentRW - (BYTE *)m_CodeHeader.GetRW()->GetCodeStartAddress()) <= totalSize.Value());
 
 #ifdef _DEBUG
     m_codeSize = codeSize;
@@ -14265,8 +14283,11 @@ void CEEInfo::allocMem (
         uint32_t            xcptnsCount,    /* IN */
         CorJitAllocMemFlag  flag,           /* IN */
         void **             hotCodeBlock,   /* OUT */
+        void **             hotCodeBlockRW, /* OUT */
         void **             coldCodeBlock,  /* OUT */
-        void **             roDataBlock     /* OUT */
+        void **             coldCodeBlockRW,/* OUT */
+        void **             roDataBlock,    /* OUT */
+        void **             roDataBlockRW   /* OUT */
         )
 {
     LIMITED_METHOD_CONTRACT;
@@ -14434,6 +14455,7 @@ void CEEInfo::recordCallSite(
 
 void CEEInfo::recordRelocation(
         void *                 location,   /* IN  */
+        void *                 locationRW, /* IN  */
         void *                 target,     /* IN  */
         WORD                   fRelocType, /* IN  */
         WORD                   slotNum,  /* IN  */

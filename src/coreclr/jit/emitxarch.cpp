@@ -9254,9 +9254,12 @@ void emitter::emitDispIns(
  *  Output nBytes bytes of NOP instructions
  */
 
-static BYTE* emitOutputNOP(BYTE* dst, size_t nBytes)
+BYTE* emitter::emitOutputNOP(BYTE* dst, size_t nBytes)
 {
     assert(nBytes <= 15);
+
+    BYTE* dstRW = dst + writeableOffset;
+    BYTE* initialDstRW = dstRW;
 
 #ifndef TARGET_AMD64
     // TODO-X86-CQ: when VIA C3 CPU's are out of circulation, switch to the
@@ -9268,49 +9271,49 @@ static BYTE* emitOutputNOP(BYTE* dst, size_t nBytes)
     switch (nBytes)
     {
         case 15:
-            *dst++ = 0x90;
+            *dstRW++ = 0x90;
             FALLTHROUGH;
         case 14:
-            *dst++ = 0x90;
+            *dstRW++ = 0x90;
             FALLTHROUGH;
         case 13:
-            *dst++ = 0x90;
+            *dstRW++ = 0x90;
             FALLTHROUGH;
         case 12:
-            *dst++ = 0x90;
+            *dstRW++ = 0x90;
             FALLTHROUGH;
         case 11:
-            *dst++ = 0x90;
+            *dstRW++ = 0x90;
             FALLTHROUGH;
         case 10:
-            *dst++ = 0x90;
+            *dstRW++ = 0x90;
             FALLTHROUGH;
         case 9:
-            *dst++ = 0x90;
+            *dstRW++ = 0x90;
             FALLTHROUGH;
         case 8:
-            *dst++ = 0x90;
+            *dstRW++ = 0x90;
             FALLTHROUGH;
         case 7:
-            *dst++ = 0x90;
+            *dstRW++ = 0x90;
             FALLTHROUGH;
         case 6:
-            *dst++ = 0x90;
+            *dstRW++ = 0x90;
             FALLTHROUGH;
         case 5:
-            *dst++ = 0x90;
+            *dstRW++ = 0x90;
             FALLTHROUGH;
         case 4:
-            *dst++ = 0x90;
+            *dstRW++ = 0x90;
             FALLTHROUGH;
         case 3:
-            *dst++ = 0x90;
+            *dstRW++ = 0x90;
             FALLTHROUGH;
         case 2:
-            *dst++ = 0x90;
+            *dstRW++ = 0x90;
             FALLTHROUGH;
         case 1:
-            *dst++ = 0x90;
+            *dstRW++ = 0x90;
             break;
         case 0:
             break;
@@ -9319,82 +9322,82 @@ static BYTE* emitOutputNOP(BYTE* dst, size_t nBytes)
     switch (nBytes)
     {
         case 2:
-            *dst++ = 0x66;
+            *dstRW++ = 0x66;
             FALLTHROUGH;
         case 1:
-            *dst++ = 0x90;
+            *dstRW++ = 0x90;
             break;
         case 0:
             break;
         case 3:
-            *dst++ = 0x0F;
-            *dst++ = 0x1F;
-            *dst++ = 0x00;
+            *dstRW++ = 0x0F;
+            *dstRW++ = 0x1F;
+            *dstRW++ = 0x00;
             break;
         case 4:
-            *dst++ = 0x0F;
-            *dst++ = 0x1F;
-            *dst++ = 0x40;
-            *dst++ = 0x00;
+            *dstRW++ = 0x0F;
+            *dstRW++ = 0x1F;
+            *dstRW++ = 0x40;
+            *dstRW++ = 0x00;
             break;
         case 6:
-            *dst++ = 0x66;
+            *dstRW++ = 0x66;
             FALLTHROUGH;
         case 5:
-            *dst++ = 0x0F;
-            *dst++ = 0x1F;
-            *dst++ = 0x44;
-            *dst++ = 0x00;
-            *dst++ = 0x00;
+            *dstRW++ = 0x0F;
+            *dstRW++ = 0x1F;
+            *dstRW++ = 0x44;
+            *dstRW++ = 0x00;
+            *dstRW++ = 0x00;
             break;
         case 7:
-            *dst++ = 0x0F;
-            *dst++ = 0x1F;
-            *dst++ = 0x80;
-            *dst++ = 0x00;
-            *dst++ = 0x00;
-            *dst++ = 0x00;
-            *dst++ = 0x00;
+            *dstRW++ = 0x0F;
+            *dstRW++ = 0x1F;
+            *dstRW++ = 0x80;
+            *dstRW++ = 0x00;
+            *dstRW++ = 0x00;
+            *dstRW++ = 0x00;
+            *dstRW++ = 0x00;
             break;
         case 15:
             // More than 3 prefixes is slower than just 2 NOPs
-            dst = emitOutputNOP(emitOutputNOP(dst, 7), 8);
+            dstRW = emitOutputNOP(emitOutputNOP(dstRW, 7), 8);
             break;
         case 14:
             // More than 3 prefixes is slower than just 2 NOPs
-            dst = emitOutputNOP(emitOutputNOP(dst, 7), 7);
+            dstRW = emitOutputNOP(emitOutputNOP(dstRW, 7), 7);
             break;
         case 13:
             // More than 3 prefixes is slower than just 2 NOPs
-            dst = emitOutputNOP(emitOutputNOP(dst, 5), 8);
+            dstRW = emitOutputNOP(emitOutputNOP(dstRW, 5), 8);
             break;
         case 12:
             // More than 3 prefixes is slower than just 2 NOPs
-            dst = emitOutputNOP(emitOutputNOP(dst, 4), 8);
+            dstRW = emitOutputNOP(emitOutputNOP(dstRW, 4), 8);
             break;
         case 11:
-            *dst++ = 0x66;
+            *dstRW++ = 0x66;
             FALLTHROUGH;
         case 10:
-            *dst++ = 0x66;
+            *dstRW++ = 0x66;
             FALLTHROUGH;
         case 9:
-            *dst++ = 0x66;
+            *dstRW++ = 0x66;
             FALLTHROUGH;
         case 8:
-            *dst++ = 0x0F;
-            *dst++ = 0x1F;
-            *dst++ = 0x84;
-            *dst++ = 0x00;
-            *dst++ = 0x00;
-            *dst++ = 0x00;
-            *dst++ = 0x00;
-            *dst++ = 0x00;
+            *dstRW++ = 0x0F;
+            *dstRW++ = 0x1F;
+            *dstRW++ = 0x84;
+            *dstRW++ = 0x00;
+            *dstRW++ = 0x00;
+            *dstRW++ = 0x00;
+            *dstRW++ = 0x00;
+            *dstRW++ = 0x00;
             break;
     }
 #endif // TARGET_AMD64
 
-    return dst;
+    return dst + (dstRW - initialDstRW);
 }
 
 //--------------------------------------------------------------------

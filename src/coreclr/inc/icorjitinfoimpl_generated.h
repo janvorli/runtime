@@ -638,8 +638,11 @@ void allocMem(
           uint32_t xcptnsCount,
           CorJitAllocMemFlag flag,
           void** hotCodeBlock,
+          void** hotCodeBlockRW,
           void** coldCodeBlock,
-          void** roDataBlock) override;
+          void** coldCodeBlockRW,
+          void** roDataBlock,
+          void** roDataBlockRW) override;
 
 void reserveUnwindInfo(
           bool isFunclet,
@@ -704,6 +707,7 @@ void recordCallSite(
 
 void recordRelocation(
           void* location,
+          void* locationRW,
           void* target,
           uint16_t fRelocType,
           uint16_t slotNum,
