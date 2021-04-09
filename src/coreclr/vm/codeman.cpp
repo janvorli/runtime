@@ -2270,14 +2270,24 @@ HeapList* LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
 
 
     // this first allocation is critical as it sets up correctly the loader heap info
-    HeapList *pHp = (HeapList*)pCodeHeap->m_LoaderHeap.AllocMem(sizeof(HeapList));
+    HeapList *pHp = new (nothrow) HeapList;
+
+#if defined(TARGET_AMD64)
+    pHp->CLRPersonalityRoutine = (BYTE *)pCodeHeap->m_LoaderHeap.AllocMem(JUMP_ALLOCATE_SIZE);
+    // TODO: do we need alignment of the size here?
+    pHp->startAddress = (TADDR)pHp->CLRPersonalityRoutine + JUMP_ALLOCATE_SIZE;
+#elif defined(TARGET_ARM64)
+    pHp->CLRPersonalityRoutine = (UINT32 *)pCodeHeap->m_LoaderHeap.AllocMem(JUMP_ALLOCATE_SIZE);
+    pHp->startAddress = (TADDR)pHp->CLRPersonalityRoutine + JUMP_ALLOCATE_SIZE;
+#else
+    // Dummy allocation - can we do something better? E.g. add method to get base address
+    pHp->startAddress = (TADDR)pCodeHeap->m_LoaderHeap.AllocMem(16) + 16;
+#endif
 
     pHp->pHeap = pCodeHeap;
 
     size_t heapSize = pCodeHeap->m_LoaderHeap.GetReservedBytesFree();
     size_t nibbleMapSize = HEAP2MAPSIZE(ROUND_UP_TO_PAGE(heapSize));
-
-    pHp->startAddress    = (TADDR)pHp + sizeof(HeapList);
 
     pHp->endAddress      = pHp->startAddress;
     pHp->maxCodeHeapSize = heapSize;
@@ -2414,13 +2424,7 @@ HeapList* EEJitManager::NewCodeHeap(CodeHeapRequestInfo *pInfo, DomainCodeHeapLi
     }
 #endif
 
-    // <BUGNUM> VSW 433293 </BUGNUM>
-    // SETUP_NEW_BLOCK reserves the first sizeof(LoaderHeapBlock) bytes for LoaderHeapBlock.
-    // In other word, the first m_pAllocPtr starts at sizeof(LoaderHeapBlock) bytes
-    // after the allocated memory. Therefore, we need to take it into account.
-    size_t requestAndHeadersSize = /*sizeof(LoaderHeapBlock)*/ + sizeof(HeapList) + initialRequestSize;
-
-    size_t reserveSize = requestAndHeadersSize;
+    size_t reserveSize = initialRequestSize;
     if (reserveSize < minReserveSize)
         reserveSize = minReserveSize;
     reserveSize = ALIGN_UP(reserveSize, VIRTUAL_ALLOC_RESERVE_GRANULARITY);
@@ -2458,7 +2462,7 @@ HeapList* EEJitManager::NewCodeHeap(CodeHeapRequestInfo *pInfo, DomainCodeHeapLi
 
     EX_TRY
     {
-        TADDR pStartRange = (TADDR) pHp;
+        TADDR pStartRange = pHp->GetModuleBase();
         TADDR pEndRange = (TADDR) &((BYTE*)pHp->startAddress)[pHp->maxCodeHeapSize];
 
         ExecutionManager::AddCodeRange(pStartRange,
@@ -2482,8 +2486,8 @@ HeapList* EEJitManager::NewCodeHeap(CodeHeapRequestInfo *pInfo, DomainCodeHeapLi
         // If we failed to alloc memory in ExecutionManager::AddCodeRange()
         // then we will delete the LoaderHeap that we allocated
 
-        // pHp is allocated in pHeap, so only need to delete the LoaderHeap itself
         delete pHp->pHeap;
+        delete pHp;
 
         pHp = NULL;
     }
@@ -2715,7 +2719,7 @@ CodeHeader* EEJitManager::allocCode(MethodDesc* pMD, size_t blockSize, size_t re
         pCodeHdr->SetMethodDesc(pMD);
 #ifdef FEATURE_EH_FUNCLETS
         pCodeHdr->SetNumberOfUnwindInfos(nUnwindInfos);
-        *pModuleBase = (TADDR)pCodeHeap;
+        *pModuleBase = pCodeHeap->GetModuleBase();
 #endif
 
         NibbleMapSet(pCodeHeap, pCode, TRUE);
@@ -3555,9 +3559,9 @@ void EEJitManager::DeleteCodeHeap(HeapList *pHeapList)
         pHp->SetNext(pHeapList->GetNext());
     }
 
-    DeleteEEFunctionTable((PVOID)pHeapList);
+    DeleteEEFunctionTable((PVOID)pHeapList->mapBase);
 
-    ExecutionManager::DeleteRange((TADDR)pHeapList);
+    ExecutionManager::DeleteRange((TADDR)pHeapList->mapBase);
 
     LOG((LF_JIT, LL_INFO100, "DeleteCodeHeap start" FMT_ADDR "end" FMT_ADDR "\n",
                               (const BYTE*)pHeapList->startAddress,
@@ -3569,6 +3573,7 @@ void EEJitManager::DeleteCodeHeap(HeapList *pHeapList)
     // delete pHeapList->pHeap;
     CodeHeap* pHeap = pHeapList->pHeap;
     delete pHeap;
+    delete pHeapList;
 }
 
 #endif // #ifndef DACCESS_COMPILE

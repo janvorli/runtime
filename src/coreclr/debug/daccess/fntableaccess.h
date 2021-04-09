@@ -31,6 +31,7 @@ struct FakeEEJitManager
     // Nothing after this point matters: we only need the correct offset of m_pCodeHeap.
 };
 
+// TODO: do we need to change this?
 struct FakeHeapList
 {
     FakeHeapList*       hpNext;
