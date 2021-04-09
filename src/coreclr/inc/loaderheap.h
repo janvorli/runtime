@@ -90,7 +90,11 @@ public:
     {
     }
 
-    DoublePtrT(T* pRX, T* pRW, UnlockedLoaderHeap* pHeap) : m_pRW(pRX), m_pRX(pRW), m_pHeap(pHeap)
+    DoublePtrT(const DoublePtrT<void>& voidDoublePtr) : m_pRW((T*)voidDoublePtr.GetRW()), m_pRX((T*)voidDoublePtr.GetRX()), m_pHeap(voidDoublePtr.Heap())
+    {
+    }
+
+    DoublePtrT(T* pRX, T* pRW, UnlockedLoaderHeap* pHeap) : m_pRW(pRW), m_pRX(pRX), m_pHeap(pHeap)
     {
     }
 
@@ -170,7 +174,7 @@ class ILoaderHeapBackout
 #endif
 
 public:
-    virtual void RealBackoutMem(void *pMem
+    virtual void RealBackoutMem(DoublePtr pMem
                         , size_t dwSize
 #ifdef _DEBUG
                         , __in __in_z const char *szFile
@@ -234,6 +238,145 @@ struct TaggedMemAllocPtr
     {
         LIMITED_METHOD_CONTRACT;
         return reinterpret_cast< T >( operator void *() );
+    }
+};
+
+class DoubleMappedAllocator
+{
+    static DoubleMappedAllocator* g_instance;
+
+    struct Block
+    {
+        Block* next;
+        void* baseRX;
+        size_t size;
+        size_t offset;
+    };
+
+    Block* m_firstBlock = NULL;
+    HANDLE m_hSharedMemoryFile = NULL;
+    size_t maxSize = 1024*1024;
+    size_t m_freeOffset = 0;
+
+    size_t Granularity()
+    {
+        return 64 * 1024;
+    }
+public:
+
+    static DoubleMappedAllocator* Instance()
+    {
+        DoubleMappedAllocator *instance = new (nothrow) DoubleMappedAllocator();
+        instance->Initialize();
+
+        if (InterlockedCompareExchangeT(&g_instance, instance, NULL) != NULL)
+        {
+            delete instance;
+        }
+
+        return g_instance;
+    }
+
+    ~DoubleMappedAllocator()
+    {
+        CloseHandle(m_hSharedMemoryFile);
+    }
+
+    bool Initialize()
+    {
+        m_hSharedMemoryFile = WszCreateFileMapping(
+                 INVALID_HANDLE_VALUE,    // use paging file
+                 NULL,                    // default security
+                 PAGE_EXECUTE_READWRITE,  // read/write/execute access
+                 0,                       // maximum object size (high-order DWORD)
+                 1024*1024,               // maximum object size (low-order DWORD)
+                 NULL);    
+
+        return m_hSharedMemoryFile != NULL;    
+    }
+
+    bool Allocate(size_t size, size_t rwSize, void** ppRX, void** ppRW)
+    {
+        _ASSERTE((size & (Granularity() - 1)) == 0);
+        _ASSERTE((rwSize & (Granularity() - 1)) == 0);
+
+        if (m_freeOffset + size > maxSize)
+        {
+            return false;
+        }
+
+        size_t offset = m_freeOffset;
+        m_freeOffset += size;
+
+        Block* block = new (nothrow) Block();
+        if (block == NULL)
+        {
+            return false;
+        }
+
+        *ppRW = MapViewOfFile(m_hSharedMemoryFile,
+                        FILE_MAP_READ | FILE_MAP_WRITE,
+                        offset / ((size_t)1) >> 32,
+                        offset & 0xFFFFFFFFUL,
+                        rwSize);
+        *ppRX = MapViewOfFile(m_hSharedMemoryFile,
+                        FILE_MAP_EXECUTE | FILE_MAP_READ,
+                        offset / ((size_t)1) >> 32,
+                        offset & 0xFFFFFFFFUL,
+                        size);
+
+        block->baseRX = *ppRX;
+        block->offset = offset;
+        block->size = size;
+
+        // TODO: probably use lock so that we can search the list? Hmm, we will never remove blocks, will we?
+        do
+        {
+            block->next = m_firstBlock;
+        }
+        while (InterlockedCompareExchangeT(&m_firstBlock, block, block->next) != block->next);
+
+        return true;
+    }
+
+    void UnmapRW(void* pRW)
+    {
+        // TODO: Linux will need the full range. So we may need to store all the RW mappings in a separate list (per RX mapping)
+        //void* unmapAddress = ALIGN_DOWN(pRW, Granularity());
+        //UnmapViewOfFile(unmapAddress);
+    }
+
+    void* MapRW(void* pRX, size_t size)
+    {
+        for (Block* b = m_firstBlock; b != NULL; b = b->next)
+        {
+            if (pRX >= b->baseRX && ((size_t)pRX + size) <= ((size_t)b->baseRX + b->size))
+            {
+                // Offset of the RX address in the originally allocated block
+                size_t offset = (size_t)pRX - (size_t)b->baseRX;
+                // Offset of the RX address that will start the newly mapped block
+                size_t mapOffset = ALIGN_DOWN(offset, Granularity());
+                // Size of the block we will map
+                size_t mapSize = ALIGN_UP(offset - mapOffset + size, Granularity());
+                void* pRW = MapViewOfFile(m_hSharedMemoryFile,
+                                FILE_MAP_READ | FILE_MAP_WRITE,
+                                (b->offset + mapOffset) / ((size_t)1) >> 32,
+                                (b->offset + mapOffset) & 0xFFFFFFFFUL,
+                                mapSize);
+
+                if (pRW == NULL)
+                {
+                    __debugbreak();
+                    return NULL;
+                }
+                return (void*)((size_t)pRW + (offset - mapOffset));
+            }
+        }
+
+//        __debugbreak();
+//        return NULL;
+        // TODO: this is a hack for the preallocated pages that are part of the coreclr module
+        return pRX;
     }
 };
 
@@ -628,7 +771,7 @@ protected:
     // This frees memory allocated by UnlockAllocMem. It's given this horrible name to emphasize
     // that it's purpose is for error path leak prevention purposes. You shouldn't
     // use LoaderHeap's as general-purpose alloc-free heaps.
-    void UnlockedBackoutMem(void *pMem
+    void UnlockedBackoutMem(DoublePtr pMem
                           , size_t dwSize
 #ifdef _DEBUG
                           , __in __in_z const char *szFile
@@ -959,7 +1102,7 @@ public:
     // This frees memory allocated by AllocMem. It's given this horrible name to emphasize
     // that it's purpose is for error path leak prevention purposes. You shouldn't
     // use LoaderHeap's as general-purpose alloc-free heaps.
-    void RealBackoutMem(void *pMem
+    void RealBackoutMem(DoublePtr pMem
                         , size_t dwSize
 #ifdef _DEBUG
                         , __in __in_z const char *szFile
@@ -1175,8 +1318,7 @@ class AllocMemHolder
             WRAPPER_NO_CONTRACT;
             if (m_fAcquired && !m_value.m_pMem.IsNull())
             {
-                // TODO: do we need both RX and RW for the backout?
-                m_value.m_pHeap->RealBackoutMem(m_value.m_pMem.GetRX(),
+                m_value.m_pHeap->RealBackoutMem(m_value.m_pMem,
                                                 m_value.m_dwRequestedSize
 #ifdef _DEBUG
                                                 ,__FILE__
@@ -1285,8 +1427,9 @@ class AllocMemTracker
         // Ok to call on failed loaderheap allocation (will just do nothing and propagate the OOM as apropos).
         //
         // If Track fails due to an OOM allocating node space, it will backout the loaderheap block before returning.
-        void *Track(TaggedMemAllocPtr tmap);
-        void *Track_NoThrow(TaggedMemAllocPtr tmap);
+        void* Track(TaggedMemAllocPtr tmap);
+        DoublePtr Track2(TaggedMemAllocPtr tmap);
+        DoublePtr Track_NoThrow(TaggedMemAllocPtr tmap);
 
         void SuppressRelease();
 

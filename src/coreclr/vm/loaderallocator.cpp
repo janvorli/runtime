@@ -1291,6 +1291,10 @@ BYTE *LoaderAllocator::GetCodeHeapInitialBlock(const BYTE * loAddr, const BYTE *
     LIMITED_METHOD_CONTRACT;
 
     *pSize = 0;
+
+    // TODO: drop the initial block support completely? Measure perf to see if it matters at all (startup perf, regular perf)
+    return NULL;
+
     // Check to see if the size is small enough that this might work
     if (minimumSize > COLLECTIBLE_CODEHEAP_SIZE)
         return NULL;

@@ -521,7 +521,7 @@ struct StubPrecode {
     BYTE            m_jmp;
     INT32           m_rel32;
 
-    void Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocator = NULL, BYTE type = StubPrecode::Type, TADDR target = NULL);
+    void Init(StubPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator = NULL, BYTE type = StubPrecode::Type, TADDR target = NULL);
 
     TADDR GetMethodDesc()
     {
@@ -586,7 +586,7 @@ struct NDirectImportPrecode : StubPrecode {
     // jmp NDirectImportThunk
 #endif // HOST_64BIT
 
-    void Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocator);
+    void Init(NDirectImportPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator);
 
     LPVOID GetEntrypoint()
     {
@@ -633,7 +633,7 @@ struct FixupPrecode {
     TADDR           m_pMethodDesc;
 #endif
 
-    void Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocator, int iMethodDescChunkIndex = 0, int iPrecodeChunkIndex = 0);
+    void Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator, int iMethodDescChunkIndex = 0, int iPrecodeChunkIndex = 0);
 
 #ifdef HAS_FIXUP_PRECODE_CHUNKS
     TADDR GetBase()

@@ -319,25 +319,25 @@ void DynamicMethodTable::LinkMethod(DynamicMethodDesc *pMethod)
 //
 // CodeHeap implementation
 //
-HeapList* HostCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, EEJitManager *pJitManager)
+DoublePtrT<HeapList> HostCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, EEJitManager *pJitManager)
 {
-    CONTRACT (HeapList*)
+    CONTRACT (DoublePtrT<HeapList>)
     {
         THROWS;
         GC_NOTRIGGER;
         MODE_ANY;
         INJECT_FAULT(COMPlusThrowOM());
-        POSTCONDITION((RETVAL != NULL) || !pInfo->getThrowOnOutOfMemoryWithinRange());
+        POSTCONDITION(!RETVAL.IsNull() || !pInfo->getThrowOnOutOfMemoryWithinRange());
     }
     CONTRACT_END;
 
     NewHolder<HostCodeHeap> pCodeHeap(new HostCodeHeap(pJitManager));
 
-    HeapList *pHp = pCodeHeap->InitializeHeapList(pInfo);
-    if (pHp == NULL)
+    DoublePtrT<HeapList> pHp = pCodeHeap->InitializeHeapList(pInfo);
+    if (pHp.IsNull())
     {
         _ASSERTE(!pInfo->getThrowOnOutOfMemoryWithinRange());
-        RETURN NULL;
+        RETURN DoublePtr::Null();
     }
 
     LOG((LF_BCL, LL_INFO100, "Level2 - CodeHeap creation {0x%p} - base addr 0x%p, size available 0x%p, nibble map ptr 0x%p\n",
@@ -384,7 +384,7 @@ HostCodeHeap::~HostCodeHeap()
     LOG((LF_BCL, LL_INFO10, "Level1 - CodeHeap destroyed {0x%p}\n", this));
 }
 
-HeapList* HostCodeHeap::InitializeHeapList(CodeHeapRequestInfo *pInfo)
+DoublePtrT<HeapList> HostCodeHeap::InitializeHeapList(CodeHeapRequestInfo *pInfo)
 {
     CONTRACTL
     {
@@ -410,7 +410,7 @@ HeapList* HostCodeHeap::InitializeHeapList(CodeHeapRequestInfo *pInfo)
         {
             if (pInfo->getThrowOnOutOfMemoryWithinRange())
                 ThrowOutOfMemoryWithinRange();
-            return NULL;
+            return DoublePtr::Null();
         }
     }
     else
@@ -463,7 +463,8 @@ HeapList* HostCodeHeap::InitializeHeapList(CodeHeapRequestInfo *pInfo)
     pHp->pHdrMap = new DWORD[nibbleMapSize / sizeof(DWORD)];
     ZeroMemory(pHp->pHdrMap, nibbleMapSize);
 
-    return pHp;
+    // TODO: fix this to use double mapped allocator
+    return DoublePtrT<HeapList>(pHp, pHp, NULL);
 }
 
 HostCodeHeap::TrackAllocation* HostCodeHeap::AllocFromFreeList(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs)

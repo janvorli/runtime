@@ -1155,8 +1155,11 @@ void ZapInfo::allocMem(
     uint32_t            xcptnsCount,    /* IN */
     CorJitAllocMemFlag  flag,           /* IN */
     void **             hotCodeBlock,   /* OUT */
+    void **             hotCodeBlockRW, /* OUT */
     void **             coldCodeBlock,  /* OUT */
-    void **             roDataBlock     /* OUT */
+    void **             coldCodeBlockRW,/* OUT */
+    void **             roDataBlock,    /* OUT */
+    void **             roDataBlockRW   /* OUT */
     )
 {
     bool optForSize = m_zapper->m_pOpt->m_compilerFlags.IsSet(CORJIT_FLAGS::CORJIT_FLAG_SIZE_OPT);
@@ -2810,7 +2813,7 @@ void ZapInfo::recordCallSite(uint32_t instrOffset, CORINFO_SIG_INFO *callSig, CO
     return;
 }
 
-void ZapInfo::recordRelocation(void *location, void *target,
+void ZapInfo::recordRelocation(void *location, void *locationRW, void *target,
                                uint16_t fRelocType, uint16_t slotNum, int32_t addlDelta)
 {
     // Factor slotNum into the location address

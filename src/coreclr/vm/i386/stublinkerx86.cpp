@@ -5226,7 +5226,7 @@ BOOL rel32SetInterlocked(/*PINT32*/ PVOID pRel32, TADDR target, TADDR expected, 
     return FastInterlockCompareExchange((LONG*)pRel32, (LONG)targetRel32, (LONG)expectedRel32) == (LONG)expectedRel32;
 }
 
-void StubPrecode::Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocator /* = NULL */,
+void StubPrecode::Init(StubPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator /* = NULL */,
     BYTE type /* = StubPrecode::Type */, TADDR target /* = NULL */)
 {
     WRAPPER_NO_CONTRACT;
@@ -5244,23 +5244,23 @@ void StubPrecode::Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocator /* = N
         // that has the same lifetime like as the precode itself
         if (target == NULL)
             target = GetPreStubEntryPoint();
-        m_rel32 = rel32UsingJumpStub(&m_rel32, target, NULL /* pMD */, pLoaderAllocator);
+        m_rel32 = rel32UsingJumpStub(&pPrecodeRX->m_rel32, target, NULL /* pMD */, pLoaderAllocator);
     }
 }
 
 #ifdef HAS_NDIRECT_IMPORT_PRECODE
 
-void NDirectImportPrecode::Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocator)
+void NDirectImportPrecode::Init(NDirectImportPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator)
 {
     WRAPPER_NO_CONTRACT;
-    StubPrecode::Init(pMD, pLoaderAllocator, NDirectImportPrecode::Type, GetEEFuncEntryPoint(NDirectImportThunk));
+    StubPrecode::Init(pPrecodeRX, pMD, pLoaderAllocator, NDirectImportPrecode::Type, GetEEFuncEntryPoint(NDirectImportThunk));
 }
 
 #endif // HAS_NDIRECT_IMPORT_PRECODE
 
 
 #ifdef HAS_FIXUP_PRECODE
-void FixupPrecode::Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocator, int iMethodDescChunkIndex /*=0*/, int iPrecodeChunkIndex /*=0*/)
+void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator, int iMethodDescChunkIndex /*=0*/, int iPrecodeChunkIndex /*=0*/)
 {
     WRAPPER_NO_CONTRACT;
 
@@ -5292,13 +5292,13 @@ void FixupPrecode::Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocator, int 
 #ifdef FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
     if (pMD->IsLCGMethod())
     {
-        m_rel32 = rel32UsingPreallocatedJumpStub(&m_rel32, target, GetDynamicMethodPrecodeFixupJumpStub(), false /* emitJump */);
+        m_rel32 = rel32UsingPreallocatedJumpStub(&pPrecodeRX->m_rel32, target, GetDynamicMethodPrecodeFixupJumpStub(), false /* emitJump */);
         return;
     }
 #endif // FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
     if (pLoaderAllocator != NULL)
     {
-        m_rel32 = rel32UsingJumpStub(&m_rel32, target, NULL /* pMD */, pLoaderAllocator);
+        m_rel32 = rel32UsingJumpStub(&pPrecodeRX->m_rel32, target, NULL /* pMD */, pLoaderAllocator);
     }
 }
 
@@ -5384,7 +5384,11 @@ BOOL FixupPrecode::SetTargetInterlocked(TADDR target, TADDR expected)
             rel32UsingJumpStub(&m_rel32, target, pMD);
 
     _ASSERTE(IS_ALIGNED(this, sizeof(INT64)));
-    return FastInterlockCompareExchangeLong((INT64*) this, newValue, oldValue) == oldValue;
+
+    // TODO: how can we prevent frequent mappings?
+    INT64* targetLoc = (INT64*)DoubleMappedAllocator::Instance()->MapRW(this, sizeof(INT64));
+    return FastInterlockCompareExchangeLong(targetLoc, newValue, oldValue) == oldValue;
+    DoubleMappedAllocator::Instance()->UnmapRW(targetLoc);
 }
 
 #ifdef FEATURE_NATIVE_IMAGE_GENERATION

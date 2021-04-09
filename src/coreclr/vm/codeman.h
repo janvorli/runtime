@@ -514,7 +514,7 @@ private:
     LoaderCodeHeap();
 
 public:
-    static HeapList* CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap *pJitMetaHeap);
+    static DoublePtrT<HeapList> CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap *pJitMetaHeap);
 
 public:
     virtual ~LoaderCodeHeap()
@@ -671,8 +671,8 @@ class CodeFragmentHeap : public ILoaderHeapBackout
 
     Crst                m_CritSec;
 
-    void AddBlock(VOID * pMem, size_t dwSize);
-    void RemoveBlock(FreeBlock ** ppBlock);
+    void AddBlock(DoublePtr pMem, size_t dwSize);
+    void RemoveBlock(FreeBlock ** ppBlock, FreeBlock* pBlockRW);
 
 public:
     CodeFragmentHeap(LoaderAllocator * pAllocator, StubCodeBlockKind kind);
@@ -686,7 +686,7 @@ public:
 #endif
                                          );
 
-    virtual void RealBackoutMem(void *pMem
+    virtual void RealBackoutMem(DoublePtr pMem
                         , size_t dwSize
 #ifdef _DEBUG
                         , __in __in_z const char *szFile
@@ -960,7 +960,7 @@ public:
     GCInfoToken         GetGCInfoToken(const METHODTOKEN& MethodToken);
 #endif // !CROSSGEN_COMPILE
 #if !defined DACCESS_COMPILE && !defined CROSSGEN_COMPILE
-    void                RemoveJitData(CodeHeader * pCHdr, size_t GCinfo_len, size_t EHinfo_len);
+    void                RemoveJitData(DoublePtrT<CodeHeader> pCHdr, size_t GCinfo_len, size_t EHinfo_len);
     void                Unload(LoaderAllocator* pAllocator);
     void                CleanupCodeHeaps();
 
@@ -974,7 +974,7 @@ public:
                                   );
     BYTE *              allocGCInfo(CodeHeader* pCodeHeader, DWORD blockSize, size_t * pAllocationSize);
     EE_ILEXCEPTION*     allocEHInfo(CodeHeader* pCodeHeader, unsigned numClauses, size_t * pAllocationSize);
-    JumpStubBlockHeader* allocJumpStubBlock(MethodDesc* pMD, DWORD numJumps,
+    DoublePtrT<JumpStubBlockHeader> allocJumpStubBlock(MethodDesc* pMD, DWORD numJumps,
                                             BYTE * loAddr, BYTE * hiAddr,
                                             LoaderAllocator *pLoaderAllocator,
                                             bool throwOnOutOfMemoryWithinRange);

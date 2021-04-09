@@ -14,6 +14,8 @@
 
 INDEBUG(DWORD UnlockedLoaderHeap::s_dwNumInstancesOfLoaderHeaps = 0;)
 
+DoubleMappedAllocator* DoubleMappedAllocator::g_instance = NULL;
+
 #ifdef RANDOMIZE_ALLOC
 #include <time.h>
 static class Random
@@ -1127,16 +1129,20 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
     }
 
     // Commit first set of pages, since it will contain the LoaderHeapBlock
-    void *pTemp = ClrVirtualAlloc(pData, dwSizeToCommit, MEM_COMMIT, (m_Options & LHF_EXECUTABLE) ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE);
-    if (pTemp == NULL)
+    // TODO: Should we still handle the non-executable heap the old way using VirtualAlloc? Probably yes.
+    if (!(m_Options & LHF_EXECUTABLE))
     {
-        //_ASSERTE(!"Unable to ClrVirtualAlloc commit in a loaderheap");
+        void *pTemp = ClrVirtualAlloc(pData, dwSizeToCommit, MEM_COMMIT, PAGE_READWRITE);//(m_Options & LHF_EXECUTABLE) ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE);
+        if (pTemp == NULL)
+        {
+            //_ASSERTE(!"Unable to ClrVirtualAlloc commit in a loaderheap");
 
-        // Unable to commit - release pages
-        if (fReleaseMemory)
-            ClrVirtualFree(pData, 0, MEM_RELEASE);
+            // Unable to commit - release pages
+            if (fReleaseMemory)
+                ClrVirtualFree(pData, 0, MEM_RELEASE);
 
-        return FALSE;
+            return FALSE;
+        }
     }
 
     // Record reserved range in range list, if one is specified
@@ -1148,8 +1154,12 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
                                     (void *) this))
         {
 
-            if (fReleaseMemory)
-                ClrVirtualFree(pData, 0, MEM_RELEASE);
+            // TODO: what do we do in the double mapped memory world?
+            if (!(m_Options & LHF_EXECUTABLE))
+            {
+                if (fReleaseMemory)
+                    ClrVirtualFree(pData, 0, MEM_RELEASE);
+            }
 
             return FALSE;
         }
@@ -1164,7 +1174,12 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
     auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
 
-    pNewBlock = (LoaderHeapBlock *) pData;
+    void* pDataRW = pData;
+    if ((m_Options & LHF_EXECUTABLE))
+    {
+        pDataRW = DoubleMappedAllocator::Instance()->MapRW(pData, dwSizeToCommit);
+    }
+    pNewBlock = (LoaderHeapBlock *) pDataRW;
 
     pNewBlock->dwVirtualSize    = dwSizeToReserve;
     pNewBlock->pVirtualAddress  = pData;
@@ -1187,6 +1202,11 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
     m_pCurBlock = pNewBlock;
 
     SETUP_NEW_BLOCK(pData, dwSizeToCommit, dwSizeToReserve);
+
+    if ((m_Options & LHF_EXECUTABLE))
+    {
+        DoubleMappedAllocator::Instance()->UnmapRW(pDataRW);
+    }
 
     return TRUE;
 }
@@ -1220,10 +1240,13 @@ BOOL UnlockedLoaderHeap::GetMoreCommittedPages(size_t dwMinSize)
         // Round to page size
         dwSizeToCommit = ALIGN_UP(dwSizeToCommit, GetOsPageSize());
 
-        // Yes, so commit the desired number of reserved pages
-        void *pData = ClrVirtualAlloc(m_pPtrToEndOfCommittedRegion, dwSizeToCommit, MEM_COMMIT, (m_Options & LHF_EXECUTABLE) ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE);
-        if (pData == NULL)
-            return FALSE;
+        if (!(m_Options & LHF_EXECUTABLE))
+        {
+            // Yes, so commit the desired number of reserved pages
+            void *pData = ClrVirtualAlloc(m_pPtrToEndOfCommittedRegion, dwSizeToCommit, MEM_COMMIT, (m_Options & LHF_EXECUTABLE) ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE);
+            if (pData == NULL)
+                return FALSE;
+        }
 
         m_dwTotalAlloc += dwSizeToCommit;
 
@@ -1377,7 +1400,12 @@ again:
 
             EtwAllocRequest(this, pData, dwSize);
             // TODO: Get the RW mapping
-            RETURN DoublePtr(pData, pData, this);
+            void* pDataRW = pData;
+            if (m_Options & LHF_EXECUTABLE)
+            {
+                pDataRW = DoubleMappedAllocator::Instance()->MapRW(pData, dwSize);
+            }
+            RETURN DoublePtr(pData, pDataRW, this);
         }
     }
 
@@ -1390,7 +1418,7 @@ again:
     RETURN DoublePtr::Null();
 }
 
-void UnlockedLoaderHeap::UnlockedBackoutMem(void *pMem,
+void UnlockedLoaderHeap::UnlockedBackoutMem(DoublePtr pMem,
                                             size_t dwRequestedSize
                                             COMMA_INDEBUG(__in const char *szFile)
                                             COMMA_INDEBUG(int  lineNum)
@@ -1407,7 +1435,7 @@ void UnlockedLoaderHeap::UnlockedBackoutMem(void *pMem,
 
     // Because the primary use of this function is backout, we'll be nice and
     // define Backout(NULL) be a legal NOP.
-    if (pMem == NULL)
+    if (pMem.IsNull())
     {
         return;
     }
@@ -1416,7 +1444,7 @@ void UnlockedLoaderHeap::UnlockedBackoutMem(void *pMem,
     {
         DEBUG_ONLY_REGION();
 
-        LoaderHeapValidationTag *pTag = AllocMem_GetTag(pMem, dwRequestedSize);
+        LoaderHeapValidationTag *pTag = AllocMem_GetTag(pMem.GetRX(), dwRequestedSize);
 
         if (pTag->m_dwRequestedSize != dwRequestedSize || pTag->m_allocationType != kAllocMem)
         {
@@ -1442,7 +1470,7 @@ void UnlockedLoaderHeap::UnlockedBackoutMem(void *pMem,
                            ,lineNum
                            ,szAllocFile
                            ,allocLineNum
-                           ,pMem
+                           ,pMem.GetRX()
                            ,(ULONG)dwRequestedSize
                            ,(ULONG)dwRequestedSize
                           );
@@ -1451,14 +1479,14 @@ void UnlockedLoaderHeap::UnlockedBackoutMem(void *pMem,
             if (m_dwDebugFlags & kCallTracing)
             {
                 message.AppendASCII("*** CALLTRACING ENABLED ***\n");
-                LoaderHeapEvent *pEvent = LoaderHeapSniffer::FindEvent(this, pMem);
+                LoaderHeapEvent *pEvent = LoaderHeapSniffer::FindEvent(this, pMem.GetRX());
                 if (!pEvent)
                 {
                     message.AppendASCII("This pointer doesn't appear to have come from this LoaderHeap.\n");
                 }
                 else
                 {
-                    message.AppendASCII(pMem == pEvent->m_pMem ? "We have the following data about this pointer:" : "This pointer points to the middle of the following block:");
+                    message.AppendASCII(pMem.GetRX() == pEvent->m_pMem ? "We have the following data about this pointer:" : "This pointer points to the middle of the following block:");
                     pEvent->Describe(&message);
                 }
             }
@@ -1503,7 +1531,7 @@ void UnlockedLoaderHeap::UnlockedBackoutMem(void *pMem,
     {
         DEBUG_ONLY_REGION();
 
-        LoaderHeapValidationTag *pTag = m_fExplicitControl ? NULL : AllocMem_GetTag(pMem, dwRequestedSize);
+        LoaderHeapValidationTag *pTag = m_fExplicitControl ? NULL : AllocMem_GetTag(pMem.GetRX(), dwRequestedSize);
 
 
         LoaderHeapSniffer::RecordEvent(this,
@@ -1512,23 +1540,23 @@ void UnlockedLoaderHeap::UnlockedBackoutMem(void *pMem,
                                        lineNum,
                                        (pTag && (allocLineNum < 0)) ? pTag->m_szFile  : szAllocFile,
                                        (pTag && (allocLineNum < 0)) ? pTag->m_lineNum : allocLineNum,
-                                       pMem,
+                                       pMem.GetRX(),
                                        dwRequestedSize,
                                        dwSize
                                        );
     }
 #endif
 
-    if (m_pAllocPtr == ( ((BYTE*)pMem) + dwSize ))
+    if (m_pAllocPtr == ( ((BYTE*)pMem.GetRX()) + dwSize ))
     {
         // Cool. This was the last block allocated. We can just undo the allocation instead
         // of going to the freelist.
-        memset(pMem, 0x00, dwSize); // Fill freed region with 0
-        m_pAllocPtr = (BYTE*)pMem;
+        memset(pMem.GetRW(), 0x00, dwSize); // Fill freed region with 0
+        m_pAllocPtr = (BYTE*)pMem.GetRX();
     }
     else
     {
-        LoaderHeapFreeBlock::InsertFreeBlock(&m_pFirstFreeBlock, pMem, dwSize, this);
+        LoaderHeapFreeBlock::InsertFreeBlock(&m_pFirstFreeBlock, pMem.GetRX(), dwSize, this);
     }
 
 }
@@ -1756,7 +1784,12 @@ DoublePtr UnlockedLoaderHeap::UnlockedAllocMemForCode_NoThrow(size_t dwHeaderSiz
     m_pAllocPtr = pResult + dwCodeSize;
 
     // TODO: Get the RW mapping
-    RETURN DoublePtr(pResult, pResult, this);
+    void* pResultRW = pResult;
+    if (m_Options & LHF_EXECUTABLE)
+    {
+        pResultRW = DoubleMappedAllocator::Instance()->MapRW(pResult, dwCodeSize);
+    }
+    RETURN DoublePtr(pResult, pResultRW, this);
 }
 
 
@@ -2144,7 +2177,10 @@ AllocMemTracker::~AllocMemTracker()
             for (int i = pBlock->m_nextFree - 1; i >= 0; i--)
             {
                 AllocMemTrackerNode *pNode = &(pBlock->m_Node[i]);
-                pNode->m_pHeap->RealBackoutMem(pNode->m_pMem
+
+                DoublePtr mem(pNode->m_pMem, DoubleMappedAllocator::Instance()->MapRW(pNode->m_pMem, pNode->m_dwRequestedSize), NULL);
+
+                pNode->m_pHeap->RealBackoutMem(mem
                                                ,pNode->m_dwRequestedSize
 #ifdef _DEBUG
                                                ,__FILE__
@@ -2172,7 +2208,7 @@ AllocMemTracker::~AllocMemTracker()
     INDEBUG(memset(this, 0xcc, sizeof(*this));)
 }
 
-void *AllocMemTracker::Track(TaggedMemAllocPtr tmap)
+DoublePtr AllocMemTracker::Track2(TaggedMemAllocPtr tmap)
 {
     CONTRACTL
     {
@@ -2181,20 +2217,37 @@ void *AllocMemTracker::Track(TaggedMemAllocPtr tmap)
     }
     CONTRACTL_END
 
-    void *pv = Track_NoThrow(tmap);
-    if (!pv)
+    DoublePtr pv = Track_NoThrow(tmap);
+    if (pv.IsNull())
     {
         ThrowOutOfMemory();
     }
     return pv;
 }
 
-void *AllocMemTracker::Track_NoThrow(TaggedMemAllocPtr tmap)
+void* AllocMemTracker::Track(TaggedMemAllocPtr tmap)
+{
+    CONTRACTL
+    {
+        THROWS;
+        INJECT_FAULT(ThrowOutOfMemory(););
+    }
+    CONTRACTL_END
+
+    DoublePtr pv = Track_NoThrow(tmap);
+    if (pv.IsNull())
+    {
+        ThrowOutOfMemory();
+    }
+    return pv.GetRW();
+}
+
+DoublePtr AllocMemTracker::Track_NoThrow(TaggedMemAllocPtr tmap)
 {
     CONTRACTL
     {
         NOTHROW;
-        INJECT_FAULT(return NULL;);
+        INJECT_FAULT(return DoublePtr::Null(););
     }
     CONTRACTL_END
 
@@ -2216,7 +2269,7 @@ void *AllocMemTracker::Track_NoThrow(TaggedMemAllocPtr tmap)
             AllocMemTrackerBlock *pNewBlock = new (nothrow) AllocMemTrackerBlock;
             if (!pNewBlock)
             {
-                return NULL;
+                return DoublePtr::Null();
             }
 
             pNewBlock->m_pNext = m_pFirstBlock;
@@ -2243,7 +2296,7 @@ void *AllocMemTracker::Track_NoThrow(TaggedMemAllocPtr tmap)
 
 
     }
-    return (void *)tmap;
+    return tmap.m_pMem;
 }
 
 

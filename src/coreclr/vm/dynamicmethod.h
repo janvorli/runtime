@@ -280,11 +280,11 @@ private:
     LoaderAllocator*m_pAllocator;
 
 public:
-    static HeapList* CreateCodeHeap(CodeHeapRequestInfo *pInfo, EEJitManager *pJitManager);
+    static DoublePtrT<HeapList> CreateCodeHeap(CodeHeapRequestInfo *pInfo, EEJitManager *pJitManager);
 
 private:
     HostCodeHeap(EEJitManager *pJitManager);
-    HeapList* InitializeHeapList(CodeHeapRequestInfo *pInfo);
+    DoublePtrT<HeapList> InitializeHeapList(CodeHeapRequestInfo *pInfo);
     TrackAllocation* AllocFromFreeList(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs);
     void AddToFreeList(TrackAllocation *pBlockToInsert);
 
