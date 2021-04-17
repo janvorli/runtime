@@ -278,19 +278,24 @@ const CallCountingStub *CallCountingManager::CallCountingStubAllocator::Allocate
             sizeInBytes = sizeof(CallCountingStubShort);
             AllocMemHolder<void> allocationAddressHolder(heap->AllocAlignedMem(sizeInBytes, CallCountingStub::Alignment));
         #ifdef TARGET_AMD64
-            if (CallCountingStubShort::CanUseFor(allocationAddressHolder, targetForMethod))
+            if (CallCountingStubShort::CanUseFor(allocationAddressHolder.GetRX(), targetForMethod))
         #endif
             {
                 stub = new(allocationAddressHolder) CallCountingStubShort(remainingCallCountCell, targetForMethod);
-                allocationAddressHolder.SuppressRelease();
+                stub = (CallCountingStub*)allocationAddressHolder.GetRX();
+                allocationAddressHolder.GetDoublePtr().UnmapRW();
                 break;
             }
         }
 
     #ifdef TARGET_AMD64
         sizeInBytes = sizeof(CallCountingStubLong);
-        void *allocationAddress = (void *)heap->AllocAlignedMem(sizeInBytes, CallCountingStub::Alignment);
-        stub = new(allocationAddress) CallCountingStubLong(remainingCallCountCell, targetForMethod);
+        TaggedMemAllocPtr allocation = heap->AllocAlignedMem(sizeInBytes, CallCountingStub::Alignment);
+        //void *allocationAddress = (void *)heap->AllocAlignedMem(sizeInBytes, CallCountingStub::Alignment);
+        void *allocationAddressRW = (void *)allocation;
+        stub = new(allocationAddressRW) CallCountingStubLong(remainingCallCountCell, targetForMethod);
+        stub = (CallCountingStub*)allocation.GetRX();
+        allocation.GetDoublePtr().UnmapRW();
     #else
         UNREACHABLE();
     #endif

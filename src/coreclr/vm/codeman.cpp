@@ -1944,7 +1944,10 @@ TaggedMemAllocPtr CodeFragmentHeap::RealAllocAlignedMem(size_t  dwRequestedSize
 
         FreeBlock ** ppBestFitRW = (FreeBlock **)DoubleMappedAllocator::Instance()->MapRW(ppBestFit, sizeof(FreeBlock));
         RemoveBlock(ppBestFitRW ? ppBestFitRW : ppBestFit, (FreeBlock*)pMem.GetRW());
-        DoubleMappedAllocator::Instance()->UnmapRW(ppBestFitRW);
+        if (ppBestFitRW != ppBestFit)
+        {
+            DoubleMappedAllocator::Instance()->UnmapRW(ppBestFitRW);
+        }
     }
     else
     {
@@ -2013,7 +2016,10 @@ void CodeFragmentHeap::RealBackoutMem(DoublePtr pMem
             // TODO: we should move the list away from the exec memory, this is just crazy to do on every manipulation
             FreeBlock** ppFreeBlockRW = (FreeBlock**)DoubleMappedAllocator::Instance()->MapRW(ppFreeBlock, sizeof(FreeBlock*));
             RemoveBlock(ppFreeBlockRW ? ppFreeBlockRW : ppFreeBlock, (FreeBlock*)((BYTE *)pMem.GetRW() + dwSize));
-            DoubleMappedAllocator::Instance()->UnmapRW(ppFreeBlockRW);
+            if (ppFreeBlockRW != ppFreeBlock)
+            {
+                DoubleMappedAllocator::Instance()->UnmapRW(ppFreeBlockRW);
+            }
             continue;
         }
         else
@@ -2027,7 +2033,10 @@ void CodeFragmentHeap::RealBackoutMem(DoublePtr pMem
             dwSize += pFreeBlock->m_dwSize;
             FreeBlock** ppFreeBlockRW = (FreeBlock**)DoubleMappedAllocator::Instance()->MapRW(ppFreeBlock, sizeof(FreeBlock*));
             RemoveBlock(ppFreeBlockRW ? ppFreeBlockRW : ppFreeBlock, pFreeBlockRW);
-            DoubleMappedAllocator::Instance()->UnmapRW(ppFreeBlockRW);
+            if (ppFreeBlockRW != ppFreeBlock)
+            {
+                DoubleMappedAllocator::Instance()->UnmapRW(ppFreeBlockRW);
+            }
             continue;
         }
 
@@ -2241,6 +2250,7 @@ DoublePtrT<HeapList> LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, 
     BYTE * pBaseAddr = NULL;
     DWORD dwSizeAcquiredFromInitialBlock = 0;
     bool fAllocatedFromEmergencyJumpStubReserve = false;
+    int baseAddrSource = 0;
 
     pBaseAddr = (BYTE *)pInfo->m_pAllocator->GetCodeHeapInitialBlock(loAddr, hiAddr, (DWORD)initialRequestSize, &dwSizeAcquiredFromInitialBlock);
     if (pBaseAddr != NULL)
@@ -2258,9 +2268,11 @@ DoublePtrT<HeapList> LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, 
             if (!pInfo->getThrowOnOutOfMemoryWithinRange() && PEDecoder::GetForceRelocs())
                 RETURN DoublePtr::Null();
 #endif
+            // TODO: how to handle allocation in range with the double mapped allocator? 
             pBaseAddr = ClrVirtualAllocWithinRange(loAddr, hiAddr,
                                                    reserveSize, MEM_RESERVE, PAGE_NOACCESS);
 
+            baseAddrSource = 2;
             if (!pBaseAddr)
             {
                 // Conserve emergency jump stub reserve until when it is really needed
@@ -2268,6 +2280,7 @@ DoublePtrT<HeapList> LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, 
                     RETURN DoublePtr::Null();
 #ifdef TARGET_AMD64
                 pBaseAddr = ExecutionManager::GetEEJitManager()->AllocateFromEmergencyJumpStubReserve(loAddr, hiAddr, &reserveSize);
+                baseAddrSource = 3;
                 if (!pBaseAddr)
                     ThrowOutOfMemoryWithinRange();
                 fAllocatedFromEmergencyJumpStubReserve = true;
@@ -2279,6 +2292,7 @@ DoublePtrT<HeapList> LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, 
         else
         {
             DoubleMappedAllocator::Instance()->Allocate(reserveSize, reserveSize, (void**)&pBaseAddr, (void**)&pBaseAddrRW);
+            baseAddrSource = 4;
             //pBaseAddr = ClrVirtualAllocExecutable(reserveSize, MEM_RESERVE, PAGE_NOACCESS);
             if (!pBaseAddr)
                 ThrowOutOfMemory();
@@ -3035,7 +3049,8 @@ DoublePtrT<JumpStubBlockHeader> EEJitManager::allocJumpStubBlock(MethodDesc* pMD
     {
         CrstHolder ch(&m_CodeHeapCritSec);
 
-        mem = allocCodeRaw(&requestInfo, sizeof(TADDR), blockSize, CODE_SIZE_ALIGN, &pCodeHeap);
+        // Note: TADDR was a bug here, we were just lucky that it has the same size
+        mem = allocCodeRaw(&requestInfo, sizeof(CodeHeader), blockSize, CODE_SIZE_ALIGN, &pCodeHeap);
         if (mem.IsNull())
         {
             _ASSERTE(!throwOnOutOfMemoryWithinRange);
@@ -5136,10 +5151,18 @@ PCODE ExecutionManager::getNextJumpStub(MethodDesc* pMD, PCODE target,
         POSTCONDITION((RETVAL != NULL) || !throwOnOutOfMemoryWithinRange);
     } CONTRACT_END;
 
-    DWORD            numJumpStubs   = DEFAULT_JUMPSTUBS_PER_BLOCK;  // a block of 32 JumpStubs
     BYTE *           jumpStubRX     = NULL;
     BYTE *           jumpStubRW     = NULL;
     bool             isLCG          = pMD && pMD->IsLCGMethod();
+    // For LCG we request a small block of 4 jumpstubs, because we can not share them
+    // with any other methods and very frequently our method only needs one jump stub.
+    // Using 4 gives a request size of (32 + 4*12) or 80 bytes.
+    // Also note that request sizes are rounded up to a multiples of 16.
+    // The request size is calculated into 'blockSize' in allocJumpStubBlock.
+    // For x64 the value of BACK_TO_BACK_JUMP_ALLOCATE_SIZE is 12 bytes
+    // and the sizeof(JumpStubBlockHeader) is 32.
+    //
+    DWORD            numJumpStubs   = isLCG ? 4 : DEFAULT_JUMPSTUBS_PER_BLOCK;
     JumpStubCache *  pJumpStubCache = (JumpStubCache *) pLoaderAllocator->m_pJumpStubCache;
 
     if (isLCG)
@@ -5167,7 +5190,8 @@ PCODE ExecutionManager::getNextJumpStub(MethodDesc* pMD, PCODE target,
             if ((loAddr <= jumpStubRX) && (jumpStubRX <= hiAddr))
             {
                 // We will update curBlock->m_used at "DONE"
-                curBlockRW = (JumpStubBlockHeader *)DoubleMappedAllocator::Instance()->MapRW(curBlockRX, BACK_TO_BACK_JUMP_ALLOCATE_SIZE);
+                size_t blockSize = sizeof(JumpStubBlockHeader) + (size_t) numJumpStubs * BACK_TO_BACK_JUMP_ALLOCATE_SIZE;
+                curBlockRW = (JumpStubBlockHeader *)DoubleMappedAllocator::Instance()->MapRW(curBlockRX, blockSize);
                 jumpStubRW = (BYTE *)((TADDR)jumpStubRX + (TADDR)curBlockRW - (TADDR)curBlockRX);
                 goto DONE;
             }
@@ -5179,17 +5203,6 @@ PCODE ExecutionManager::getNextJumpStub(MethodDesc* pMD, PCODE target,
 
     if (isLCG)
     {
-        // For LCG we request a small block of 4 jumpstubs, because we can not share them
-        // with any other methods and very frequently our method only needs one jump stub.
-        // Using 4 gives a request size of (32 + 4*12) or 80 bytes.
-        // Also note that request sizes are rounded up to a multiples of 16.
-        // The request size is calculated into 'blockSize' in allocJumpStubBlock.
-        // For x64 the value of BACK_TO_BACK_JUMP_ALLOCATE_SIZE is 12 bytes
-        // and the sizeof(JumpStubBlockHeader) is 32.
-        //
-
-        numJumpStubs = 4;
-
 #ifdef TARGET_AMD64
         // Note this these values are not requirements, instead we are
         // just confirming the values that are mentioned in the comments.
@@ -5303,7 +5316,10 @@ DONE:
         }
     }
 
-    DoubleMappedAllocator::Instance()->UnmapRW(curBlockRW);
+    if (!block.IsNull())
+    {
+        block.UnmapRW();
+    }
 
     RETURN((PCODE)jumpStubRX);
 }

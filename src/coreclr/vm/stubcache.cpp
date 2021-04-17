@@ -74,17 +74,18 @@ StubCacheBase::~StubCacheBase()
 //    The caller is responsible for DecRef'ing the returned stub in
 //    order to avoid leaks.
 //---------------------------------------------------------
-Stub *StubCacheBase::Canonicalize(const BYTE * pRawStub)
+DoublePtrT<Stub> StubCacheBase::Canonicalize(const BYTE * pRawStub)
 {
-    CONTRACT (Stub*)
+    CONTRACT (DoublePtrT<Stub>)
     {
         STANDARD_VM_CHECK;
-        POSTCONDITION(CheckPointer(RETVAL, NULL_OK));
+        POSTCONDITION(CheckPointer(RETVAL.GetRX(), NULL_OK));
     }
     CONTRACT_END;
 
     STUBHASHENTRY *phe = NULL;
-
+    Stub* pstubRW = NULL;
+    
     {
         CrstHolder ch(&m_crst);
 
@@ -92,14 +93,14 @@ Stub *StubCacheBase::Canonicalize(const BYTE * pRawStub)
         phe = (STUBHASHENTRY*)Find((LPVOID)pRawStub);
         if (phe)
         {
-            StubHolder<Stub> pstub;
-            pstub = phe->m_pStub;
+            Stub* pstub = phe->m_pStub;
+
+            pstubRW = (Stub*)DoubleMappedAllocator::Instance()->MapRW(pstub, sizeof(Stub));
 
             // IncRef as we're returning a reference to our caller.
-            pstub->IncRef();
+            pstubRW->IncRef();
 
-            pstub.SuppressRelease();
-            RETURN pstub;
+            RETURN DoublePtrT<Stub>(pstub, pstubRW, NULL);
         }
     }
 
@@ -113,7 +114,11 @@ Stub *StubCacheBase::Canonicalize(const BYTE * pRawStub)
     CodeLabel *plabel = psl->EmitNewCodeLabel();
     psl->EmitBytes(pRawStub, Length(pRawStub));
     StubHolder<Stub> pstub;
-    pstub = psl->Link(m_heap);
+    // TODO: cleanup this ugly mess
+    DoublePtrT<Stub> stub = sl.Link(m_heap);
+    pstub = stub.GetRX(); // TODO: this should get the writeable one. Or rather, make the StubHolder hold the double pointer
+    pstubRW = stub.GetRW();
+
     UINT32 offset = psl->GetLabelOffset(plabel);
 
     if (offset > 0xffff)
@@ -146,21 +151,27 @@ Stub *StubCacheBase::Canonicalize(const BYTE * pRawStub)
 
                 //Use the previously created stub
                 // This will DecRef the new stub for us.
+                stub.UnmapRW();
+                // TODO: Free the pstub!
                 pstub = phe->m_pStub;
+                pstubRW = (Stub*)DoubleMappedAllocator::Instance()->MapRW(pstub, sizeof(Stub));
             }
             // IncRef so that caller has firm ownership of stub.
-            pstub->IncRef();
+            pstubRW->IncRef();
         }
     }
 
     if (!phe)
     {
+        // TODO: need to free the stub?
+
+        // 
         // Couldn't grow hash table due to lack of memory.
         COMPlusThrowOM();
     }
 
     pstub.SuppressRelease();
-    RETURN pstub;
+    RETURN DoublePtrT<Stub>(pstub, pstubRW, NULL);
 }
 
 

@@ -542,7 +542,7 @@ void UMEntryThunkCode::Encode(BYTE* pTargetCode, void* pvSecretParam)
     m_jmpRAX[1]  = 0xFF;
     m_jmpRAX[2]  = 0xE0;
 
-    _ASSERTE(DbgIsExecutable(&m_movR10[0], &m_jmpRAX[3]-&m_movR10[0]));
+//    _ASSERTE(DbgIsExecutable(&m_movR10[0], &m_jmpRAX[3]-&m_movR10[0]));
 }
 
 void UMEntryThunkCode::Poison()
@@ -647,7 +647,7 @@ INT32 rel32UsingJumpStub(INT32 UNALIGNED * pRel32, PCODE target, MethodDesc *pMe
     return static_cast<INT32>(offset);
 }
 
-INT32 rel32UsingPreallocatedJumpStub(INT32 UNALIGNED * pRel32, PCODE target, PCODE jumpStubAddr, bool emitJump)
+INT32 rel32UsingPreallocatedJumpStub(INT32 UNALIGNED * pRel32, PCODE target, PCODE jumpStubAddrRX, PCODE jumpStubAddrRW, bool emitJump)
 {
     CONTRACTL
     {
@@ -657,12 +657,12 @@ INT32 rel32UsingPreallocatedJumpStub(INT32 UNALIGNED * pRel32, PCODE target, PCO
     CONTRACTL_END;
 
     TADDR baseAddr = (TADDR)pRel32 + 4;
-    _ASSERTE(FitsInI4(jumpStubAddr - baseAddr));
+    _ASSERTE(FitsInI4(jumpStubAddrRX - baseAddr));
 
     INT_PTR offset = target - baseAddr;
     if (!FitsInI4(offset) INDEBUG(|| PEDecoder::GetForceRelocs()))
     {
-        offset = jumpStubAddr - baseAddr;
+        offset = jumpStubAddrRX - baseAddr;
         if (!FitsInI4(offset))
         {
             _ASSERTE(!"jump stub was not in expected range");
@@ -671,11 +671,11 @@ INT32 rel32UsingPreallocatedJumpStub(INT32 UNALIGNED * pRel32, PCODE target, PCO
 
         if (emitJump)
         {
-            emitBackToBackJump((LPBYTE)jumpStubAddr, (LPVOID)target);
+            emitBackToBackJump((LPBYTE)jumpStubAddrRW, (LPVOID)target);
         }
         else
         {
-            _ASSERTE(decodeBackToBackJump(jumpStubAddr) == target);
+            _ASSERTE(decodeBackToBackJump(jumpStubAddrRX) == target);
         }
     }
 
@@ -859,6 +859,7 @@ EXTERN_C PCODE VirtualMethodFixupWorker(TransitionBlock * pTransitionBlock, CORC
             BYTE* pNewValue = (BYTE*)&newValue;
             pNewValue[0] = X86_INSTR_JMP_REL32;
 
+            // TODO: fix this
             *(INT32 *)(pNewValue+1) = rel32UsingJumpStub((INT32*)(&pThunk->callJmp[1]), pCode, pMD, NULL);
 
             _ASSERTE(IS_ALIGNED(pThunk, sizeof(INT64)));
@@ -898,7 +899,7 @@ EXTERN_C PCODE VirtualMethodFixupWorker(TransitionBlock * pTransitionBlock, CORC
     _ASSERTE(pStart + cb == p); \
     while (p < pStart + cbAligned) *p++ = X86_INSTR_INT3; \
     ClrFlushInstructionCache(pStartRX, cbAligned); \
-    DoubleMappedAllocator::Instance()->UnmapRW(pStart); \
+    start.GetDoublePtr().UnmapRW(); \
     return (PCODE)pStartRX
 
 PCODE DynamicHelpers::CreateHelper(LoaderAllocator * pAllocator, TADDR arg, PCODE target)

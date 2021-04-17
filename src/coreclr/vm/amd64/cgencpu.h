@@ -370,7 +370,7 @@ INT32 rel32UsingJumpStub(INT32 UNALIGNED * pRel32, PCODE target, MethodDesc *pMe
     LoaderAllocator *pLoaderAllocator = NULL, bool throwOnOutOfMemoryWithinRange = true);
 
 // Get Rel32 destination, emit jumpStub if necessary into a preallocated location
-INT32 rel32UsingPreallocatedJumpStub(INT32 UNALIGNED * pRel32, PCODE target, PCODE jumpStubAddr, bool emitJump);
+INT32 rel32UsingPreallocatedJumpStub(INT32 UNALIGNED * pRel32, PCODE target, PCODE jumpStubAddr, PCODE jumpStubAddrRW, bool emitJump);
 
 void emitCOMStubCall (ComCallMethodDesc *pCOMMethod, PCODE target);
 

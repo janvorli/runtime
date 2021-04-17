@@ -765,32 +765,36 @@ Stub* COMDelegate::SetupShuffleThunk(MethodTable * pDelMT, MethodDesc *pTargetMe
         pShuffleThunkCache = ((AssemblyLoaderAllocator*)pLoaderAllocator)->GetShuffleThunkCache();
     }
 
-    Stub* pShuffleThunk = pShuffleThunkCache->Canonicalize((const BYTE *)&rShuffleEntryArray[0]);
-    if (!pShuffleThunk)
+    DoublePtrT<Stub> pShuffleThunk = pShuffleThunkCache->Canonicalize((const BYTE *)&rShuffleEntryArray[0]);
+    if (pShuffleThunk.IsNull())
     {
         COMPlusThrowOM();
     }
 
     g_IBCLogger.LogEEClassCOWTableAccess(pDelMT);
 
+    Stub* pResult = pShuffleThunk.GetRX();
+
     if (!pTargetMeth->IsStatic() && pTargetMeth->HasRetBuffArg() && IsRetBuffPassedAsFirstArg())
     {
-        if (FastInterlockCompareExchangePointer(&pClass->m_pInstRetBuffCallStub, pShuffleThunk, NULL ) != NULL)
+        if (FastInterlockCompareExchangePointer(&pClass->m_pInstRetBuffCallStub, pShuffleThunk.GetRX(), NULL ) != NULL)
         {
-            pShuffleThunk->DecRef();
-            pShuffleThunk = pClass->m_pInstRetBuffCallStub;
+            pShuffleThunk.GetRW()->DecRef();
+            pResult = pClass->m_pInstRetBuffCallStub;
         }
     }
     else
     {
-        if (FastInterlockCompareExchangePointer(&pClass->m_pStaticCallStub, pShuffleThunk, NULL ) != NULL)
+        if (FastInterlockCompareExchangePointer(&pClass->m_pStaticCallStub, pShuffleThunk.GetRX(), NULL ) != NULL)
         {
-            pShuffleThunk->DecRef();
-            pShuffleThunk = pClass->m_pStaticCallStub;
+            pShuffleThunk.GetRW()->DecRef();
+            pResult = pClass->m_pStaticCallStub;
         }
     }
 
-    return pShuffleThunk;
+    pShuffleThunk.UnmapRW();
+
+    return pResult;
 }
 
 
@@ -1228,9 +1232,10 @@ LPVOID COMDelegate::ConvertToCallback(OBJECTREF pDelegateObj)
             _ASSERTE(pUMThunkMarshInfo != NULL);
             _ASSERTE(pUMThunkMarshInfo == pClass->m_pUMThunkMarshInfo);
 
-            pUMEntryThunk = UMEntryThunk::CreateUMEntryThunk();
+            //pUMEntryThunk = UMEntryThunk::CreateUMEntryThunk();
+            DoublePtrT<UMEntryThunk> thunk = UMEntryThunk::CreateUMEntryThunk();
             Holder<UMEntryThunk *, DoNothing, UMEntryThunk::FreeUMEntryThunk> umHolder;
-            umHolder.Assign(pUMEntryThunk);
+            umHolder.Assign(thunk.GetRX());
 
             // multicast. go thru Invoke
             OBJECTHANDLE objhnd = GetAppDomain()->CreateLongWeakHandle(pDelegate);
@@ -1240,18 +1245,24 @@ LPVOID COMDelegate::ConvertToCallback(OBJECTREF pDelegateObj)
             PCODE pManagedTargetForDiagnostics = (pDelegate->GetMethodPtrAux() != NULL) ? pDelegate->GetMethodPtrAux() : pDelegate->GetMethodPtr();
 
             // MethodDesc is passed in for profiling to know the method desc of target
-            pUMEntryThunk->LoadTimeInit(
+            thunk.GetRW()->LoadTimeInit(
+                thunk.GetRX(),
                 pManagedTargetForDiagnostics,
                 objhnd,
                 pUMThunkMarshInfo, pInvokeMeth);
 
-            if (!pInteropInfo->SetUMEntryThunk(pUMEntryThunk))
+            
+
+            if (!pInteropInfo->SetUMEntryThunk(thunk.GetRX()))
             {
                 pUMEntryThunk = (UMEntryThunk*)pInteropInfo->GetUMEntryThunk();
             }
             else
             {
                 umHolder.SuppressRelease();
+                pUMEntryThunk = thunk.GetRX();
+                thunk.UnmapRW();
+
                 // Insert the delegate handle / UMEntryThunk* into the hash
                 LPVOID key = (LPVOID)pUMEntryThunk;
 
@@ -1882,13 +1893,16 @@ PCODE COMDelegate::TheDelegateInvokeStub()
         CPUSTUBLINKER sl;
         sl.EmitDelegateInvoke();
         // Process-wide singleton stub that never unloads
-        Stub *pCandidate = sl.Link(SystemDomain::GetGlobalLoaderAllocator()->GetStubHeap(), NEWSTUB_FL_MULTICAST);
+
+        DoublePtrT<Stub> candidate = sl.Link(SystemDomain::GetGlobalLoaderAllocator()->GetStubHeap(), NEWSTUB_FL_MULTICAST);
+        Stub *pCandidate = candidate.GetRX();
 
         if (InterlockedCompareExchangeT<PCODE>(&s_pInvokeStub, pCandidate->GetEntryPoint(), NULL) != NULL)
         {
             // if we are here someone managed to set the stub before us so we release the current
-            pCandidate->DecRef();
+            candidate.GetRW()->DecRef();
         }
+        candidate.UnmapRW();
     }
 
     RETURN s_pInvokeStub;
@@ -2303,10 +2317,13 @@ FCIMPL1(PCODE, COMDelegate::GetMulticastInvoke, Object* refThisIn)
             sl.EmitMulticastInvoke(hash);
 
             // The cache is process-wide, based on signature.  It never unloads
-            Stub *pCandidate = sl.Link(SystemDomain::GetGlobalLoaderAllocator()->GetStubHeap(), NEWSTUB_FL_MULTICAST);
+            Stub *pCandidate = 
+            DoublePtrT<Stub> candidate = sl.Link(SystemDomain::GetGlobalLoaderAllocator()->GetStubHeap(), NEWSTUB_FL_MULTICAST);
+            Stub *pCandidate = candidate.GetRX();
 
             Stub *pWinner = m_pMulticastStubCache->AttemptToSetStub(hash,pCandidate);
-            pCandidate->DecRef();
+            candidate.GetRW()->DecRef();
+            candidate.UnmapRW();
             if (!pWinner)
                 COMPlusThrowOM();
 

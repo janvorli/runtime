@@ -405,6 +405,9 @@ void Precode::ResetTargetInterlocked()
 {
     WRAPPER_NO_CONTRACT;
 
+    Precode* pPrecodeRW = (Precode*)DoubleMappedAllocator::Instance()->MapRW(this, this->SizeOf());
+    _ASSERTE(pPrecodeRW != this);
+    
 #if defined(HOST_OSX) && defined(HOST_ARM64)
     auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
@@ -413,12 +416,12 @@ void Precode::ResetTargetInterlocked()
     switch (precodeType)
     {
         case PRECODE_STUB:
-            AsStubPrecode()->ResetTargetInterlocked();
+            AsStubPrecode()->ResetTargetInterlocked(pPrecodeRW->AsStubPrecode());
             break;
 
 #ifdef HAS_FIXUP_PRECODE
         case PRECODE_FIXUP:
-            AsFixupPrecode()->ResetTargetInterlocked();
+            AsFixupPrecode()->ResetTargetInterlocked(pPrecodeRW->AsFixupPrecode());
             break;
 #endif // HAS_FIXUP_PRECODE
 
@@ -426,6 +429,8 @@ void Precode::ResetTargetInterlocked()
             UnexpectedPrecodeType("Precode::ResetTargetInterlocked", precodeType);
             break;
     }
+
+    DoubleMappedAllocator::Instance()->UnmapRW(pPrecodeRW);
 
     // Although executable code is modified on x86/x64, a FlushInstructionCache() is not necessary on those platforms due to the
     // interlocked operation above (see ClrFlushInstructionCache())
@@ -441,6 +446,11 @@ BOOL Precode::SetTargetInterlocked(PCODE target, BOOL fOnlyRedirectFromPrestub)
 
     if (fOnlyRedirectFromPrestub && !IsPointingToPrestub(expected))
         return FALSE;
+
+    ///// This is just debugging test
+    Precode* pPrecodeRW = (Precode*)DoubleMappedAllocator::Instance()->MapRW(this, this->SizeOf());
+    _ASSERTE(pPrecodeRW != this);
+    DoubleMappedAllocator::Instance()->UnmapRW(pPrecodeRW);
 
 #if defined(HOST_OSX) && defined(HOST_ARM64)
     auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
@@ -575,11 +585,13 @@ TADDR Precode::AllocateTemporaryEntryPoints(MethodDescChunk *  pChunk,
     {
 #ifdef FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
         PCODE precodeFixupJumpStub = NULL;
+        PCODE precodeFixupJumpStubRX = NULL;
         if (preallocateJumpStubs)
         {
             // Emit the jump for the precode fixup jump stub now. This jump stub immediately follows the MethodDesc (see
             // GetDynamicMethodPrecodeFixupJumpStub()).
             precodeFixupJumpStub = (TADDR)temporaryEntryPoints.GetRW() + count * sizeof(FixupPrecode) + sizeof(PTR_MethodDesc);
+            precodeFixupJumpStubRX = (TADDR)temporaryEntryPoints.GetRX() + count * sizeof(FixupPrecode) + sizeof(PTR_MethodDesc);
 #ifndef CROSSGEN_COMPILE
             emitBackToBackJump((LPBYTE)precodeFixupJumpStub, (LPVOID)GetEEFuncEntryPoint(PrecodeFixupThunk));
 #endif // !CROSSGEN_COMPILE
@@ -594,10 +606,16 @@ TADDR Precode::AllocateTemporaryEntryPoints(MethodDescChunk *  pChunk,
             ((FixupPrecode *)entryPointRW)->Init((FixupPrecode*)entryPointRX, pMD, pLoaderAllocator, pMD->GetMethodDescIndex(), (count - 1) - i);
 
 #ifdef FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
+            bool isLCGMethod = pMD->IsLCGMethod();
+            PCODE dynamicMethodPrecodeFixupJumpStub = 0x123456789abcdef;
+            if (isLCGMethod)
+            {
+                dynamicMethodPrecodeFixupJumpStub = ((FixupPrecode *)entryPointRX)->GetDynamicMethodPrecodeFixupJumpStub();
+            }
             _ASSERTE(
                 !preallocateJumpStubs ||
                 !pMD->IsLCGMethod() ||
-                ((FixupPrecode *)entryPointRX)->GetDynamicMethodPrecodeFixupJumpStub() == precodeFixupJumpStub);
+                ((FixupPrecode *)entryPointRX)->GetDynamicMethodPrecodeFixupJumpStub() == precodeFixupJumpStubRX);
 #endif // FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
 
             _ASSERTE((Precode *)entryPointRX == GetPrecodeForTemporaryEntryPoint((TADDR)temporaryEntryPoints.GetRX(), i));

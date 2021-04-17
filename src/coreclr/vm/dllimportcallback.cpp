@@ -165,25 +165,29 @@ UMEntryThunk *UMEntryThunkCache::GetUMEntryThunk(MethodDesc *pMD)
 #if defined(HOST_OSX) && defined(HOST_ARM64)
         auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
-        pThunk = UMEntryThunk::CreateUMEntryThunk();
+        //pThunk = UMEntryThunk::CreateUMEntryThunk();
+        DoublePtrT<UMEntryThunk> thunk = UMEntryThunk::CreateUMEntryThunk();
         Holder<UMEntryThunk *, DoNothing, UMEntryThunk::FreeUMEntryThunk> umHolder;
-        umHolder.Assign(pThunk);
+        umHolder.Assign(thunk.GetRX());
 
         UMThunkMarshInfo *pMarshInfo = (UMThunkMarshInfo *)(void *)(m_pDomain->GetStubHeap()->AllocMem(S_SIZE_T(sizeof(UMThunkMarshInfo))));
         Holder<UMThunkMarshInfo *, DoNothing, UMEntryThunkCache::DestroyMarshInfo> miHolder;
         miHolder.Assign(pMarshInfo);
 
         pMarshInfo->LoadTimeInit(pMD);
-        pThunk->LoadTimeInit(NULL, NULL, pMarshInfo, pMD);
+        thunk.GetRW()->LoadTimeInit(thunk.GetRX(), NULL, NULL, pMarshInfo, pMD);
+        thunk.UnmapRW();
 
         // add it to the cache
         CacheElement element;
         element.m_pMD = pMD;
-        element.m_pThunk = pThunk;
+        element.m_pThunk = thunk.GetRX();
         m_hash.Add(element);
 
         miHolder.SuppressRelease();
         umHolder.SuppressRelease();
+
+        pThunk = thunk.GetRX();
     }
 
     RETURN pThunk;
@@ -288,32 +292,41 @@ void STDCALL UMEntryThunk::DoRunTimeInit(UMEntryThunk* pUMEntryThunk)
 #if defined(HOST_OSX) && defined(HOST_ARM64)
         auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
-
-        pUMEntryThunk->RunTimeInit();
+        UMEntryThunk* pUMEntryThunkRW = (UMEntryThunk*)DoubleMappedAllocator::Instance()->MapRW(pUMEntryThunk, sizeof(UMEntryThunk));
+        pUMEntryThunkRW->RunTimeInit(pUMEntryThunk);
+        DoubleMappedAllocator::Instance()->UnmapRW(pUMEntryThunkRW);
     }
 
     UNINSTALL_UNWIND_AND_CONTINUE_HANDLER;
     UNINSTALL_MANAGED_EXCEPTION_DISPATCHER;
 }
 
-UMEntryThunk* UMEntryThunk::CreateUMEntryThunk()
+DoublePtrT<UMEntryThunk> UMEntryThunk::CreateUMEntryThunk()
 {
-    CONTRACT (UMEntryThunk*)
+    CONTRACT (DoublePtrT<UMEntryThunk>)
     {
         THROWS;
         GC_NOTRIGGER;
         MODE_ANY;
         INJECT_FAULT(COMPlusThrowOM());
-        POSTCONDITION(CheckPointer(RETVAL));
+        POSTCONDITION(CheckPointer(RETVAL.GetRX()));
     }
     CONTRACT_END;
 
-    UMEntryThunk * p;
+    DoublePtrT<UMEntryThunk> p;
 
-    p = s_thunkFreeList.GetUMEntryThunk();
+    UMEntryThunk* pThunkRX = s_thunkFreeList.GetUMEntryThunk();
 
-    if (p == NULL)
-        p = (UMEntryThunk *)(void *)SystemDomain::GetGlobalLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(sizeof(UMEntryThunk)));
+    if (pThunkRX == NULL)
+    {
+        TaggedMemAllocPtr m = SystemDomain::GetGlobalLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(sizeof(UMEntryThunk)));
+        p = DoublePtrT<UMEntryThunk>((UMEntryThunk*)m.GetRX(), (UMEntryThunk*)(void*)m, NULL);
+    }
+    else
+    {
+        UMEntryThunk* pThunkRW = (UMEntryThunk*)DoubleMappedAllocator::Instance()->MapRW(pThunkRX, sizeof(UMEntryThunk));
+        p = DoublePtrT<UMEntryThunk>(pThunkRX, pThunkRW, NULL);
+    }
 
     RETURN p;
 }

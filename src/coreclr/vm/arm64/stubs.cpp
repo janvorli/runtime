@@ -1864,7 +1864,7 @@ void StubLinkerCPU::EmitCallManagedMethod(MethodDesc *pMD, BOOL fTailCall)
     _ASSERTE(pStart + cb == p); \
     while (p < pStart + cbAligned) { *(DWORD*)p = 0xBADC0DF0; p += 4; }\
     ClrFlushInstructionCache(pStartRX, cbAligned); \
-    DoubleMappedAllocator::Instance()->UnmapRW(pStart); \
+    start.GetDoublePtr().UnmapRW(); \
     return (PCODE)pStartRX
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
 

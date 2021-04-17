@@ -280,7 +280,7 @@ public:
         //
         // Throws exception on failure.
         //---------------------------------------------------------------
-        Stub *Link(LoaderHeap *heap, DWORD flags = 0);
+        DoublePtrT<Stub> Link(LoaderHeap *heap, DWORD flags = 0);
 
         //---------------------------------------------------------------
         // Generate the actual stub. The returned stub has a refcount of 1.

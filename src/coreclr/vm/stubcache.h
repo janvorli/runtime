@@ -57,7 +57,7 @@ public:
     //
     // Throws on out of memory or other fatal error.
     //---------------------------------------------------------
-    Stub *Canonicalize(const BYTE *pRawStub);
+    DoublePtrT<Stub> Canonicalize(const BYTE *pRawStub);
 
 protected:
     //---------------------------------------------------------

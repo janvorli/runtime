@@ -2113,7 +2113,7 @@ void MovRegImm(BYTE* p, int reg, TADDR imm)
     _ASSERTE(pStart + cb == p); \
     while (p < pStart + cbAligned) { *(WORD *)p = 0xdefe; p += 2; } \
     ClrFlushInstructionCache(pStartRX, cbAligned); \
-    DoubleMappedAllocator::Instance()->UnmapRW(pStart); \
+    start.GetDoublePtr().UnmapRW(); \
     return (PCODE)((TADDR)pStartRX | THUMB_CODE)
 
 PCODE DynamicHelpers::CreateHelper(LoaderAllocator * pAllocator, TADDR arg, PCODE target)

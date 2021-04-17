@@ -437,9 +437,10 @@ DoublePtrT<HeapList> HostCodeHeap::InitializeHeapList(CodeHeapRequestInfo *pInfo
     }
 
     HeapList* pHp = (HeapList *)(pTracker + 1);
+    HeapList* pHpRW = (HeapList*)DoubleMappedAllocator::Instance()->MapRW(pHp, sizeof(HeapList));
 
-    pHp->hpNext = NULL;
-    pHp->pHeap = (PTR_CodeHeap)this;
+    pHpRW->hpNext = NULL;
+    pHpRW->pHeap = (PTR_CodeHeap)this;
     // wire it back
     m_pHeapList = (PTR_HeapList)pHp;
 
@@ -447,24 +448,23 @@ DoublePtrT<HeapList> HostCodeHeap::InitializeHeapList(CodeHeapRequestInfo *pInfo
         (HostCodeHeap*)this, m_TotalBytesAvailable, pTracker, pTracker->size));
 
     // It is imporant to exclude the CLRPersonalityRoutine from the tracked range
-    pHp->startAddress = dac_cast<TADDR>(m_pBaseAddr) + pTracker->size;
-    pHp->mapBase = ROUND_DOWN_TO_PAGE(pHp->startAddress);  // round down to next lower page align
-    pHp->pHdrMap = NULL;
-    pHp->endAddress = pHp->startAddress;
+    pHpRW->startAddress = dac_cast<TADDR>(m_pBaseAddr) + pTracker->size;
+    pHpRW->mapBase = ROUND_DOWN_TO_PAGE(pHp->startAddress);  // round down to next lower page align
+    pHpRW->pHdrMap = NULL;
+    pHpRW->endAddress = pHp->startAddress;
 
-    pHp->maxCodeHeapSize = m_TotalBytesAvailable - pTracker->size;
-    pHp->reserveForJumpStubs = 0;
+    pHpRW->maxCodeHeapSize = m_TotalBytesAvailable - pTracker->size;
+    pHpRW->reserveForJumpStubs = 0;
 
 #ifdef HOST_64BIT
-    emitJump((LPBYTE)pHp->CLRPersonalityRoutine, (void *)ProcessCLRException);
+    emitJump((LPBYTE)pHpRW->CLRPersonalityRoutine, (void *)ProcessCLRException);
 #endif
 
     size_t nibbleMapSize = HEAP2MAPSIZE(ROUND_UP_TO_PAGE(pHp->maxCodeHeapSize));
-    pHp->pHdrMap = new DWORD[nibbleMapSize / sizeof(DWORD)];
+    pHpRW->pHdrMap = new DWORD[nibbleMapSize / sizeof(DWORD)];
     ZeroMemory(pHp->pHdrMap, nibbleMapSize);
 
-    // TODO: fix this to use double mapped allocator
-    return DoublePtrT<HeapList>(pHp, pHp, NULL);
+    return DoublePtrT<HeapList>(pHp, pHpRW, NULL);
 }
 
 HostCodeHeap::TrackAllocation* HostCodeHeap::AllocFromFreeList(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs)
@@ -492,6 +492,14 @@ HostCodeHeap::TrackAllocation* HostCodeHeap::AllocFromFreeList(size_t header, si
                 // found a block
                 LOG((LF_BCL, LL_INFO100, "Level2 - CodeHeap [0x%p] - Block found, size 0x%X\n", this, pCurrent->size));
 
+                TrackAllocation* pPreviousRW = NULL;
+                if (pPrevious)
+                {
+                    pPreviousRW = (TrackAllocation*)DoubleMappedAllocator::Instance()->MapRW(pPrevious, sizeof(TrackAllocation));
+                }
+
+                TrackAllocation *pCurrentRW = (TrackAllocation*)DoubleMappedAllocator::Instance()->MapRW(pCurrent, sizeof(TrackAllocation));
+
                 // The space left is not big enough for a new block, let's just
                 // update the TrackAllocation record for the current block
                 if (pCurrent->size - realSize < max(HOST_CODEHEAP_SIZE_ALIGN, sizeof(TrackAllocation)))
@@ -500,7 +508,7 @@ HostCodeHeap::TrackAllocation* HostCodeHeap::AllocFromFreeList(size_t header, si
                     // remove current
                     if (pPrevious)
                     {
-                        pPrevious->pNext = pCurrent->pNext;
+                        pPreviousRW->pNext = pCurrent->pNext;
                     }
                     else
                     {
@@ -511,12 +519,16 @@ HostCodeHeap::TrackAllocation* HostCodeHeap::AllocFromFreeList(size_t header, si
                 {
                     // create a new TrackAllocation after the memory we just allocated and insert it into the free list
                     TrackAllocation *pNewCurrent = (TrackAllocation*)((BYTE*)pCurrent + realSize);
-                    pNewCurrent->pNext = pCurrent->pNext;
-                    pNewCurrent->size = pCurrent->size - realSize;
+                    
+                    TrackAllocation *pNewCurrentRW = (TrackAllocation*)DoubleMappedAllocator::Instance()->MapRW(pNewCurrent, sizeof(TrackAllocation));
+                    pNewCurrentRW->pNext = pCurrent->pNext;
+                    pNewCurrentRW->size = pCurrent->size - realSize;
+                    DoubleMappedAllocator::Instance()->UnmapRW(pNewCurrentRW);
+
                     LOG((LF_BCL, LL_INFO100, "Level2 - CodeHeap [0x%p] - Item changed %p, new size 0x%X\n", this, pNewCurrent, pNewCurrent->size));
                     if (pPrevious)
                     {
-                        pPrevious->pNext = pNewCurrent;
+                        pPreviousRW->pNext = pNewCurrent;
                     }
                     else
                     {
@@ -524,10 +536,16 @@ HostCodeHeap::TrackAllocation* HostCodeHeap::AllocFromFreeList(size_t header, si
                     }
 
                     // We only need to update the size of the current block if we are creating a new block
-                    pCurrent->size = realSize;
+                    pCurrentRW->size = realSize;
                 }
 
-                pCurrent->pHeap = this;
+                pCurrentRW->pHeap = this;
+                DoubleMappedAllocator::Instance()->UnmapRW(pCurrentRW);
+
+                if (pPreviousRW)
+                {
+                    DoubleMappedAllocator::Instance()->UnmapRW(pPreviousRW);
+                }
 
                 LOG((LF_BCL, LL_INFO100, "Level2 - CodeHeap [0x%p] - Allocation returned %p, size 0x%X - data -> %p\n", this, pCurrent, pCurrent->size, pPointer));
                 return pCurrent;
@@ -540,7 +558,7 @@ HostCodeHeap::TrackAllocation* HostCodeHeap::AllocFromFreeList(size_t header, si
     return NULL;
 }
 
-void HostCodeHeap::AddToFreeList(TrackAllocation *pBlockToInsert)
+void HostCodeHeap::AddToFreeList(TrackAllocation *pBlockToInsert, TrackAllocation *pBlockToInsertRW)
 {
     CONTRACTL
     {
@@ -566,10 +584,12 @@ void HostCodeHeap::AddToFreeList(TrackAllocation *pBlockToInsert)
             if (pCurrent > pBlockToInsert)
             {
                 // found the point of insertion
-                pBlockToInsert->pNext = pCurrent;
+                pBlockToInsertRW->pNext = pCurrent;
+                TrackAllocation *pPreviousRW = NULL;
                 if (pPrevious)
                 {
-                    pPrevious->pNext = pBlockToInsert;
+                    pPreviousRW = (TrackAllocation *)DoubleMappedAllocator::Instance()->MapRW(pPrevious, sizeof(TrackAllocation));
+                    pPreviousRW->pNext = pBlockToInsert;
                     LOG((LF_BCL, LL_INFO100, "Level2 - CodeHeap [0x%p] - Insert block [%p, 0x%X] -> [%p, 0x%X] -> [%p, 0x%X]\n", this,
                                                                         pPrevious, pPrevious->size,
                                                                         pBlockToInsert, pBlockToInsert->size,
@@ -589,8 +609,8 @@ void HostCodeHeap::AddToFreeList(TrackAllocation *pBlockToInsert)
                                                                         pBlockToInsert, pBlockToInsert->size,
                                                                         pCurrent, pCurrent->size,
                                                                         pCurrent->size + pBlockToInsert->size));
-                    pBlockToInsert->pNext = pCurrent->pNext;
-                    pBlockToInsert->size += pCurrent->size;
+                    pBlockToInsertRW->pNext = pCurrent->pNext;
+                    pBlockToInsertRW->size += pCurrent->size;
                 }
 
                 if (pPrevious && (BYTE*)pPrevious + pPrevious->size == (BYTE*)pBlockToInsert)
@@ -600,8 +620,13 @@ void HostCodeHeap::AddToFreeList(TrackAllocation *pBlockToInsert)
                                                                         pPrevious, pPrevious->size,
                                                                         pBlockToInsert, pBlockToInsert->size,
                                                                         pPrevious->size + pBlockToInsert->size));
-                    pPrevious->pNext = pBlockToInsert->pNext;
-                    pPrevious->size += pBlockToInsert->size;
+                    pPreviousRW->pNext = pBlockToInsert->pNext;
+                    pPreviousRW->size += pBlockToInsert->size;
+                }
+
+                if (pPreviousRW)
+                {
+                    DoubleMappedAllocator::Instance()->UnmapRW(pPreviousRW);
                 }
 
                 return;
@@ -610,8 +635,9 @@ void HostCodeHeap::AddToFreeList(TrackAllocation *pBlockToInsert)
             pCurrent = pCurrent->pNext;
         }
         _ASSERTE(pPrevious && pCurrent == NULL);
-        pBlockToInsert->pNext = NULL;
+        pBlockToInsertRW->pNext = NULL;
         // last in the list
+        TrackAllocation* pPreviousRW = (TrackAllocation*)DoubleMappedAllocator::Instance()->MapRW(pPrevious, sizeof(TrackAllocation));
         if ((BYTE*)pPrevious + pPrevious->size == (BYTE*)pBlockToInsert)
         {
             // coalesce with previous
@@ -619,21 +645,22 @@ void HostCodeHeap::AddToFreeList(TrackAllocation *pBlockToInsert)
                                                                 pPrevious, pPrevious->size,
                                                                 pBlockToInsert, pBlockToInsert->size,
                                                                 pPrevious->size + pBlockToInsert->size));
-            pPrevious->size += pBlockToInsert->size;
+            pPreviousRW->size += pBlockToInsert->size;
         }
         else
         {
-            pPrevious->pNext = pBlockToInsert;
+            pPreviousRW->pNext = pBlockToInsert;
             LOG((LF_BCL, LL_INFO100, "Level2 - CodeHeap [0x%p] - Insert block [%p, 0x%X] to end after [%p, 0x%X]\n", this,
                                                                 pBlockToInsert, pBlockToInsert->size,
                                                                 pPrevious, pPrevious->size));
         }
+        DoubleMappedAllocator::Instance()->UnmapRW(pPreviousRW);
 
         return;
 
     }
     // first in the list
-    pBlockToInsert->pNext = m_pFreeList;
+    pBlockToInsertRW->pNext = m_pFreeList;
     m_pFreeList = pBlockToInsert;
     LOG((LF_BCL, LL_INFO100, "Level2 - CodeHeap [0x%p] - Insert block [%p, 0x%X] to head\n", this,
                                                         m_pFreeList, m_pFreeList->size));
@@ -666,9 +693,13 @@ DoublePtr HostCodeHeap::AllocMemForCode_NoThrow(size_t header, size_t size, DWOR
 
     BYTE * pCode = ALIGN_UP((BYTE*)(pTracker + 1) + header, alignment);
 
+    // TODO: is this correct? 
+    TrackAllocation* pTrackerRW = (TrackAllocation*)DoubleMappedAllocator::Instance()->MapRW(pTracker, (pCode + size) - (BYTE*)pTracker);
+    BYTE * pCodeRW = (BYTE*)pTrackerRW + (pCode - (BYTE*)pTracker);
+
     // Pointer to the TrackAllocation record is stored just before the code header
-    CodeHeader * pHdr = (CodeHeader *)pCode - 1;
-    *((TrackAllocation **)(pHdr) - 1) = pTracker;
+    CodeHeader * pHdrRW = (CodeHeader *)pCodeRW - 1;
+    *((TrackAllocation **)(pHdrRW) - 1) = pTracker;
 
     _ASSERTE(pCode + size <= (BYTE*)pTracker + pTracker->size);
 
@@ -676,10 +707,7 @@ DoublePtr HostCodeHeap::AllocMemForCode_NoThrow(size_t header, size_t size, DWOR
     m_AllocationCount++;
     LOG((LF_BCL, LL_INFO100, "Level2 - CodeHeap [0x%p] - ref count %d\n", this, m_AllocationCount));
 
-    // TODO: Get the RW mapping
-    // TODO: the heap argument? Or how about to stop passing the heap inside the ptr? is there a place where we don't know the originating heap?
-    // Maybe really an interface for unmapping would do
-    return DoublePtr(pCode, pCode, NULL);
+    return DoublePtr(pCode, pCodeRW, pCodeRW - (BYTE*)pTrackerRW, NULL);
 }
 
 HostCodeHeap::TrackAllocation* HostCodeHeap::AllocMemory_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs)
@@ -732,17 +760,19 @@ HostCodeHeap::TrackAllocation* HostCodeHeap::AllocMemory_NoThrow(size_t header, 
 
         if (m_pLastAvailableCommittedAddr + sizeToCommit <= m_pBaseAddr + m_TotalBytesAvailable)
         {
-            if (NULL == ClrVirtualAlloc(m_pLastAvailableCommittedAddr, sizeToCommit, MEM_COMMIT, PAGE_EXECUTE_READWRITE))
+            if (NULL == ClrVirtualAlloc(m_pLastAvailableCommittedAddr, sizeToCommit, MEM_COMMIT, PAGE_EXECUTE_READ))
             {
                 LOG((LF_BCL, LL_ERROR, "CodeHeap [0x%p] - VirtualAlloc failed\n", this));
                 return NULL;
             }
 
             TrackAllocation *pBlockToInsert = (TrackAllocation*)(void*)m_pLastAvailableCommittedAddr;
-            pBlockToInsert->pNext = NULL;
-            pBlockToInsert->size = sizeToCommit;
+            TrackAllocation *pBlockToInsertRW = (TrackAllocation*)DoubleMappedAllocator::Instance()->MapRW(pBlockToInsert, sizeof(TrackAllocation));
+            pBlockToInsertRW->pNext = NULL;
+            pBlockToInsertRW->size = sizeToCommit;
             m_pLastAvailableCommittedAddr += sizeToCommit;
-            AddToFreeList(pBlockToInsert);
+            AddToFreeList(pBlockToInsert, pBlockToInsertRW);
+            DoubleMappedAllocator::Instance()->UnmapRW(pBlockToInsertRW);
             pTracker = AllocFromFreeList(header, size, alignment, reserveForJumpStubs);
             _ASSERTE(pTracker != NULL);
         }
@@ -828,7 +858,9 @@ void HostCodeHeap::FreeMemForCode(void * codeStart)
     LIMITED_METHOD_CONTRACT;
 
     TrackAllocation *pTracker = HostCodeHeap::GetTrackAllocation((TADDR)codeStart);
-    AddToFreeList(pTracker);
+    TrackAllocation *pTrackerRW = (TrackAllocation*)DoubleMappedAllocator::Instance()->MapRW(pTracker, sizeof(TrackAllocation));
+    AddToFreeList(pTracker, pTrackerRW);
+    DoubleMappedAllocator::Instance()->UnmapRW(pTrackerRW);
 
     m_ApproximateLargestBlock += pTracker->size;
 

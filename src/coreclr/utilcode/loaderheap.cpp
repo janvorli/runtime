@@ -14,7 +14,7 @@
 
 INDEBUG(DWORD UnlockedLoaderHeap::s_dwNumInstancesOfLoaderHeaps = 0;)
 
-DoubleMappedAllocator* DoubleMappedAllocator::g_instance = NULL;
+volatile DoubleMappedAllocator* DoubleMappedAllocator::g_instance = NULL;
 
 #ifdef RANDOMIZE_ALLOC
 #include <time.h>
@@ -947,6 +947,13 @@ UnlockedLoaderHeap::UnlockedLoaderHeap(DWORD dwReserveBlockSize,
 
     if (dwReservedRegionAddress != NULL && dwReservedRegionSize > 0)
     {
+#ifdef _DEBUG        
+        MEMORY_BASIC_INFORMATION mbi;
+        if (ClrVirtualQuery((void *)dwReservedRegionAddress, &mbi, sizeof(mbi)))
+        {
+            _ASSERTE((mbi.Protect & PAGE_EXECUTE_READWRITE) == 0);
+        }
+#endif        
         m_reservedBlock.Init((void *)dwReservedRegionAddress, dwReservedRegionSize, FALSE);
     }
 }
@@ -1000,6 +1007,13 @@ void UnlockedLoaderHeap::UnlockedSetReservedRegion(BYTE* dwReservedRegionAddress
 {
     WRAPPER_NO_CONTRACT;
     _ASSERTE(m_reservedBlock.pVirtualAddress == NULL);
+#ifdef _DEBUG        
+        MEMORY_BASIC_INFORMATION mbi;
+        if (ClrVirtualQuery((void *)dwReservedRegionAddress, &mbi, sizeof(mbi)))
+        {
+            _ASSERTE((mbi.Protect & PAGE_EXECUTE_READWRITE) == 0);
+        }
+#endif        
     m_reservedBlock.Init((void *)dwReservedRegionAddress, dwReservedRegionSize, fReleaseMemory);
 }
 
@@ -1074,7 +1088,9 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
     dwSizeToCommit = ALIGN_UP(dwSizeToCommit, GetOsPageSize());
 
     void *pData = NULL;
+    void *pDataRW = NULL;
     BOOL fReleaseMemory = TRUE;
+    int allocationSource = 0;
 
     // We were provided with a reserved memory block at instance creation time, so use it if it's big enough.
     if (m_reservedBlock.pVirtualAddress != NULL &&
@@ -1087,12 +1103,14 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
 
         // Zero the block so this memory doesn't get used again.
         m_reservedBlock.Init(NULL, 0, FALSE);
+        allocationSource = 1;
     }
     // The caller is asking us to allocate the memory
     else
     {
         if (m_fExplicitControl)
         {
+            __debugbreak();
             return FALSE;
         }
 
@@ -1108,11 +1126,36 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
         // Reserve pages
         //
 
-        pData = ClrVirtualAllocExecutable(dwSizeToReserve, MEM_RESERVE, PAGE_NOACCESS);
-        if (pData == NULL)
+        if (m_Options & LHF_EXECUTABLE)
         {
-            return FALSE;
+            if (!DoubleMappedAllocator::Instance()->Allocate(dwSizeToReserve, dwSizeToReserve, &pData, &pDataRW))
+            {
+                __debugbreak();
+                return FALSE;
+            }
+            // TODO: is this correct? Do we actually need two state flag - uncommit and release? Uncommit for the double mapped allocation
+            fReleaseMemory = FALSE;
         }
+        else
+        {
+            // TODO: or should it still use executable memory to ensure closer distance to code?
+            pData = ClrVirtualAlloc(NULL, dwSizeToReserve, MEM_RESERVE, PAGE_NOACCESS);
+            //pData = ClrVirtualAllocExecutable(dwSizeToReserve, MEM_RESERVE, PAGE_NOACCESS);
+
+            if (pData == NULL)
+            {
+                __debugbreak();
+                return FALSE;
+            }
+        }
+
+        // pData = ClrVirtualAllocExecutable(dwSizeToReserve, MEM_RESERVE, PAGE_NOACCESS);
+        // if (pData == NULL)
+        // {
+        //     return FALSE;
+        // }
+
+        allocationSource = 2;
     }
 
     // When the user passes in the reserved memory, the commit size is 0 and is adjusted to be the sizeof(LoaderHeap).
@@ -1125,24 +1168,23 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
     if (pData == NULL)
     {
         //_ASSERTE(!"Unable to ClrVirtualAlloc reserve in a loaderheap");
+        __debugbreak();
         return FALSE;
     }
 
     // Commit first set of pages, since it will contain the LoaderHeapBlock
-    // TODO: Should we still handle the non-executable heap the old way using VirtualAlloc? Probably yes.
-    if (!(m_Options & LHF_EXECUTABLE))
+    void *pPrevPData = pData;
+    void *pTemp = ClrVirtualAlloc(pData, dwSizeToCommit, MEM_COMMIT, (m_Options & LHF_EXECUTABLE) ? PAGE_EXECUTE_READ : PAGE_READWRITE);
+    if (pTemp == NULL)
     {
-        void *pTemp = ClrVirtualAlloc(pData, dwSizeToCommit, MEM_COMMIT, PAGE_READWRITE);//(m_Options & LHF_EXECUTABLE) ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE);
-        if (pTemp == NULL)
-        {
-            //_ASSERTE(!"Unable to ClrVirtualAlloc commit in a loaderheap");
+        //_ASSERTE(!"Unable to ClrVirtualAlloc commit in a loaderheap");
 
-            // Unable to commit - release pages
-            if (fReleaseMemory)
-                ClrVirtualFree(pData, 0, MEM_RELEASE);
+        // Unable to commit - release pages
+        if (fReleaseMemory)
+            ClrVirtualFree(pData, 0, MEM_RELEASE); // TODO: is this correct for the double mapped memory too?
 
-            return FALSE;
-        }
+        __debugbreak();
+        return FALSE;
     }
 
     // Record reserved range in range list, if one is specified
@@ -1161,6 +1203,7 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
                     ClrVirtualFree(pData, 0, MEM_RELEASE);
             }
 
+            __debugbreak();
             return FALSE;
         }
     }
@@ -1168,18 +1211,26 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
     m_dwTotalAlloc += dwSizeToCommit;
 
     LoaderHeapBlock *pNewBlock;
+    LoaderHeapBlock *pNewBlockRX;
 
 #if defined(HOST_OSX) && defined(HOST_ARM64)
     // Always assume we are touching executable heap
     auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
 
-    void* pDataRW = pData;
     if ((m_Options & LHF_EXECUTABLE))
     {
-        pDataRW = DoubleMappedAllocator::Instance()->MapRW(pData, dwSizeToCommit);
+        if (pDataRW == NULL)
+        {
+            pDataRW = DoubleMappedAllocator::Instance()->MapRW(pData, dwSizeToCommit);
+        }
+    }
+    else
+    {
+        pDataRW = pData;
     }
     pNewBlock = (LoaderHeapBlock *) pDataRW;
+    pNewBlockRX = (LoaderHeapBlock *) pData;
 
     pNewBlock->dwVirtualSize    = dwSizeToReserve;
     pNewBlock->pVirtualAddress  = pData;
@@ -1194,12 +1245,17 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
         pCurBlock = pCurBlock->pNext;
 
     if (pCurBlock != NULL)
-        m_pCurBlock->pNext = pNewBlock;
+    {
+        // TODO: BUG??? is it really m_pCurBlock and not pCurBlock? I believe it was a bug
+        LoaderHeapBlock *pCurBlockRW = (LoaderHeapBlock*)DoubleMappedAllocator::Instance()->MapRW(pCurBlock, sizeof(LoaderHeapBlock));
+        pCurBlockRW->pNext = pNewBlockRX;
+        DoubleMappedAllocator::Instance()->UnmapRW(pCurBlockRW);
+    }
     else
-        m_pFirstBlock = pNewBlock;
+        m_pFirstBlock = pNewBlockRX;
 
     // If we want to use the memory immediately...
-    m_pCurBlock = pNewBlock;
+    m_pCurBlock = pNewBlockRX;
 
     SETUP_NEW_BLOCK(pData, dwSizeToCommit, dwSizeToReserve);
 
@@ -1240,12 +1296,12 @@ BOOL UnlockedLoaderHeap::GetMoreCommittedPages(size_t dwMinSize)
         // Round to page size
         dwSizeToCommit = ALIGN_UP(dwSizeToCommit, GetOsPageSize());
 
-        if (!(m_Options & LHF_EXECUTABLE))
+        // Yes, so commit the desired number of reserved pages
+        void *pData = ClrVirtualAlloc(m_pPtrToEndOfCommittedRegion, dwSizeToCommit, MEM_COMMIT, (m_Options & LHF_EXECUTABLE) ? PAGE_EXECUTE_READ : PAGE_READWRITE);
+        if (pData == NULL)
         {
-            // Yes, so commit the desired number of reserved pages
-            void *pData = ClrVirtualAlloc(m_pPtrToEndOfCommittedRegion, dwSizeToCommit, MEM_COMMIT, (m_Options & LHF_EXECUTABLE) ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE);
-            if (pData == NULL)
-                return FALSE;
+            __debugbreak();
+            return FALSE;
         }
 
         m_dwTotalAlloc += dwSizeToCommit;
@@ -1360,9 +1416,15 @@ again:
 
         if (pData)
         {
+            void* pDataRW = pData;
+            if (m_Options & LHF_EXECUTABLE)
+            {
+                pDataRW = DoubleMappedAllocator::Instance()->MapRW(pData, dwSize);
+            }
+
 #ifdef _DEBUG
 
-            BYTE *pAllocatedBytes = (BYTE *)pData;
+            BYTE *pAllocatedBytes = (BYTE *)pDataRW;
 #if LOADER_HEAP_DEBUG_BOUNDARY > 0
             // Don't fill the memory we allocated - it is assumed to be zeroed - fill the memory after it
             memset(pAllocatedBytes + dwRequestedSize, 0xEE, LOADER_HEAP_DEBUG_BOUNDARY);
@@ -1375,7 +1437,7 @@ again:
 
             if (!m_fExplicitControl)
             {
-                LoaderHeapValidationTag *pTag = AllocMem_GetTag(pData, dwRequestedSize);
+                LoaderHeapValidationTag *pTag = AllocMem_GetTag(pDataRW, dwRequestedSize);
                 pTag->m_allocationType  = kAllocMem;
                 pTag->m_dwRequestedSize = dwRequestedSize;
                 pTag->m_szFile          = szFile;
@@ -1399,12 +1461,7 @@ again:
 #endif
 
             EtwAllocRequest(this, pData, dwSize);
-            // TODO: Get the RW mapping
-            void* pDataRW = pData;
-            if (m_Options & LHF_EXECUTABLE)
-            {
-                pDataRW = DoubleMappedAllocator::Instance()->MapRW(pData, dwSize);
-            }
+
             RETURN DoublePtr(pData, pDataRW, this);
         }
     }
@@ -1414,6 +1471,7 @@ again:
     if (GetMoreCommittedPages(dwSize))
         goto again;
 
+    __debugbreak();
     // We could not satisfy this allocation request
     RETURN DoublePtr::Null();
 }
@@ -1659,11 +1717,12 @@ DoublePtr UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequeste
     size_t dwSize = AllocMem_TotalSize( cbAllocSize.Value(), this);
     m_pAllocPtr += dwSize;
 
-
     ((BYTE*&)pResult) += extra;
 
+    void *pResultRW = DoubleMappedAllocator::Instance()->MapRW(pResult, dwSize - extra);
+
 #ifdef _DEBUG
-     BYTE *pAllocatedBytes = (BYTE *)pResult;
+     BYTE *pAllocatedBytes = (BYTE *)pResultRW;
 #if LOADER_HEAP_DEBUG_BOUNDARY > 0
     // Don't fill the entire memory - we assume it is all zeroed -just the memory after our alloc
     memset(pAllocatedBytes + dwRequestedSize, 0xee, LOADER_HEAP_DEBUG_BOUNDARY);
@@ -1693,7 +1752,7 @@ DoublePtr UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequeste
 
     if (!m_fExplicitControl)
     {
-        LoaderHeapValidationTag *pTag = AllocMem_GetTag(((BYTE*)pResult) - extra, dwRequestedSize + extra);
+        LoaderHeapValidationTag *pTag = AllocMem_GetTag(((BYTE*)pResultRW) - extra, dwRequestedSize + extra);
         pTag->m_allocationType  = kAllocMem;
         pTag->m_dwRequestedSize = dwRequestedSize + extra;
         pTag->m_szFile          = szFile;
@@ -1706,8 +1765,7 @@ DoublePtr UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequeste
         *pdwExtra = extra;
     }
 
-    // TODO: Get the RW mapping
-    RETURN DoublePtr(pResult, pResult, this);
+    RETURN DoublePtr(pResult, pResultRW, this);
 }
 
 
@@ -1787,9 +1845,17 @@ DoublePtr UnlockedLoaderHeap::UnlockedAllocMemForCode_NoThrow(size_t dwHeaderSiz
     void* pResultRW = pResult;
     if (m_Options & LHF_EXECUTABLE)
     {
-        pResultRW = DoubleMappedAllocator::Instance()->MapRW(pResult, dwCodeSize);
+        // ISSUE:
+        // We need to map the header part too. But there is a problem. The Unmap will require the address that we have mapped
+        // and it has no way to know it. What shall we do then? 
+        // * Returning the address including the header would be almost as ugly, as we would have to compute the alignment
+        // * Returning the address after the header would work for our purposes, but all the callers would need to accomodate
+        //   for that in the unmap. Should we have two unmaps, one for these cases?
+        // * Get rid of the CodeHeader?
+
+        pResultRW = (BYTE*)DoubleMappedAllocator::Instance()->MapRW(pResult - dwHeaderSize, dwCodeSize + dwHeaderSize) + dwHeaderSize;
     }
-    RETURN DoublePtr(pResult, pResultRW, this);
+    RETURN DoublePtr(pResult, pResultRW, dwHeaderSize, this);
 }
 
 

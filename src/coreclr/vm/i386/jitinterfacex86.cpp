@@ -406,6 +406,7 @@ void *JIT_TrialAlloc::GenAllocSFast(Flags flags)
     // Jump to the framed helper
     sl.X86EmitNearJump(sl.NewExternalCodeLabel((LPVOID)JIT_New));
 
+    // TODO: map / unmap
     Stub *pStub = sl.Link(SystemDomain::GetGlobalLoaderAllocator()->GetExecutableHeap());
 
     return (void *)pStub->GetEntryPoint();

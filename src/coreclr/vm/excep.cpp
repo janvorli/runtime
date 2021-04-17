@@ -6063,7 +6063,9 @@ static STRINGREF MissingMemberException_FormatSignature_Internal(I1ARRAYREF* ppP
     }
     psl->Emit8('\0');
 
-    pstub = psl->Link(NULL);
+    DoublePtrT<Stub> stub = psl->Link(NULL);
+    pstub = stub.GetRX();
+    stub.UnmapRW();
     }
 
     pString = StringObject::NewString( (LPCUTF8)(pstub->GetEntryPoint()) );

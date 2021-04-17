@@ -12277,13 +12277,14 @@ void CEEJitInfo::allocMem (
                                            , &m_moduleBase
 #endif
                                            );
-    
     // TODO: store the m_CodeHeader as double pointer and release the memory all at once after the JIT writes the code?
     // Seems we will need that unless the other stuff allocated from this memory like the GC info is accessed out of the 
     // method that calls the allocMem.
     // TODO: the current method will ned to return both RX and RW addresses for the blocks
     BYTE* current = (BYTE *)m_CodeHeader.GetRX()->GetCodeStartAddress();
     BYTE* currentRW = (BYTE *)m_CodeHeader.GetRW()->GetCodeStartAddress();
+
+    _ASSERTE(current != currentRW);
 
     *codeBlock = current;
     *codeBlockRW = currentRW;

@@ -891,13 +891,17 @@ public:
     {
         return m_stub.GetRW();
     }
-    Stub* Extract()
+    Stub* GetRX()
+    {
+        return m_stub.GetRX();
+    }
+    DoublePtrT<Stub> Extract()
     {
         // TODO: is this correct?
         // TODO: Release the RW mapping?
-        Stub* rx = m_stub.GetRX();
+        DoublePtrT<Stub> result = m_stub;
         m_stub = DoublePtrT<Stub>();
-        return rx;
+        return result;
     } 
 
     bool IsNull()
@@ -913,7 +917,7 @@ public:
 //
 // Throws COM+ exception on failure.
 //---------------------------------------------------------------
-Stub *StubLinker::Link(LoaderHeap *pHeap, DWORD flags)
+DoublePtrT<Stub> StubLinker::Link(LoaderHeap *pHeap, DWORD flags)
 {
     STANDARD_VM_CONTRACT;
 
@@ -952,15 +956,13 @@ Stub *StubLinker::Link(LoaderHeap *pHeap, DWORD flags)
         }
         else
         {
-            ReservedStubs.AddStub(pStub.Extract());
+            ReservedStubs.AddStub(pStub.GetRX());
 //            pStub.SuppressRelease();
         }
 #else
         CONSISTENCY_CHECK_MSG(fSuccess, ("EmitStub should always return true"));
 #endif
     }
-
-    // TODO: unmap the RW?
 
     return pStub.Extract();
 }
@@ -1201,7 +1203,7 @@ bool StubLinker::EmitStub(Stub* pStub, int globalsize, LoaderHeap* pHeap)
         FlushInstructionCache(GetCurrentProcess(), pCode, globalsize);
     }
 
-    _ASSERTE(m_fDataOnly || DbgIsExecutable(pCode, globalsize));
+    //_ASSERTE(m_fDataOnly || DbgIsExecutable(pCode, globalsize));
 
     return true;
 }
@@ -2112,7 +2114,8 @@ VOID Stub::DeleteStub()
 #endif
 
 #ifndef TARGET_UNIX
-        DeleteExecutable((BYTE*)GetAllocationBase());
+//        DeleteExecutable((BYTE*)GetAllocationBase());
+        delete [] (BYTE*)GetAllocationBase();
 #else
         delete [] (BYTE*)GetAllocationBase();
 #endif
@@ -2234,7 +2237,7 @@ DoublePtrT<Stub> Stub::NewStub(PTR_VOID pCode, DWORD flags)
         // TODO: It seems this is a case when there is no code in the stub itself, thus no stub RW release would be needed.
         // Maybe store the allocator in the DoublePtr and have it NULL for this case.
 #ifndef TARGET_UNIX
-        pBlockRW = new (executable) BYTE[totalSize];
+        pBlockRW = new BYTE[totalSize]; //new (executable) BYTE[totalSize];
 #else
         pBlockRW = new BYTE[totalSize];
 #endif

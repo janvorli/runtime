@@ -4160,6 +4160,7 @@ static const struct CentralJumpCode {
     inline void Setup(MethodDesc* pMD, PCODE target, LoaderAllocator *pLoaderAllocator) {
         WRAPPER_NO_CONTRACT;
         m_pBaseMD = pMD;
+        // TODO: fix this - need RX pointer 
         m_rel32 = rel32UsingJumpStub(&m_rel32, target, pMD, pLoaderAllocator);
     }
 
@@ -4179,6 +4180,8 @@ c_CentralJumpCode = {
 
 #elif defined(TARGET_AMD64)
 
+    // TODO: this is a dead code
+
 #include <pshpack1.h>
 static const struct CentralJumpCode {
     BYTE m_movzxRAX[4];
@@ -4192,6 +4195,7 @@ static const struct CentralJumpCode {
     inline void Setup(MethodDesc* pMD, PCODE target, LoaderAllocator *pLoaderAllocator) {
         WRAPPER_NO_CONTRACT;
         m_pBaseMD = pMD;
+        // TODO: fix this, need RX address
         m_rel32 = rel32UsingJumpStub(&m_rel32, target, pMD, pLoaderAllocator);
     }
 
@@ -4476,16 +4480,18 @@ TADDR MethodDescChunk::AllocateCompactEntryPoints(LoaderAllocator *pLoaderAlloca
 
     SIZE_T size = SizeOfCompactEntryPoints(count);
 
-    TADDR temporaryEntryPoints = (TADDR)pamTracker->Track(pLoaderAllocator->GetPrecodeHeap()->AllocAlignedMem(size, sizeof(TADDR)));
+    DoublePtr temporaryEntryPoints = pamTracker->Track2(pLoaderAllocator->GetPrecodeHeap()->AllocAlignedMem(size, sizeof(TADDR)));
+    TADDR temporaryEntryPointsRW = (TADDR)temporaryEntryPoints.GetRW();
+    TADDR temporaryEntryPointsRX = (TADDR)temporaryEntryPoints.GetRX();
 
 #ifdef TARGET_ARM
-    BYTE* p = (BYTE*)temporaryEntryPoints + COMPACT_ENTRY_ARM_CODE;
+    BYTE* p = (BYTE*)temporaryEntryPointsRW + COMPACT_ENTRY_ARM_CODE;
     int relOffset        = count * TEP_ENTRY_SIZE - TEP_ENTRY_SIZE; // relative offset for the short jump
 
     _ASSERTE (relOffset < MAX_OFFSET_UNCONDITIONAL_BRANCH_THUMB);
 #else // TARGET_ARM
     // make the temporary entrypoints unaligned, so they are easy to identify
-    BYTE* p = (BYTE*)temporaryEntryPoints + 1;
+    BYTE* p = (BYTE*)temporaryEntryPointsRW + 1;
     int indexInBlock     = TEP_MAX_BLOCK_INDEX;         // recompute relOffset in first iteration
     int relOffset        = 0;                           // relative offset for the short jump
 #endif // TARGET_ARM
@@ -4554,18 +4560,21 @@ TADDR MethodDescChunk::AllocateCompactEntryPoints(LoaderAllocator *pLoaderAlloca
     memcpy(pCode, &c_CentralJumpCode, TEP_CENTRAL_JUMP_SIZE);
     pCode->Setup (GetPreStubCompactARMEntryPoint(), this);
 
-    _ASSERTE(p + TEP_CENTRAL_JUMP_SIZE == (BYTE*)temporaryEntryPoints + size);
+    _ASSERTE(p + TEP_CENTRAL_JUMP_SIZE == (BYTE*)temporaryEntryPointsRW + size);
 
 #else // TARGET_ARM
 
-    _ASSERTE(p == (BYTE*)temporaryEntryPoints + size);
+    _ASSERTE(p == (BYTE*)temporaryEntryPointsRW + size);
 
 #endif // TARGET_ARM
 
-    ClrFlushInstructionCache((LPVOID)temporaryEntryPoints, size);
+    ClrFlushInstructionCache((LPVOID)temporaryEntryPointsRX, size);
 
     SetHasCompactEntryPoints();
-    return temporaryEntryPoints;
+
+    temporaryEntryPoints.UnmapRW();
+
+    return temporaryEntryPointsRX;
 }
 #endif // !DACCESS_COMPILE
 

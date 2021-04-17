@@ -16,6 +16,7 @@
 
 #include "utilcode.h"
 #include "ex.h"
+#include <intrin.h>
 
 class UnlockedLoaderHeap;
 
@@ -83,18 +84,24 @@ class DoublePtrT
 {
     T* m_pRW;
     T* m_pRX;
+    size_t m_headerSize;
+    // TODO: this will rather be a handle or a lower lever allocator
     UnlockedLoaderHeap* m_pHeap;
 
 public:
-    DoublePtrT() : m_pRW(NULL), m_pRX(NULL), m_pHeap(NULL)
+    DoublePtrT() : m_pRW(NULL), m_pRX(NULL), m_headerSize(0), m_pHeap(NULL)
     {
     }
 
-    DoublePtrT(const DoublePtrT<void>& voidDoublePtr) : m_pRW((T*)voidDoublePtr.GetRW()), m_pRX((T*)voidDoublePtr.GetRX()), m_pHeap(voidDoublePtr.Heap())
+    DoublePtrT(const DoublePtrT<void>& voidDoublePtr) : m_pRW((T*)voidDoublePtr.GetRW()), m_pRX((T*)voidDoublePtr.GetRX()), m_headerSize(voidDoublePtr.GetHeaderSize()), m_pHeap(voidDoublePtr.Heap())
     {
     }
 
-    DoublePtrT(T* pRX, T* pRW, UnlockedLoaderHeap* pHeap) : m_pRW(pRW), m_pRX(pRX), m_pHeap(pHeap)
+    DoublePtrT(T* pRX, T* pRW, UnlockedLoaderHeap* pHeap) : m_pRW(pRW), m_pRX(pRX), m_headerSize(0), m_pHeap(pHeap)
+    {
+    }
+
+    DoublePtrT(T* pRX, T* pRW, size_t headerSize, UnlockedLoaderHeap* pHeap) : m_pRW(pRW), m_pRX(pRX), m_headerSize(headerSize), m_pHeap(pHeap)
     {
     }
 
@@ -107,6 +114,7 @@ public:
     {
         m_pRW = other.m_pRW;
         m_pRX = other.m_pRX;
+        m_headerSize = other.m_headerSize;
 
         return *this;
     }
@@ -118,7 +126,13 @@ public:
 
     T* GetRW() const
     {
+        _ASSERTE((m_pRX == NULL) || (m_pRW != NULL));
         return m_pRW;
+    }
+
+    size_t GetHeaderSize() const
+    {
+        return m_headerSize;
     }
 
     UnlockedLoaderHeap* Heap() const
@@ -129,6 +143,13 @@ public:
     bool IsNull() const
     {
         return m_pRX == NULL;
+    }
+
+    void UnmapRW()
+    {
+        _ASSERTE(m_pRW != m_pRX);
+        DoubleMappedAllocator::Instance()->UnmapRW((BYTE*)m_pRW - m_headerSize);
+        m_pRW = NULL;
     }
 };
 
@@ -226,11 +247,16 @@ struct TaggedMemAllocPtr
         return (void*)(m_dwExtra + (BYTE*)m_pMem.GetRW());
     }
 
-    void* GetRX()
+    void* GetRX() const
     {
         LIMITED_METHOD_CONTRACT;
         _ASSERTE(m_pMem.GetRX() != NULL);
         return (void*)(m_dwExtra + (BYTE*)m_pMem.GetRX());
+    }
+
+    DoublePtr GetDoublePtr() const
+    {
+        return m_pMem;
     }
 
     template < typename T >
@@ -243,7 +269,7 @@ struct TaggedMemAllocPtr
 
 class DoubleMappedAllocator
 {
-    static DoubleMappedAllocator* g_instance;
+    static volatile DoubleMappedAllocator* g_instance;
 
     struct Block
     {
@@ -255,7 +281,7 @@ class DoubleMappedAllocator
 
     Block* m_firstBlock = NULL;
     HANDLE m_hSharedMemoryFile = NULL;
-    size_t maxSize = 1024*1024;
+    size_t maxSize = 1024ULL*1024*1024;
     size_t m_freeOffset = 0;
 
     size_t Granularity()
@@ -266,15 +292,18 @@ public:
 
     static DoubleMappedAllocator* Instance()
     {
-        DoubleMappedAllocator *instance = new (nothrow) DoubleMappedAllocator();
-        instance->Initialize();
-
-        if (InterlockedCompareExchangeT(&g_instance, instance, NULL) != NULL)
+        if (g_instance == NULL)
         {
-            delete instance;
+            DoubleMappedAllocator *instance = new (nothrow) DoubleMappedAllocator();
+            instance->Initialize();
+
+            if (InterlockedCompareExchangeT(const_cast<DoubleMappedAllocator**>(&g_instance), instance, NULL) != NULL)
+            {
+                delete instance;
+            }
         }
 
-        return g_instance;
+        return const_cast<DoubleMappedAllocator*>(g_instance);
     }
 
     ~DoubleMappedAllocator()
@@ -287,9 +316,9 @@ public:
         m_hSharedMemoryFile = WszCreateFileMapping(
                  INVALID_HANDLE_VALUE,    // use paging file
                  NULL,                    // default security
-                 PAGE_EXECUTE_READWRITE,  // read/write/execute access
+                 PAGE_EXECUTE_READWRITE |  SEC_RESERVE,  // read/write/execute access
                  0,                       // maximum object size (high-order DWORD)
-                 1024*1024,               // maximum object size (low-order DWORD)
+                 1024 * 1024*1024,               // maximum object size (low-order DWORD)
                  NULL);    
 
         return m_hSharedMemoryFile != NULL;    
@@ -320,7 +349,7 @@ public:
                         offset & 0xFFFFFFFFUL,
                         rwSize);
         *ppRX = MapViewOfFile(m_hSharedMemoryFile,
-                        FILE_MAP_EXECUTE | FILE_MAP_READ,
+                        FILE_MAP_EXECUTE | FILE_MAP_READ | FILE_MAP_WRITE, // TODO: can we add the write only for reservations that will be for both data and execution, like the loader allocator? Or should we split the initial allocation to two parts - exe and non-exe?
                         offset / ((size_t)1) >> 32,
                         offset & 0xFFFFFFFFUL,
                         size);
@@ -339,11 +368,104 @@ public:
         return true;
     }
 
+    void* Reserve(size_t size)
+    {
+        _ASSERTE((size & (Granularity() - 1)) == 0);
+
+        if (m_freeOffset + size > maxSize)
+        {
+            return NULL;
+        }
+
+        size_t offset = m_freeOffset;
+        m_freeOffset += size;
+
+        Block* block = new (nothrow) Block();
+        if (block == NULL)
+        {
+            return NULL;
+        }
+
+        void *result = MapViewOfFile(m_hSharedMemoryFile,
+                        FILE_MAP_EXECUTE | FILE_MAP_READ | FILE_MAP_WRITE, // TODO: can we add the write only for reservations that will be for both data and execution, like the loader allocator? Or should we split the initial allocation to two parts - exe and non-exe?
+                        offset / ((size_t)1) >> 32,
+                        offset & 0xFFFFFFFFUL,
+                        size);
+
+        block->baseRX = result;
+        block->offset = offset;
+        block->size = size;
+
+        // TODO: probably use lock so that we can search the list? Hmm, we will never remove blocks, will we?
+        do
+        {
+            block->next = m_firstBlock;
+        }
+        while (InterlockedCompareExchangeT(&m_firstBlock, block, block->next) != block->next);
+
+        return result;
+    }
+
+    void* ReserveAt(void* baseAddressRX, size_t size)
+    {
+        _ASSERTE((size & (Granularity() - 1)) == 0);
+
+        if (m_freeOffset + size > maxSize)
+        {
+            return false;
+        }
+
+        size_t offset = m_freeOffset;
+        m_freeOffset += size;
+
+        Block* block = new (nothrow) Block();
+        if (block == NULL)
+        {
+            return false;
+        }
+
+        void* result = MapViewOfFileEx(m_hSharedMemoryFile,
+                        FILE_MAP_EXECUTE | FILE_MAP_READ | FILE_MAP_WRITE, // TODO: can we add the write only for reservations that will be for both data and execution, like the loader allocator? Or should we split the initial allocation to two parts - exe and non-exe?
+                        offset / ((size_t)1) >> 32,
+                        offset & 0xFFFFFFFFUL,
+                        size,
+                        baseAddressRX);
+
+        if (result == NULL)
+        {
+            return false;
+        }
+
+        block->baseRX = result;
+        block->offset = offset;
+        block->size = size;
+
+        // TODO: probably use lock so that we can search the list? Hmm, we will never remove blocks, will we?
+        do
+        {
+            block->next = m_firstBlock;
+        }
+        while (InterlockedCompareExchangeT(&m_firstBlock, block, block->next) != block->next);
+
+        return result;
+    }
+
+    #pragma intrinsic(_ReturnAddress)
+
     void UnmapRW(void* pRW)
     {
+        _ASSERTE(pRW != NULL);
+        //_ASSERTE(pRW < (void*)0x700000000000ULL);
+
+#ifdef _DEBUG
+        // MEMORY_BASIC_INFORMATION mbi;
+        // SIZE_T cbBytes = ClrVirtualQuery(pRW, &mbi, sizeof(mbi));
+        // _ASSERTE(cbBytes);
+        //printf("UnmapRW: RW=%p, base=%p, size=%p, prot=%08x, state=%08x, type=%08x, caller=%p\n", pRW, (void*)mbi.BaseAddress, (void*)mbi.RegionSize, mbi.Protect, mbi.State, mbi.Type, (void*)_ReturnAddress());
+#endif
         // TODO: Linux will need the full range. So we may need to store all the RW mappings in a separate list (per RX mapping)
-        //void* unmapAddress = ALIGN_DOWN(pRW, Granularity());
-        //UnmapViewOfFile(unmapAddress);
+        void* unmapAddress = ALIGN_DOWN(pRW, Granularity());
+        UnmapViewOfFile(unmapAddress);
     }
 
     void* MapRW(void* pRX, size_t size)
@@ -364,6 +486,8 @@ public:
                                 (b->offset + mapOffset) & 0xFFFFFFFFUL,
                                 mapSize);
 
+                //printf("MapRW: baseRX=%p, RX=%p, mapOffset=%p, size=%p, mapSize=%p\n", b->baseRX, pRX, (void*)mapOffset, (void*)size, (void*)mapSize);
+
                 if (pRW == NULL)
                 {
                     __debugbreak();
@@ -371,9 +495,27 @@ public:
                 }
                 return (void*)((size_t)pRW + (offset - mapOffset));
             }
+            else if (pRX >= b->baseRX && pRX < (void*)((size_t)b->baseRX + b->size))
+            {
+                // Error - attempting to map a block that crosses the end of the allocated range
+                __debugbreak();
+            }
+            else if (pRX < b->baseRX && (void*)((size_t)pRX + size) > b->baseRX)
+            {
+                // Error - attempting to map a block that crosses the beginning of the allocated range
+                __debugbreak();
+            }
         }
+#ifdef _DEBUG
+        MEMORY_BASIC_INFORMATION mbi;
+        SIZE_T cbBytes = ClrVirtualQuery(pRX, &mbi, sizeof(mbi));
+        _ASSERTE(cbBytes);
 
-//        __debugbreak();
+        if ((mbi.Protect & PAGE_EXECUTE_READ) || (mbi.Protect & PAGE_EXECUTE_READWRITE))
+        {
+            __debugbreak();
+        }
+#endif        
 //        return NULL;
         // TODO: this is a hack for the preallocated pages that are part of the coreclr module
         return pRX;
@@ -1377,6 +1519,17 @@ class AllocMemHolder
         {
             LIMITED_METHOD_CONTRACT;
             return (TYPE*)(void*)m_value;
+        }
+
+        TYPE* GetRX()
+        {
+            LIMITED_METHOD_CONTRACT;
+            return (TYPE*)m_value.GetRX();
+        }
+
+        DoublePtrT<TYPE> GetDoublePtr()
+        {
+            return DoublePtrT<TYPE>(m_value.GetDoublePtr());
         }
 
     public:

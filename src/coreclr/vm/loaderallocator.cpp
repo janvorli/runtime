@@ -1137,7 +1137,8 @@ void LoaderAllocator::Init(BaseDomain *pDomain, BYTE *pExecutableHeapMemory)
     _ASSERTE(dwTotalReserveMemSize <= VIRTUAL_ALLOC_RESERVE_GRANULARITY);
 #endif
 
-    BYTE * initReservedMem = ClrVirtualAllocExecutable(dwTotalReserveMemSize, MEM_RESERVE, PAGE_NOACCESS);
+    //BYTE * initReservedMem = ClrVirtualAllocExecutable(dwTotalReserveMemSize, MEM_RESERVE, PAGE_NOACCESS);
+    BYTE * initReservedMem = (BYTE*)DoubleMappedAllocator::Instance()->Reserve(dwTotalReserveMemSize);
 
     m_InitialReservedMemForLoaderHeaps = initReservedMem;
 
@@ -1276,6 +1277,8 @@ FuncPtrStubs * LoaderAllocator::GetFuncPtrStubs()
 BYTE *LoaderAllocator::GetVSDHeapInitialBlock(DWORD *pSize)
 {
     LIMITED_METHOD_CONTRACT;
+
+    return NULL;
 
     *pSize = 0;
     BYTE *buffer = InterlockedCompareExchangeT(&m_pVSDHeapInitialAlloc, NULL, m_pVSDHeapInitialAlloc);

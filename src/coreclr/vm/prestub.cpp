@@ -1737,7 +1737,9 @@ Stub * MakeUnboxingStubWorker(MethodDesc *pMD)
 
         sl.EmitComputedInstantiatingMethodStub(pUnboxedMD, &portableShuffle[0], NULL);
 
-        pstub = sl.Link(pMD->GetLoaderAllocator()->GetStubHeap());
+        DoublePtrT<Stub> stub = sl.Link(pMD->GetLoaderAllocator()->GetStubHeap());
+        pstub = stub.GetRX();
+        stub.UnmapRW();
     }
     else
 #endif
@@ -1758,7 +1760,9 @@ Stub * MakeUnboxingStubWorker(MethodDesc *pMD)
         {
             CPUSTUBLINKER sl;
             sl.EmitUnboxMethodStub(pUnboxedMD);
-            pstub = sl.Link(pMD->GetLoaderAllocator()->GetStubHeap());
+            DoublePtrT<Stub> stub = sl.Link(pMD->GetLoaderAllocator()->GetStubHeap());
+            pstub = stub.GetRX();
+            stub.UnmapRW();
         }
 #endif // !FEATURE_PORTABLE_SHUFFLE_THUNKS
     }
@@ -1810,7 +1814,9 @@ Stub * MakeInstantiatingStubWorker(MethodDesc *pMD)
         _ASSERTE(pSharedMD != NULL && pSharedMD != pMD);
         sl.EmitComputedInstantiatingMethodStub(pSharedMD, &portableShuffle[0], extraArg);
 
-        pstub = sl.Link(pMD->GetLoaderAllocator()->GetStubHeap());
+        DoublePtrT<Stub> stub = sl.Link(pMD->GetLoaderAllocator()->GetStubHeap());
+        pstub = stub.GetRX();
+        stub.UnmapRW();
     }
     else
 #endif
@@ -1822,7 +1828,9 @@ Stub * MakeInstantiatingStubWorker(MethodDesc *pMD)
         _ASSERTE(pSharedMD != NULL && pSharedMD != pMD);
         sl.EmitInstantiatingMethodStub(pSharedMD, extraArg);
 
-        pstub = sl.Link(pMD->GetLoaderAllocator()->GetStubHeap());
+        DoublePtrT<Stub> stub = sl.Link(pMD->GetLoaderAllocator()->GetStubHeap());
+        pstub = stub.GetRX();
+        stub.UnmapRW();
 #endif
     }
 
@@ -2194,14 +2202,19 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT, CallerGCMode callerGCMo
     }
 
     /**************************   CODE CREATION  *************************/
+
+    volatile int creationIndex = 0;
+
     if (IsUnboxingStub())
     {
         pStub = MakeUnboxingStubWorker(this);
+        creationIndex = 1;
     }
 #if defined(FEATURE_SHARE_GENERIC_CODE)
     else if (IsInstantiatingStub())
     {
         pStub = MakeInstantiatingStubWorker(this);
+        creationIndex = 2;
     }
 #endif // defined(FEATURE_SHARE_GENERIC_CODE)
     else if (IsIL() || IsNoMetadata())
@@ -2261,6 +2274,7 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT, CallerGCMode callerGCMo
     else if (IsArray())
     {
         pStub = GenerateArrayOpStub((ArrayMethodDesc*)this);
+        creationIndex = 3;
     }
     else if (IsEEImpl())
     {
@@ -2304,13 +2318,17 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT, CallerGCMode callerGCMo
     {
         if (!GetOrCreatePrecode()->SetTargetInterlocked(pStub->GetEntryPoint()))
         {
-            pStub->DecRef();
+            Stub* pStubRW = (Stub*)DoubleMappedAllocator::Instance()->MapRW(pStub, sizeof(Stub));
+            pStubRW->DecRef();
+            DoubleMappedAllocator::Instance()->UnmapRW(pStubRW);
         }
         else if (pStub->HasExternalEntryPoint())
         {
             // If the Stub wraps code that is outside of the Stub allocation, then we
             // need to free the Stub allocation now.
-            pStub->DecRef();
+            Stub* pStubRW = (Stub*)DoubleMappedAllocator::Instance()->MapRW(pStub, sizeof(Stub));
+            pStubRW->DecRef();
+            DoubleMappedAllocator::Instance()->UnmapRW(pStubRW);
         }
     }
 
