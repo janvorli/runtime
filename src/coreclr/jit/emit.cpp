@@ -6565,7 +6565,7 @@ void emitter::emitOutputDataSec(dataSecDsc* sec, BYTE* dst)
 
             assert(dscSize && dscSize % TARGET_POINTER_SIZE == 0);
             size_t         numElems = dscSize / TARGET_POINTER_SIZE;
-            target_size_t* bDst     = (target_size_t*)dst;
+            target_size_t* bDst     = (target_size_t*)(dst + writeableOffset);
             for (unsigned i = 0; i < numElems; i++)
             {
                 BasicBlock* block = ((BasicBlock**)dsc->dsCont)[i];
@@ -6594,7 +6594,7 @@ void emitter::emitOutputDataSec(dataSecDsc* sec, BYTE* dst)
             JITDUMP("  section %u, size %u, block relative addr\n", secNum++, dscSize);
 
             size_t    numElems = dscSize / 4;
-            unsigned* uDst     = (unsigned*)dst;
+            unsigned* uDst     = (unsigned*)(dst + writeableOffset);
             insGroup* labFirst = (insGroup*)emitCodeGetCookie(emitComp->fgFirstBB);
 
             for (unsigned i = 0; i < numElems; i++)
@@ -6615,7 +6615,7 @@ void emitter::emitOutputDataSec(dataSecDsc* sec, BYTE* dst)
             // Simple binary data: copy the bytes to the target
             assert(dsc->dsType == dataSection::data);
 
-            memcpy(dst, dsc->dsCont, dscSize);
+            memcpy(dst + writeableOffset, dsc->dsCont, dscSize);
 
 #ifdef DEBUG
             if (EMITVERBOSE)

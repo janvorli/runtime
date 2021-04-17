@@ -240,7 +240,7 @@ ssize_t emitGetInsAmdCns(instrDesc* id, CnsVal* cv);
 void emitGetInsDcmCns(instrDesc* id, CnsVal* cv);
 ssize_t emitGetInsAmdAny(instrDesc* id);
 
-BYTE* emitOutputNOP(BYTE* dst, size_t nBytes);
+BYTE* emitOutputNOP(BYTE* dstRW, size_t nBytes);
 
 /************************************************************************/
 /*               Private helpers for instruction output                 */

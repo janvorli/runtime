@@ -9254,12 +9254,9 @@ void emitter::emitDispIns(
  *  Output nBytes bytes of NOP instructions
  */
 
-BYTE* emitter::emitOutputNOP(BYTE* dst, size_t nBytes)
+BYTE* emitter::emitOutputNOP(BYTE* dstRW, size_t nBytes)
 {
     assert(nBytes <= 15);
-
-    BYTE* dstRW = dst + writeableOffset;
-    BYTE* initialDstRW = dstRW;
 
 #ifndef TARGET_AMD64
     // TODO-X86-CQ: when VIA C3 CPU's are out of circulation, switch to the
@@ -9397,7 +9394,7 @@ BYTE* emitter::emitOutputNOP(BYTE* dst, size_t nBytes)
     }
 #endif // TARGET_AMD64
 
-    return dst + (dstRW - initialDstRW);
+    return dstRW;
 }
 
 //--------------------------------------------------------------------
@@ -9439,7 +9436,10 @@ BYTE* emitter::emitOutputAlign(insGroup* ig, instrDesc* id, BYTE* dst)
     }
 #endif
 
-    return emitOutputNOP(dst, paddingToAdd);
+    BYTE* dstRW = dst + writeableOffset;
+    BYTE* initialDstRW = dstRW;
+    dstRW = emitOutputNOP(dstRW, paddingToAdd);
+    return dst + (dstRW - initialDstRW);
 }
 
 /*****************************************************************************
@@ -12760,7 +12760,10 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
 
             if (ins == INS_nop)
             {
-                dst = emitOutputNOP(dst, id->idCodeSize());
+                BYTE* dstRW = dst + writeableOffset;
+                BYTE* initialDstRW = dstRW;
+                dstRW = emitOutputNOP(dstRW, id->idCodeSize());
+                dst = dst + (dstRW - initialDstRW);
                 break;
             }
 
@@ -13882,7 +13885,10 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
             }
 #endif
 
-            dst = emitOutputNOP(dst, diff);
+            BYTE* dstRW = dst + writeableOffset;
+            BYTE* initialDstRW = dstRW;
+            dstRW = emitOutputNOP(dstRW, diff);
+            dst = dst + (dstRW - initialDstRW);
         }
         assert((id->idCodeSize() - ((UNATIVE_OFFSET)(dst - *dp))) == 0);
     }
