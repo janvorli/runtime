@@ -15,6 +15,13 @@
 INDEBUG(DWORD UnlockedLoaderHeap::s_dwNumInstancesOfLoaderHeaps = 0;)
 
 volatile DoubleMappedAllocator* DoubleMappedAllocator::g_instance = NULL;
+    size_t DoubleMappedAllocator::g_rwMaps = 0;
+    size_t DoubleMappedAllocator::g_rwUnmaps = 0;
+    size_t DoubleMappedAllocator::g_failedRwUnmaps = 0;
+    size_t DoubleMappedAllocator::g_failedRwMaps = 0;
+    size_t DoubleMappedAllocator::g_allocCalls = 0;
+    size_t DoubleMappedAllocator::g_reserveCalls = 0;
+    size_t DoubleMappedAllocator::g_reserveAtCalls = 0;
 
 #ifdef RANDOMIZE_ALLOC
 #include <time.h>
@@ -987,17 +994,31 @@ UnlockedLoaderHeap::~UnlockedLoaderHeap()
 
         if (fReleaseMemory)
         {
-            BOOL fSuccess;
-            fSuccess = ClrVirtualFree(pVirtualAddress, 0, MEM_RELEASE);
-            _ASSERTE(fSuccess);
+            if (m_Options & LHF_EXECUTABLE)
+            {
+                // TODO: how do we release the executable memory?
+            }
+            else
+            {
+                BOOL fSuccess;
+                fSuccess = ClrVirtualFree(pVirtualAddress, 0, MEM_RELEASE);
+                _ASSERTE(fSuccess);
+            }
         }
     }
 
     if (m_reservedBlock.m_fReleaseMemory)
     {
-        BOOL fSuccess;
-        fSuccess = ClrVirtualFree(m_reservedBlock.pVirtualAddress, 0, MEM_RELEASE);
-        _ASSERTE(fSuccess);
+        if (m_Options & LHF_EXECUTABLE)
+        {
+            // TODO: how do we release the executable memory?
+        }
+        else
+        {
+            BOOL fSuccess;
+            fSuccess = ClrVirtualFree(m_reservedBlock.pVirtualAddress, 0, MEM_RELEASE);
+            _ASSERTE(fSuccess);
+        }
     }
 
     INDEBUG(s_dwNumInstancesOfLoaderHeaps --;)
@@ -1104,6 +1125,18 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
         // Zero the block so this memory doesn't get used again.
         m_reservedBlock.Init(NULL, 0, FALSE);
         allocationSource = 1;
+        pDataRW = DoubleMappedAllocator::Instance()->MapRW(pData, dwSizeToCommit);
+        if (pDataRW == NULL)
+        {
+            __debugbreak();
+        }
+        if ((m_Options & LHF_EXECUTABLE))
+        {
+            if (pDataRW == pData)
+            {
+                __debugbreak();
+            }
+        }
     }
     // The caller is asking us to allocate the memory
     else
@@ -1222,7 +1255,7 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
     {
         if (pDataRW == NULL)
         {
-            pDataRW = DoubleMappedAllocator::Instance()->MapRW(pData, dwSizeToCommit);
+            __debugbreak();
         }
     }
     else
@@ -1249,7 +1282,10 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
         // TODO: BUG??? is it really m_pCurBlock and not pCurBlock? I believe it was a bug
         LoaderHeapBlock *pCurBlockRW = (LoaderHeapBlock*)DoubleMappedAllocator::Instance()->MapRW(pCurBlock, sizeof(LoaderHeapBlock));
         pCurBlockRW->pNext = pNewBlockRX;
-        DoubleMappedAllocator::Instance()->UnmapRW(pCurBlockRW);
+        if ((m_Options & LHF_EXECUTABLE))
+        {
+            DoubleMappedAllocator::Instance()->UnmapRW(pCurBlockRW);
+        }
     }
     else
         m_pFirstBlock = pNewBlockRX;
@@ -1719,7 +1755,11 @@ DoublePtr UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequeste
 
     ((BYTE*&)pResult) += extra;
 
-    void *pResultRW = DoubleMappedAllocator::Instance()->MapRW(pResult, dwSize - extra);
+    void *pResultRW = pResult;
+    if (m_Options & LHF_EXECUTABLE)
+    {
+        pResultRW = DoubleMappedAllocator::Instance()->MapRW(pResult, dwSize - extra);
+    }
 
 #ifdef _DEBUG
      BYTE *pAllocatedBytes = (BYTE *)pResultRW;
@@ -2304,6 +2344,11 @@ void* AllocMemTracker::Track(TaggedMemAllocPtr tmap)
     if (pv.IsNull())
     {
         ThrowOutOfMemory();
+    }
+    _ASSERTE(pv.GetRW() == pv.GetRX());
+    if (pv.GetRW() != pv.GetRX())
+    {
+        __debugbreak();
     }
     return pv.GetRW();
 }

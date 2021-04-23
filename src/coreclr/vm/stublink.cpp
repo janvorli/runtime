@@ -2246,7 +2246,7 @@ DoublePtrT<Stub> Stub::NewStub(PTR_VOID pCode, DWORD flags)
     else
     {
         TaggedMemAllocPtr ptr = pHeap->AllocAlignedMem(totalSize, CODE_SIZE_ALIGN);
-        pBlockRW = (BYTE*)(void*)ptr;
+        pBlockRW = (BYTE*)ptr.GetRW();
         pBlockRX = (BYTE*)ptr.GetRX();
         flags |= NEWSTUB_FL_LOADERHEAP;
     }

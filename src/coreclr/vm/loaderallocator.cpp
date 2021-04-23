@@ -1278,7 +1278,7 @@ BYTE *LoaderAllocator::GetVSDHeapInitialBlock(DWORD *pSize)
 {
     LIMITED_METHOD_CONTRACT;
 
-    return NULL;
+    //return NULL;
 
     *pSize = 0;
     BYTE *buffer = InterlockedCompareExchangeT(&m_pVSDHeapInitialAlloc, NULL, m_pVSDHeapInitialAlloc);
@@ -1296,7 +1296,7 @@ BYTE *LoaderAllocator::GetCodeHeapInitialBlock(const BYTE * loAddr, const BYTE *
     *pSize = 0;
 
     // TODO: drop the initial block support completely? Measure perf to see if it matters at all (startup perf, regular perf)
-    return NULL;
+    //return NULL;
 
     // Check to see if the size is small enough that this might work
     if (minimumSize > COLLECTIBLE_CODEHEAP_SIZE)

@@ -3039,7 +3039,7 @@ BOOL Thread::RedirectCurrentThreadAtHandledJITCase(PFN_REDIRECTTARGET pTgt, CONT
 
     //////////////////////////////////////
     // Get and save the thread's context
-    BOOL success = CopyContext(pCtx, pCtx->ContextFlags, pCurrentThreadCtx);
+    BOOL success = CopyContext(pCtx, pCurrentThreadCtx->ContextFlags, pCurrentThreadCtx);
     _ASSERTE(success);
 
     // Ensure that this flag is set for the next time through the normal path,
@@ -3701,24 +3701,26 @@ void Thread::CommitGCStressInstructionUpdate()
         auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
 
+        BYTE* pbDestCodeRW = (BYTE*)DoubleMappedAllocator::Instance()->MapRW(pbDestCode, sizeof(DWORD));
+
 #if defined(TARGET_X86) || defined(TARGET_AMD64)
 
-        *pbDestCode = *pbSrcCode;
+        *pbDestCodeRW = *pbSrcCode;
 
 #elif defined(TARGET_ARM)
 
         if (GetARMInstructionLength(pbDestCode) == 2)
-            *(WORD*)pbDestCode  = *(WORD*)pbSrcCode;
+            *(WORD*)pbDestCodeRW  = *(WORD*)pbSrcCode;
         else
-            *(DWORD*)pbDestCode = *(DWORD*)pbSrcCode;
+            *(DWORD*)pbDestCodeRW = *(DWORD*)pbSrcCode;
 
 #elif defined(TARGET_ARM64)
 
-        *(DWORD*)pbDestCode = *(DWORD*)pbSrcCode;
+        *(DWORD*)pbDestCodeRW = *(DWORD*)pbSrcCode;
 
 #else
 
-        *pbDestCode = *pbSrcCode;
+        *pbDestCodeRW = *pbSrcCode;
 
 #endif
 

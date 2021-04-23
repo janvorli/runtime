@@ -126,7 +126,11 @@ public:
 
     T* GetRW() const
     {
-        _ASSERTE((m_pRX == NULL) || (m_pRW != NULL));
+        //_ASSERTE((m_pRX == NULL) || (m_pRW != NULL));
+        if (!((m_pRX == NULL) || (m_pRW != NULL)))
+        {
+            __debugbreak();
+        }
         return m_pRW;
     }
 
@@ -147,8 +151,14 @@ public:
 
     void UnmapRW()
     {
-        _ASSERTE(m_pRW != m_pRX);
+#ifndef CROSSGEN_COMPILE        
+        //_ASSERTE(m_pRW != m_pRX);
+        if (m_pRW == m_pRX)
+        {
+            __debugbreak();
+        }
         DoubleMappedAllocator::Instance()->UnmapRW((BYTE*)m_pRW - m_headerSize);
+#endif        
         m_pRW = NULL;
     }
 };
@@ -244,6 +254,7 @@ struct TaggedMemAllocPtr
     operator void*() const
     {
         LIMITED_METHOD_CONTRACT;
+        _ASSERTE(m_pMem.GetRW() == m_pMem.GetRX());
         return (void*)(m_dwExtra + (BYTE*)m_pMem.GetRW());
     }
 
@@ -252,6 +263,13 @@ struct TaggedMemAllocPtr
         LIMITED_METHOD_CONTRACT;
         _ASSERTE(m_pMem.GetRX() != NULL);
         return (void*)(m_dwExtra + (BYTE*)m_pMem.GetRX());
+    }
+
+    void* GetRW() const
+    {
+        LIMITED_METHOD_CONTRACT;
+        _ASSERTE(m_pMem.GetRW() != NULL);
+        return (void*)(m_dwExtra + (BYTE*)m_pMem.GetRW());
     }
 
     DoublePtr GetDoublePtr() const
@@ -279,10 +297,20 @@ class DoubleMappedAllocator
         size_t offset;
     };
 
+    struct MappedBlock
+    {
+        MappedBlock* next;
+
+        void* baseRW;
+        size_t size;
+    };
+
     Block* m_firstBlock = NULL;
+    MappedBlock* m_firstMappedBlock = NULL;
     HANDLE m_hSharedMemoryFile = NULL;
-    size_t maxSize = 1024ULL*1024*1024;
+    size_t maxSize = 2048ULL*1024*1024;
     size_t m_freeOffset = 0;
+    CRITSEC_COOKIE m_CriticalSection;
 
     size_t Granularity()
     {
@@ -317,25 +345,87 @@ public:
                  INVALID_HANDLE_VALUE,    // use paging file
                  NULL,                    // default security
                  PAGE_EXECUTE_READWRITE |  SEC_RESERVE,  // read/write/execute access
-                 0,                       // maximum object size (high-order DWORD)
-                 1024 * 1024*1024,               // maximum object size (low-order DWORD)
+                 HIDWORD(maxSize),                       // maximum object size (high-order DWORD)
+                 LODWORD(maxSize),   // maximum object size (low-order DWORD)
                  NULL);    
 
+        m_CriticalSection = ClrCreateCriticalSection(CrstListLock,CrstFlags(CRST_UNSAFE_ANYMODE | CRST_DEBUGGER_THREAD));
+
         return m_hSharedMemoryFile != NULL;    
+    }
+
+    bool AddMappedBlock(void* base, size_t size)
+    {
+//        CRITSEC_Holder csh(m_CriticalSection);
+
+
+        MappedBlock* mappedBlock = (MappedBlock*)malloc(sizeof(MappedBlock));// new (nothrow) MappedBlock();
+        if (mappedBlock == NULL)
+        {
+            return false;
+        }
+
+        mappedBlock->baseRW = base;
+        mappedBlock->size = size;
+        mappedBlock->next = m_firstMappedBlock;
+        m_firstMappedBlock = mappedBlock;
+
+        return true;
+    }
+
+    bool RemoveMappedBlock(void* base)
+    {
+//        CRITSEC_Holder csh(m_CriticalSection);
+
+        MappedBlock* prevMappedBlock = NULL;
+        for (MappedBlock* mappedBlock = m_firstMappedBlock; mappedBlock != NULL; mappedBlock = mappedBlock->next)
+        {
+            if (mappedBlock->baseRW == base)
+            {
+                // found
+                if (prevMappedBlock == NULL)
+                {
+                    m_firstMappedBlock = mappedBlock->next;
+                }
+                else
+                {
+                    prevMappedBlock->next = mappedBlock->next;
+                }
+
+                //delete mappedBlock;
+                free(mappedBlock);
+                return true;
+            }
+
+            prevMappedBlock = mappedBlock;
+        }
+
+        return false;
     }
 
     bool Allocate(size_t size, size_t rwSize, void** ppRX, void** ppRW)
     {
         _ASSERTE((size & (Granularity() - 1)) == 0);
         _ASSERTE((rwSize & (Granularity() - 1)) == 0);
+        CRITSEC_Holder csh(m_CriticalSection);
 
-        if (m_freeOffset + size > maxSize)
+        InterlockedIncrement(&g_allocCalls);
+
+        size_t offset;
+        size_t newFreeOffset;
+
+        do
         {
-            return false;
-        }
+            offset = m_freeOffset;
+            newFreeOffset = offset + size;
 
-        size_t offset = m_freeOffset;
-        m_freeOffset += size;
+            if (newFreeOffset > maxSize)
+            {
+                __debugbreak();
+                return false;
+            }
+        }
+        while (InterlockedCompareExchangeT(&m_freeOffset, newFreeOffset, offset) != offset);
 
         Block* block = new (nothrow) Block();
         if (block == NULL)
@@ -345,14 +435,16 @@ public:
 
         *ppRW = MapViewOfFile(m_hSharedMemoryFile,
                         FILE_MAP_READ | FILE_MAP_WRITE,
-                        offset / ((size_t)1) >> 32,
-                        offset & 0xFFFFFFFFUL,
+                        HIDWORD(offset),
+                        LODWORD(offset),
                         rwSize);
         *ppRX = MapViewOfFile(m_hSharedMemoryFile,
                         FILE_MAP_EXECUTE | FILE_MAP_READ | FILE_MAP_WRITE, // TODO: can we add the write only for reservations that will be for both data and execution, like the loader allocator? Or should we split the initial allocation to two parts - exe and non-exe?
-                        offset / ((size_t)1) >> 32,
-                        offset & 0xFFFFFFFFUL,
+                        HIDWORD(offset),
+                        LODWORD(offset),
                         size);
+
+        AddMappedBlock(*ppRW, rwSize);
 
         block->baseRX = *ppRX;
         block->offset = offset;
@@ -371,14 +463,25 @@ public:
     void* Reserve(size_t size)
     {
         _ASSERTE((size & (Granularity() - 1)) == 0);
+        CRITSEC_Holder csh(m_CriticalSection);
 
-        if (m_freeOffset + size > maxSize)
+        InterlockedIncrement(&g_reserveCalls);
+
+        size_t offset;
+        size_t newFreeOffset;
+
+        do
         {
-            return NULL;
-        }
+            offset = m_freeOffset;
+            newFreeOffset = offset + size;
 
-        size_t offset = m_freeOffset;
-        m_freeOffset += size;
+            if (newFreeOffset > maxSize)
+            {
+                __debugbreak();
+                return false;
+            }
+        }
+        while (InterlockedCompareExchangeT(&m_freeOffset, newFreeOffset, offset) != offset);
 
         Block* block = new (nothrow) Block();
         if (block == NULL)
@@ -408,15 +511,26 @@ public:
 
     void* ReserveAt(void* baseAddressRX, size_t size)
     {
+        CRITSEC_Holder csh(m_CriticalSection);
         _ASSERTE((size & (Granularity() - 1)) == 0);
 
-        if (m_freeOffset + size > maxSize)
-        {
-            return false;
-        }
+        InterlockedIncrement(&g_reserveAtCalls);
 
-        size_t offset = m_freeOffset;
-        m_freeOffset += size;
+        size_t offset;
+        size_t newFreeOffset;
+
+        do
+        {
+            offset = m_freeOffset;
+            newFreeOffset = offset + size;
+
+            if (newFreeOffset > maxSize)
+            {
+                __debugbreak();
+                return false;
+            }
+        }
+        while (InterlockedCompareExchangeT(&m_freeOffset, newFreeOffset, offset) != offset);
 
         Block* block = new (nothrow) Block();
         if (block == NULL)
@@ -452,24 +566,50 @@ public:
 
     #pragma intrinsic(_ReturnAddress)
 
+    static size_t g_allocCalls;
+    static size_t g_reserveCalls;
+    static size_t g_reserveAtCalls;
+    static size_t g_rwMaps;
+    static size_t g_rwUnmaps;
+    static size_t g_failedRwUnmaps;
+    static size_t g_failedRwMaps;
+
     void UnmapRW(void* pRW)
     {
+        CRITSEC_Holder csh(m_CriticalSection);
         _ASSERTE(pRW != NULL);
         //_ASSERTE(pRW < (void*)0x700000000000ULL);
 
-#ifdef _DEBUG
-        // MEMORY_BASIC_INFORMATION mbi;
-        // SIZE_T cbBytes = ClrVirtualQuery(pRW, &mbi, sizeof(mbi));
-        // _ASSERTE(cbBytes);
+//#ifdef _DEBUG
+        MEMORY_BASIC_INFORMATION mbi;
+        SIZE_T cbBytes = ClrVirtualQuery(pRW, &mbi, sizeof(mbi));
+        _ASSERTE(cbBytes);
+        if (cbBytes == 0)
+        {
+            __debugbreak();
+        }
         //printf("UnmapRW: RW=%p, base=%p, size=%p, prot=%08x, state=%08x, type=%08x, caller=%p\n", pRW, (void*)mbi.BaseAddress, (void*)mbi.RegionSize, mbi.Protect, mbi.State, mbi.Type, (void*)_ReturnAddress());
-#endif
+//#endif
         // TODO: Linux will need the full range. So we may need to store all the RW mappings in a separate list (per RX mapping)
+        InterlockedIncrement(&g_rwUnmaps);
         void* unmapAddress = ALIGN_DOWN(pRW, Granularity());
-        UnmapViewOfFile(unmapAddress);
+
+        if (!RemoveMappedBlock(unmapAddress))
+        {
+            __debugbreak();            
+        }
+
+        if (!UnmapViewOfFile(unmapAddress))
+        {
+            InterlockedIncrement(&g_failedRwUnmaps);
+            __debugbreak();
+        }
+
     }
 
     void* MapRW(void* pRX, size_t size)
     {
+        CRITSEC_Holder csh(m_CriticalSection);
         for (Block* b = m_firstBlock; b != NULL; b = b->next)
         {
             if (pRX >= b->baseRX && ((size_t)pRX + size) <= ((size_t)b->baseRX + b->size))
@@ -486,13 +626,17 @@ public:
                                 (b->offset + mapOffset) & 0xFFFFFFFFUL,
                                 mapSize);
 
-                //printf("MapRW: baseRX=%p, RX=%p, mapOffset=%p, size=%p, mapSize=%p\n", b->baseRX, pRX, (void*)mapOffset, (void*)size, (void*)mapSize);
+                //printf("MapRW: baseRX=%p, RX=%p, RW=%p, mapOffset=%p, size=%p, mapSize=%p\n", b->baseRX, pRX, pRW, (void*)mapOffset, (void*)size, (void*)mapSize);
+                InterlockedIncrement(&g_rwMaps);
 
                 if (pRW == NULL)
                 {
                     __debugbreak();
                     return NULL;
                 }
+
+                AddMappedBlock(pRW, mapSize);
+
                 return (void*)((size_t)pRW + (offset - mapOffset));
             }
             else if (pRX >= b->baseRX && pRX < (void*)((size_t)b->baseRX + b->size))
@@ -518,6 +662,7 @@ public:
 #endif        
 //        return NULL;
         // TODO: this is a hack for the preallocated pages that are part of the coreclr module
+        InterlockedIncrement(&g_failedRwMaps);
         return pRX;
     }
 };
@@ -1186,7 +1331,7 @@ public:
 #endif
                                      );
 
-        tmap.m_pMem             = DoublePtr((void*)(((BYTE*)pResult.GetRX()) - dwExtra), (void*)(((BYTE*)pResult.GetRW()) - dwExtra), this);
+        tmap.m_pMem             = DoublePtr((void*)(((BYTE*)pResult.GetRX()) - dwExtra), (void*)(((BYTE*)pResult.GetRW()) - dwExtra), -(int)dwExtra, this);
         tmap.m_dwRequestedSize  = dwRequestedSize + dwExtra;
         tmap.m_pHeap            = this;
         tmap.m_dwExtra          = dwExtra;
@@ -1518,7 +1663,7 @@ class AllocMemHolder
         operator TYPE* ()
         {
             LIMITED_METHOD_CONTRACT;
-            return (TYPE*)(void*)m_value;
+            return (TYPE*)m_value.GetRW();
         }
 
         TYPE* GetRX()

@@ -362,6 +362,7 @@ Precode* Precode::Allocate(PrecodeType t, MethodDesc* pMD,
     DoublePtrT<Precode> pPrecode = pamTracker->Track2(pLoaderAllocator->GetPrecodeHeap()->AllocAlignedMem(size, AlignOf(t)));
     //Precode* pPrecode = (Precode*)pamTracker->Track(pLoaderAllocator->GetPrecodeHeap()->AllocAlignedMem(size, AlignOf(t)));
     pPrecode.GetRW()->Init(t, pMD, pLoaderAllocator, pPrecode.GetRX());
+    pPrecode.UnmapRW();
 
 #ifndef CROSSGEN_COMPILE
     ClrFlushInstructionCache(pPrecode.GetRX(), size);
@@ -578,6 +579,10 @@ TADDR Precode::AllocateTemporaryEntryPoints(MethodDescChunk *  pChunk,
         return NULL;
 #endif
 
+    // if (totalSize == 0x1b8)
+    // {
+    //     __debugbreak();
+    // }
     DoublePtr temporaryEntryPoints = pamTracker->Track2(pLoaderAllocator->GetPrecodeHeap()->AllocAlignedMem(totalSize, AlignOf(t)));
 
 #ifdef HAS_FIXUP_PRECODE_CHUNKS
@@ -600,6 +605,11 @@ TADDR Precode::AllocateTemporaryEntryPoints(MethodDescChunk *  pChunk,
 
         TADDR entryPointRX = (TADDR)temporaryEntryPoints.GetRX();
         TADDR entryPointRW = (TADDR)temporaryEntryPoints.GetRW();
+        // for (int j = 0; j < totalSize; j++)
+        // {
+        //     _ASSERTE(((BYTE*)entryPointRW)[j] == 0);
+        // }
+
         MethodDesc * pMD = pChunk->GetFirstMethodDesc();
         for (int i = 0; i < count; i++)
         {
@@ -629,6 +639,7 @@ TADDR Precode::AllocateTemporaryEntryPoints(MethodDescChunk *  pChunk,
         PerfMap::LogStubs(__FUNCTION__, "PRECODE_FIXUP", (PCODE)temporaryEntryPoints.GetRX(), count * sizeof(FixupPrecode));
 #endif
         ClrFlushInstructionCache((LPVOID)temporaryEntryPoints.GetRX(), count * sizeof(FixupPrecode));
+        temporaryEntryPoints.UnmapRW();
 
         return (TADDR)temporaryEntryPoints.GetRX();
     }

@@ -11397,11 +11397,13 @@ void CEEJitInfo::allocUnwindInfo (
         _ASSERTE(m_usedUnwindInfos > 0);
     }
 
-    PT_RUNTIME_FUNCTION pRuntimeFunction = m_CodeHeader.GetRW()->GetUnwindInfo(m_usedUnwindInfos);
+    PT_RUNTIME_FUNCTION pRuntimeFunction = m_CodeHeader.GetRX()->GetUnwindInfo(m_usedUnwindInfos);
     m_usedUnwindInfos++;
 
     // Make sure that the RUNTIME_FUNCTION is aligned on a DWORD sized boundary
     _ASSERTE(IS_ALIGNED(pRuntimeFunction, sizeof(DWORD)));
+
+    PT_RUNTIME_FUNCTION pRuntimeFunctionRW = (PT_RUNTIME_FUNCTION)DoubleMappedAllocator::Instance()->MapRW(pRuntimeFunction, sizeof(T_RUNTIME_FUNCTION));
 
     UNWIND_INFO * pUnwindInfoRW = (UNWIND_INFO *) &(m_theUnwindBlock.GetRW()[m_usedUnwindSize]);
     UNWIND_INFO * pUnwindInfoRX = (UNWIND_INFO *) &(m_theUnwindBlock.GetRX()[m_usedUnwindSize]);
@@ -11448,13 +11450,18 @@ void CEEJitInfo::allocUnwindInfo (
 
     unsigned unwindInfoDelta = (unsigned) unwindInfoDeltaT;
 
-    RUNTIME_FUNCTION__SetBeginAddress(pRuntimeFunction, currentCodeOffset + startOffset);
+    RUNTIME_FUNCTION__SetBeginAddress(pRuntimeFunctionRW, currentCodeOffset + startOffset);
 
 #ifdef TARGET_AMD64
-    pRuntimeFunction->EndAddress        = currentCodeOffset + endOffset;
+    pRuntimeFunctionRW->EndAddress        = currentCodeOffset + endOffset;
 #endif
 
-    RUNTIME_FUNCTION__SetUnwindInfoAddress(pRuntimeFunction, unwindInfoDelta);
+    RUNTIME_FUNCTION__SetUnwindInfoAddress(pRuntimeFunctionRW, unwindInfoDelta);
+
+    if (pRuntimeFunction != pRuntimeFunctionRW)
+    {
+        DoubleMappedAllocator::Instance()->UnmapRW(pRuntimeFunctionRW);
+    }
 
 #ifdef _DEBUG
     if (funcKind != CORJIT_FUNC_ROOT)
@@ -11463,7 +11470,7 @@ void CEEJitInfo::allocUnwindInfo (
 
         for (ULONG iUnwindInfo = 0; iUnwindInfo < m_usedUnwindInfos - 1; iUnwindInfo++)
         {
-            PT_RUNTIME_FUNCTION pOtherFunction = m_CodeHeader.GetRW()->GetUnwindInfo(iUnwindInfo);
+            PT_RUNTIME_FUNCTION pOtherFunction = m_CodeHeader.GetRX()->GetUnwindInfo(iUnwindInfo);
             _ASSERTE((   RUNTIME_FUNCTION__BeginAddress(pOtherFunction) >= RUNTIME_FUNCTION__EndAddress(pRuntimeFunction, baseAddress)
                      || RUNTIME_FUNCTION__EndAddress(pOtherFunction, baseAddress) <= RUNTIME_FUNCTION__BeginAddress(pRuntimeFunction)));
         }

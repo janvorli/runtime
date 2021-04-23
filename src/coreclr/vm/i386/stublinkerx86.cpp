@@ -5235,7 +5235,9 @@ void StubPrecode::Init(StubPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator
 {
     WRAPPER_NO_CONTRACT;
 
+#ifndef CROSSGEN_COMPILE
     _ASSERTE(this != pPrecodeRX);
+#endif
 
     IN_TARGET_64BIT(m_movR10 = X86_INSTR_MOV_R10_IMM64);   // mov r10, pMethodDesc
     IN_TARGET_32BIT(m_movEAX = X86_INSTR_MOV_EAX_IMM32);   // mov eax, pMethodDesc
@@ -5270,7 +5272,9 @@ void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocat
 {
     WRAPPER_NO_CONTRACT;
 
-    ASSERT(this != pPrecodeRX);
+#ifndef CROSSGEN_COMPILE
+    _ASSERTE(this != pPrecodeRX);
+#endif
 
     m_op   = X86_INSTR_CALL_REL32;       // call PrecodeFixupThunk
     m_type = FixupPrecode::TypePrestub;
@@ -5294,6 +5298,7 @@ void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocat
             *(void**)GetBase() = (BYTE*)pMD - (iMethodDescChunkIndex * MethodDesc::ALIGNMENT);
     }
 
+    MethodDesc* debugMethodDesc = (MethodDesc*)GetMethodDesc();
     _ASSERTE(GetMethodDesc() == (TADDR)pMD);
 
     PCODE target = (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk);
@@ -5388,13 +5393,19 @@ BOOL FixupPrecode::SetTargetInterlocked(TADDR target, TADDR expected)
 
     // TODO: how can we prevent frequent mappings?
     FixupPrecode* pPrecodeRW = (FixupPrecode*)DoubleMappedAllocator::Instance()->MapRW(this, sizeof(FixupPrecode));
-
+#ifdef FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
+    // TODO: where to get the 12?
+    PCODE pDynamicMethodEntryJumpStubRW = (PCODE)DoubleMappedAllocator::Instance()->MapRW((void*)GetDynamicMethodEntryJumpStub(), 12);
+#endif    
     *(INT32*)(&pNewValue[offsetof(FixupPrecode, m_rel32)]) =
 #ifdef FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
         pMD->IsLCGMethod() ?
-            rel32UsingPreallocatedJumpStub(&m_rel32, target, GetDynamicMethodEntryJumpStub(), pPrecodeRW->GetDynamicMethodEntryJumpStub(), true /* emitJump */) :
+            rel32UsingPreallocatedJumpStub(&m_rel32, target, GetDynamicMethodEntryJumpStub(), pDynamicMethodEntryJumpStubRW, true /* emitJump */) :
 #endif // FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
             rel32UsingJumpStub(&m_rel32, target, pMD);
+#ifdef FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
+    DoubleMappedAllocator::Instance()->UnmapRW((void*)pDynamicMethodEntryJumpStubRW);
+#endif    
 
     _ASSERTE(IS_ALIGNED(this, sizeof(INT64)));
 

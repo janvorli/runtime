@@ -890,7 +890,7 @@ EXTERN_C PCODE VirtualMethodFixupWorker(TransitionBlock * pTransitionBlock, CORC
     SIZE_T cb = size; \
     SIZE_T cbAligned = ALIGN_UP(cb, DYNAMIC_HELPER_ALIGNMENT); \
     TaggedMemAllocPtr start = pAllocator->GetDynamicHelpersHeap()->AllocAlignedMem(cbAligned, DYNAMIC_HELPER_ALIGNMENT); \
-    BYTE * pStart = (BYTE *)(void *)start; \
+    BYTE * pStart = (BYTE *)start.GetRW(); \
     BYTE * pStartRX = (BYTE *)start.GetRX(); \
     size_t rxOffset = pStartRX - pStart; \
     BYTE * p = pStart;
@@ -1121,10 +1121,13 @@ PCODE DynamicHelpers::CreateDictionaryLookupHelper(LoaderAllocator * pAllocator,
         GetEEFuncEntryPoint(JIT_GenericHandleMethodWithSlotAndModule) :
         GetEEFuncEntryPoint(JIT_GenericHandleClassWithSlotAndModule));
 
-    GenericHandleArgs * pArgs = (GenericHandleArgs *)(void *)pAllocator->GetDynamicHelpersHeap()->AllocAlignedMem(sizeof(GenericHandleArgs), DYNAMIC_HELPER_ALIGNMENT);
-    pArgs->dictionaryIndexAndSlot = dictionaryIndexAndSlot;
-    pArgs->signature = pLookup->signature;
-    pArgs->module = (CORINFO_MODULE_HANDLE)pModule;
+    TaggedMemAllocPtr mem = pAllocator->GetDynamicHelpersHeap()->AllocAlignedMem(sizeof(GenericHandleArgs), DYNAMIC_HELPER_ALIGNMENT);
+    GenericHandleArgs * pArgs = (GenericHandleArgs *)mem.GetRX();
+    GenericHandleArgs * pArgsRW = (GenericHandleArgs *)mem.GetRW();
+    pArgsRW->dictionaryIndexAndSlot = dictionaryIndexAndSlot;
+    pArgsRW->signature = pLookup->signature;
+    pArgsRW->module = (CORINFO_MODULE_HANDLE)pModule;
+    mem.GetDoublePtr().UnmapRW();
 
     WORD slotOffset = (WORD)(dictionaryIndexAndSlot & 0xFFFF) * sizeof(Dictionary*);
 

@@ -1170,6 +1170,7 @@ void ZapInfo::allocMem(
 
     m_pCode = ZapCodeBlob::NewAlignedBlob(m_pImage, NULL, hotCodeSize, align);
     *hotCodeBlock = m_pCode->GetData();
+    *hotCodeBlockRW = m_pCode->GetData();
 
     if (coldCodeSize != 0)
     {
@@ -1177,6 +1178,7 @@ void ZapInfo::allocMem(
 
         m_pColdCode = ZapCodeBlob::NewAlignedBlob(m_pImage, NULL, coldCodeSize, align);
         *coldCodeBlock = m_pColdCode->GetData();
+        *coldCodeBlockRW = m_pColdCode->GetData();
     }
 
     //
@@ -1199,6 +1201,7 @@ void ZapInfo::allocMem(
         }
         m_pROData = ZapBlobWithRelocs::NewAlignedBlob(m_pImage, NULL, roDataSize, align);
         *roDataBlock = m_pROData->GetData();
+        *roDataBlockRW = m_pROData->GetData();
     }
 
     if (m_pImage->m_stats)

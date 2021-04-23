@@ -1211,10 +1211,12 @@ VTableCallHolder* VirtualCallStubManager::GenerateVTableCallStub(DWORD slot)
     //allocate from the requisite heap and copy the template over it.
     TaggedMemAllocPtr holder = vtable_heap->AllocAlignedMem(VTableCallHolder::GetHolderSize(slot), CODE_SIZE_ALIGN);
 
-    VTableCallHolder * pHolderRW = (VTableCallHolder*)(void*)holder;
+    VTableCallHolder * pHolderRW = (VTableCallHolder*)holder.GetRW();
     VTableCallHolder * pHolderRX = (VTableCallHolder*)holder.GetRX();
 
     pHolderRW->Initialize(slot);
+    holder.GetDoublePtr().UnmapRW();
+
     ClrFlushInstructionCache(pHolderRX->stub(), pHolderRX->stub()->size());
 
     AddToCollectibleVSDRangeList(pHolderRX);
@@ -2765,7 +2767,7 @@ DispatchHolder *VirtualCallStubManager::GenerateDispatchStub(PCODE            ad
     TaggedMemAllocPtr holder = 
         dispatch_heap->AllocAlignedMem(dispatchHolderSize, CODE_SIZE_ALIGN);
 
-    DispatchHolder * holderRW = (DispatchHolder*)(void*)holder;
+    DispatchHolder * holderRW = (DispatchHolder*)holder.GetRW();
     DispatchHolder * holderRX = (DispatchHolder*)holder.GetRX();
 
 #ifdef TARGET_AMD64
@@ -2841,7 +2843,7 @@ DispatchHolder *VirtualCallStubManager::GenerateDispatchStubLong(PCODE          
     TaggedMemAllocPtr holder =
         dispatch_heap->AllocAlignedMem(DispatchHolder::GetHolderSize(DispatchStub::e_TYPE_LONG), CODE_SIZE_ALIGN);
 
-    DispatchHolder * holderRW = (DispatchHolder *)(void*)holder;
+    DispatchHolder * holderRW = (DispatchHolder *)holder.GetRW();
     DispatchHolder * holderRX = (DispatchHolder *)holder.GetRX();
 
     holderRW->Initialize(holderRX, addrOfCode,
@@ -2955,7 +2957,7 @@ ResolveHolder *VirtualCallStubManager::GenerateResolveStub(PCODE            addr
     TaggedMemAllocPtr holder = 
         resolve_heap->AllocAlignedMem(sizeof(ResolveHolder), CODE_SIZE_ALIGN);
 
-    ResolveHolder * holderRW = (ResolveHolder*)(void*)holder;
+    ResolveHolder * holderRW = (ResolveHolder*)holder.GetRW();
     ResolveHolder * holderRX = (ResolveHolder*)holder.GetRX();
 
     holderRW->Initialize(addrOfResolver, addrOfPatcher,
@@ -3004,7 +3006,7 @@ LookupHolder *VirtualCallStubManager::GenerateLookupStub(PCODE addrOfResolver, s
     //allocate from the requisite heap and copy the template over it.
     TaggedMemAllocPtr holder = lookup_heap->AllocAlignedMem(sizeof(LookupHolder), CODE_SIZE_ALIGN);
     //LookupHolder * holder     = (LookupHolder*) (void*) lookup_heap->AllocAlignedMem(sizeof(LookupHolder), CODE_SIZE_ALIGN);
-    LookupHolder * holderRW = (LookupHolder*)(void*)holder;
+    LookupHolder * holderRW = (LookupHolder*)holder.GetRW();
     LookupHolder * holderRX = (LookupHolder*)holder.GetRX();
 
     holderRW->Initialize(addrOfResolver, dispatchToken);

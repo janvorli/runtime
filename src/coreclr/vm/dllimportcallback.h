@@ -179,7 +179,13 @@ public:
         // Ensure method's module is activate in app domain
         m_pMD->EnsureActive();
 
-        m_pUMThunkMarshInfo->RunTimeInit();
+        // TODO: there should be no need to map this as the original should be writeable
+        UMThunkMarshInfo* pUMThunkMarshInfoRW = (UMThunkMarshInfo*)DoubleMappedAllocator::Instance()->MapRW(m_pUMThunkMarshInfo, sizeof(UMThunkMarshInfo));
+        pUMThunkMarshInfoRW->RunTimeInit();
+        if (pUMThunkMarshInfoRW != m_pUMThunkMarshInfo)
+        {
+            DoubleMappedAllocator::Instance()->UnmapRW(pUMThunkMarshInfoRW);
+        }
 
         // Ensure that we have either the managed target or the delegate.
         if (m_pObjectHandle == NULL && m_pManagedTarget == NULL)

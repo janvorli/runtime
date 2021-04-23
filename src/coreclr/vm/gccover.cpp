@@ -491,15 +491,25 @@ void GCCoverageInfo::SprinkleBreakpoints(
 #if (defined(TARGET_X86) || defined(TARGET_AMD64)) && USE_DISASSEMBLER
 
     BYTE * codeStart = (BYTE *)pCode;
+    BYTE * codeStartRW;
+    size_t writeableOffset;
 
     memcpy(saveAddr, codeStart, codeSize);
 
     // For prejitted code we have to remove the write-protect on the code page
     if (fZapped)
     {
+        // TODO: double mapping for zapped too
         DWORD oldProtect;
         ClrVirtualProtect(codeStart, codeSize, PAGE_EXECUTE_READWRITE, &oldProtect);
+        codeStartRW = codeStart;
     }
+    else
+    {
+        codeStartRW = (BYTE*)DoubleMappedAllocator::Instance()->MapRW(codeStart, codeSize);
+    }
+
+    writeableOffset = codeStartRW - codeStart;
 
     PBYTE cur;
     BYTE* codeEnd = codeStart + codeSize;
@@ -579,7 +589,7 @@ void GCCoverageInfo::SprinkleBreakpoints(
             if(safePointDecoder.IsSafePoint((UINT32)(cur + len - codeStart + regionOffsetAdj)))
 #endif
             {
-               *cur = INTERRUPT_INSTR_CALL;        // return value.  May need to protect
+               *(cur + writeableOffset) = INTERRUPT_INSTR_CALL;        // return value.  May need to protect
             }
             break;
 
@@ -614,7 +624,7 @@ void GCCoverageInfo::SprinkleBreakpoints(
 
         if (prevDirectCallTargetMD != 0)
         {
-            ReplaceInstrAfterCall(cur, prevDirectCallTargetMD);
+            ReplaceInstrAfterCall(cur + writeableOffset, prevDirectCallTargetMD);
         }
 
         // For fully interruptible code, we end up whacking every instruction
@@ -625,7 +635,7 @@ void GCCoverageInfo::SprinkleBreakpoints(
         _ASSERTE(FitsIn<DWORD>(dwRelOffset));
         if (codeMan->IsGcSafe(&codeInfo, static_cast<DWORD>(dwRelOffset)))
         {
-            *cur = INTERRUPT_INSTR;
+            *(cur + writeableOffset) = INTERRUPT_INSTR;
         }
 
 #ifdef TARGET_X86
@@ -633,7 +643,7 @@ void GCCoverageInfo::SprinkleBreakpoints(
         // our unwinding logic works there.
         if (codeMan->IsInPrologOrEpilog((cur - codeStart) + (DWORD)regionOffsetAdj, gcInfoToken, NULL))
         {
-            *cur = INTERRUPT_INSTR;
+            *(cur + writeableOffset) = INTERRUPT_INSTR;
         }
 #endif
 
@@ -659,6 +669,11 @@ void GCCoverageInfo::SprinkleBreakpoints(
     assert(codeSize > 0);
     if ((regionOffsetAdj==0) && (*codeStart != INTERRUPT_INSTR))
         doingEpilogChecks = false;
+
+    if (!fZapped)
+    {
+        DoubleMappedAllocator::Instance()->UnmapRW(codeStartRW);
+    }
 
 #elif defined(TARGET_ARM) || defined(TARGET_ARM64)
     //Save the method code from hotRegion

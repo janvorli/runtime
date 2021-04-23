@@ -1877,6 +1877,7 @@ CodeFragmentHeap::CodeFragmentHeap(LoaderAllocator * pAllocator, StubCodeBlockKi
 void CodeFragmentHeap::AddBlock(DoublePtr pMem, size_t dwSize)
 {
     LIMITED_METHOD_CONTRACT;
+//    printf("Adding block %p, 0x%zx\n", pMem.GetRX(), dwSize);
     FreeBlock * pBlock = (FreeBlock *)pMem.GetRW();
     pBlock->m_pNext = m_pFreeBlocks;
     pBlock->m_dwSize = dwSize;
@@ -1887,6 +1888,7 @@ void CodeFragmentHeap::RemoveBlock(FreeBlock ** ppBlock, FreeBlock* pBlockRW)
 {
     LIMITED_METHOD_CONTRACT;
     FreeBlock * pBlock = *ppBlock;
+//    printf("Removing block %p, 0x%zx\n", pBlock, pBlock->m_dwSize);
     *ppBlock = pBlock->m_pNext;
     ZeroMemory(pBlockRW, sizeof(FreeBlock));
 }
@@ -1943,7 +1945,13 @@ TaggedMemAllocPtr CodeFragmentHeap::RealAllocAlignedMem(size_t  dwRequestedSize
         dwSize = (*ppBestFit)->m_dwSize;
 
         FreeBlock ** ppBestFitRW = (FreeBlock **)DoubleMappedAllocator::Instance()->MapRW(ppBestFit, sizeof(FreeBlock));
-        RemoveBlock(ppBestFitRW ? ppBestFitRW : ppBestFit, (FreeBlock*)pMem.GetRW());
+        RemoveBlock(ppBestFitRW, (FreeBlock*)pMem.GetRW());
+
+        for (int i = 0; i < dwSize; i++)
+        {
+            _ASSERTE(((BYTE*)pMem.GetRW())[i] == 0);
+        }
+
         if (ppBestFitRW != ppBestFit)
         {
             DoubleMappedAllocator::Instance()->UnmapRW(ppBestFitRW);
@@ -1955,6 +1963,10 @@ TaggedMemAllocPtr CodeFragmentHeap::RealAllocAlignedMem(size_t  dwRequestedSize
         if (dwSize < SMALL_BLOCK_THRESHOLD)
             dwSize = 4 * SMALL_BLOCK_THRESHOLD;
         pMem = ExecutionManager::GetEEJitManager()->allocCodeFragmentBlock(dwSize, dwAlignment, m_pAllocator, m_kind);
+        for (int i = 0; i < dwSize; i++)
+        {
+            _ASSERTE(((BYTE*)pMem.GetRW())[i] == 0);
+        }
     }
 
     SIZE_T dwExtra = (BYTE *)ALIGN_UP(pMem.GetRX(), dwAlignment) - (BYTE *)pMem.GetRX();
@@ -1967,6 +1979,11 @@ TaggedMemAllocPtr CodeFragmentHeap::RealAllocAlignedMem(size_t  dwRequestedSize
         DoublePtr block((BYTE*)pMem.GetRX() + dwExtra + dwRequestedSize, (BYTE*)pMem.GetRW() + dwExtra + dwRequestedSize, NULL);
         AddBlock(block, dwRemaining);
         dwSize -= dwRemaining;
+    }
+
+    for (int i = 0; i < dwSize; i++)
+    {
+        _ASSERTE(((BYTE*)pMem.GetRW())[i] == 0);
     }
 
     TaggedMemAllocPtr tmap;
@@ -2012,10 +2029,22 @@ void CodeFragmentHeap::RealBackoutMem(DoublePtr pMem
         if ((BYTE *)pFreeBlock == (BYTE *)pMem.GetRX() + dwSize)
         {
             // pMem = pMem;
+//            printf("Coalescing blocks %p, 0x%zx and %p, 0x%zx\n", pMem.GetRX(), dwSize, pFreeBlock, pFreeBlock->m_dwSize);
             dwSize += pFreeBlock->m_dwSize;
             // TODO: we should move the list away from the exec memory, this is just crazy to do on every manipulation
             FreeBlock** ppFreeBlockRW = (FreeBlock**)DoubleMappedAllocator::Instance()->MapRW(ppFreeBlock, sizeof(FreeBlock*));
-            RemoveBlock(ppFreeBlockRW ? ppFreeBlockRW : ppFreeBlock, (FreeBlock*)((BYTE *)pMem.GetRW() + dwSize));
+
+            FreeBlock* pFreeBlockRW = (FreeBlock*)DoubleMappedAllocator::Instance()->MapRW(pFreeBlock, sizeof(FreeBlock));
+            RemoveBlock(ppFreeBlockRW, pFreeBlockRW);
+            if (pFreeBlockRW != pFreeBlock)
+            {
+                DoubleMappedAllocator::Instance()->UnmapRW(pFreeBlockRW);
+            }
+            else
+            {
+                __debugbreak();
+            }
+            
             if (ppFreeBlockRW != ppFreeBlock)
             {
                 DoubleMappedAllocator::Instance()->UnmapRW(ppFreeBlockRW);
@@ -2025,14 +2054,15 @@ void CodeFragmentHeap::RealBackoutMem(DoublePtr pMem
         else
         if ((BYTE *)pFreeBlock + pFreeBlock->m_dwSize == (BYTE *)pMem.GetRX())
         {
-            // TODO: we can maybe use smaller chunk?
-            // TODO: Unmap the pMem
-            // It actually seems this is wrong. The RemoveBlock will need to get both the RW and RX
-            FreeBlock* pFreeBlockRW = (FreeBlock*)DoubleMappedAllocator::Instance()->MapRW(pFreeBlock, pFreeBlock->m_dwSize);
+//            printf("Coalescing blocks %p, 0x%zx and %p, 0x%zx\n", pFreeBlock, pFreeBlock->m_dwSize, pMem.GetRX(), dwSize);
+            // The previous pMem writeable memory is not needed anymore, it is now in the middle of a coalesced block
+            pMem.UnmapRW();
+            // We only need to map the FreeBlock as RW
+            FreeBlock* pFreeBlockRW = (FreeBlock*)DoubleMappedAllocator::Instance()->MapRW(pFreeBlock, sizeof(FreeBlock));
             pMem = DoublePtr(pFreeBlock, pFreeBlockRW, NULL);
             dwSize += pFreeBlock->m_dwSize;
             FreeBlock** ppFreeBlockRW = (FreeBlock**)DoubleMappedAllocator::Instance()->MapRW(ppFreeBlock, sizeof(FreeBlock*));
-            RemoveBlock(ppFreeBlockRW ? ppFreeBlockRW : ppFreeBlock, pFreeBlockRW);
+            RemoveBlock(ppFreeBlockRW, pFreeBlockRW);
             if (ppFreeBlockRW != ppFreeBlock)
             {
                 DoubleMappedAllocator::Instance()->UnmapRW(ppFreeBlockRW);
@@ -2044,6 +2074,8 @@ void CodeFragmentHeap::RealBackoutMem(DoublePtr pMem
     }
 
     AddBlock(pMem, dwSize);
+
+    pMem.UnmapRW();
 }
 #endif // !CROSSGEN_COMPILE
 
@@ -2769,6 +2801,16 @@ DoublePtrT<CodeHeader> EEJitManager::allocCode(MethodDesc* pMD, size_t blockSize
 #ifdef FEATURE_EH_FUNCLETS
         pCodeHdrRW->SetNumberOfUnwindInfos(nUnwindInfos);
         *pModuleBase = (TADDR)pCodeHeap;
+#endif
+
+#ifdef USE_INDIRECT_CODEHEADER
+        // TODO:  try to do this in a cleaner way. The setter methods above are indirections via the real code header, so we need to write
+        // through the writeable one. But the readable one needs to be stored there after.
+        // Actually, it would be beneficial to keep the real code header as RW until at least CEEJitInfo::allocUnwindInfo to avoid remapping
+        if (requestInfo.IsDynamicDomain())
+        {
+            pCodeHdrRW->SetRealCodeHeader((BYTE*)pCode.GetRX() + ALIGN_UP(blockSize, sizeof(void*)));
+        }
 #endif
 
         NibbleMapSet(pCodeHeap, (TADDR)pCode.GetRX(), TRUE);
@@ -3614,7 +3656,10 @@ void EEJitManager::DeleteCodeHeap(HeapList *pHeapList)
             _ASSERTE(pHp != NULL);  // should always find the HeapList
             pHpNext = pHp->GetNext();
         }
-        pHp->SetNext(pHeapList->GetNext());
+
+        HeapList* pHpRW = (HeapList*)DoubleMappedAllocator::Instance()->MapRW(pHp, sizeof(HeapList));
+        pHpRW->SetNext(pHeapList->GetNext());
+        DoubleMappedAllocator::Instance()->UnmapRW(pHpRW);
     }
 
     DeleteEEFunctionTable((PVOID)pHeapList);
@@ -5192,6 +5237,7 @@ PCODE ExecutionManager::getNextJumpStub(MethodDesc* pMD, PCODE target,
                 // We will update curBlock->m_used at "DONE"
                 size_t blockSize = sizeof(JumpStubBlockHeader) + (size_t) numJumpStubs * BACK_TO_BACK_JUMP_ALLOCATE_SIZE;
                 curBlockRW = (JumpStubBlockHeader *)DoubleMappedAllocator::Instance()->MapRW(curBlockRX, blockSize);
+                block = DoublePtrT<JumpStubBlockHeader>(curBlockRX, curBlockRW, NULL);
                 jumpStubRW = (BYTE *)((TADDR)jumpStubRX + (TADDR)curBlockRW - (TADDR)curBlockRX);
                 goto DONE;
             }

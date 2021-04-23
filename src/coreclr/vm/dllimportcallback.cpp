@@ -320,7 +320,7 @@ DoublePtrT<UMEntryThunk> UMEntryThunk::CreateUMEntryThunk()
     if (pThunkRX == NULL)
     {
         TaggedMemAllocPtr m = SystemDomain::GetGlobalLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(sizeof(UMEntryThunk)));
-        p = DoublePtrT<UMEntryThunk>((UMEntryThunk*)m.GetRX(), (UMEntryThunk*)(void*)m, NULL);
+        p = DoublePtrT<UMEntryThunk>((UMEntryThunk*)m.GetRX(), (UMEntryThunk*)m.GetRW(), NULL);
     }
     else
     {

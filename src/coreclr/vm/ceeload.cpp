@@ -6329,15 +6329,19 @@ void Module::FixupVTables()
                         (UINT_PTR)&(pPointers[iMethod]), pMD->m_pszDebugMethodName, pMD));
 
                     TaggedMemAllocPtr umEntryThunk = (GetDllThunkHeap()->AllocAlignedMem(sizeof(UMEntryThunk), CODE_SIZE_ALIGN)); // UMEntryThunk contains code
-                    UMEntryThunk *pUMEntryThunkRW =  (UMEntryThunk*)(void*)umEntryThunk;
+                    UMEntryThunk *pUMEntryThunkRW =  (UMEntryThunk*)umEntryThunk.GetRW();
                     UMEntryThunk *pUMEntryThunkRX =  (UMEntryThunk*)umEntryThunk.GetRX();
                     FillMemory(pUMEntryThunkRW, sizeof(*pUMEntryThunkRW), 0);
 
-                    UMThunkMarshInfo *pUMThunkMarshInfo = (UMThunkMarshInfo*)(void*)(GetThunkHeap()->AllocAlignedMem(sizeof(UMThunkMarshInfo), CODE_SIZE_ALIGN));
-                    FillMemory(pUMThunkMarshInfo, sizeof(*pUMThunkMarshInfo), 0);
+                    TaggedMemAllocPtr mem = (GetThunkHeap()->AllocAlignedMem(sizeof(UMThunkMarshInfo), CODE_SIZE_ALIGN));
+                    UMThunkMarshInfo *pUMThunkMarshInfo = (UMThunkMarshInfo*)mem.GetRX();
+                    UMThunkMarshInfo *pUMThunkMarshInfoRW = (UMThunkMarshInfo*)mem.GetRW();
+                    FillMemory(pUMThunkMarshInfoRW, sizeof(*pUMThunkMarshInfo), 0);
 
-                    pUMThunkMarshInfo->LoadTimeInit(pMD);
+                    pUMThunkMarshInfoRW->LoadTimeInit(pMD);
                     pUMEntryThunkRW->LoadTimeInit(pUMEntryThunkRX, NULL, NULL, pUMThunkMarshInfo, pMD);
+
+                    mem.GetDoublePtr().UnmapRW();
 
                     umEntryThunk.GetDoublePtr().UnmapRW();
 

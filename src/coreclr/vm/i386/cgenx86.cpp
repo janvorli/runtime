@@ -1376,7 +1376,7 @@ EXTERN_C PVOID STDCALL VirtualMethodFixupWorker(Object * pThisPtr,  CORCOMPILE_V
     SIZE_T cb = size; \
     SIZE_T cbAligned = ALIGN_UP(cb, DYNAMIC_HELPER_ALIGNMENT); \
     TaggedMemAllocPtr start = pAllocator->GetDynamicHelpersHeap()->AllocAlignedMem(cbAligned, DYNAMIC_HELPER_ALIGNMENT); \
-    BYTE * pStart = (BYTE *)(void *)start; \
+    BYTE * pStart = (BYTE *)start.GetRW(); \
     BYTE * pStartRX = (BYTE *)start.GetRX(); \
     size_t rxOffset = pStartRX - pStart; \
     BYTE * p = pStart;

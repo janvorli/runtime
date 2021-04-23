@@ -883,6 +883,12 @@ public:
             MODE_ANY;
         } CONTRACTL_END;
 
+        // TODO: this is a hack, it needs to be mapped / unmapped around the code generation only
+        if (!GetCodeHeader().IsNull())
+        {
+            GetCodeHeader().UnmapRW();
+        }
+
         if (m_pOffsetMapping != NULL)
             delete [] ((BYTE*) m_pOffsetMapping);
 

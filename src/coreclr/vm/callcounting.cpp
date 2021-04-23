@@ -284,6 +284,7 @@ const CallCountingStub *CallCountingManager::CallCountingStubAllocator::Allocate
                 stub = new(allocationAddressHolder) CallCountingStubShort(remainingCallCountCell, targetForMethod);
                 stub = (CallCountingStub*)allocationAddressHolder.GetRX();
                 allocationAddressHolder.GetDoublePtr().UnmapRW();
+                allocationAddressHolder.SuppressRelease();
                 break;
             }
         }
@@ -292,7 +293,7 @@ const CallCountingStub *CallCountingManager::CallCountingStubAllocator::Allocate
         sizeInBytes = sizeof(CallCountingStubLong);
         TaggedMemAllocPtr allocation = heap->AllocAlignedMem(sizeInBytes, CallCountingStub::Alignment);
         //void *allocationAddress = (void *)heap->AllocAlignedMem(sizeInBytes, CallCountingStub::Alignment);
-        void *allocationAddressRW = (void *)allocation;
+        void *allocationAddressRW = allocation.GetRW();
         stub = new(allocationAddressRW) CallCountingStubLong(remainingCallCountCell, targetForMethod);
         stub = (CallCountingStub*)allocation.GetRX();
         allocation.GetDoublePtr().UnmapRW();

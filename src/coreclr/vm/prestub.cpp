@@ -2320,7 +2320,10 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT, CallerGCMode callerGCMo
         {
             Stub* pStubRW = (Stub*)DoubleMappedAllocator::Instance()->MapRW(pStub, sizeof(Stub));
             pStubRW->DecRef();
-            DoubleMappedAllocator::Instance()->UnmapRW(pStubRW);
+            if (pStubRW != pStub)
+            {
+                DoubleMappedAllocator::Instance()->UnmapRW(pStubRW);
+            }
         }
         else if (pStub->HasExternalEntryPoint())
         {
@@ -2328,7 +2331,10 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT, CallerGCMode callerGCMo
             // need to free the Stub allocation now.
             Stub* pStubRW = (Stub*)DoubleMappedAllocator::Instance()->MapRW(pStub, sizeof(Stub));
             pStubRW->DecRef();
-            DoubleMappedAllocator::Instance()->UnmapRW(pStubRW);
+            if (pStubRW != pStub)
+            {
+                DoubleMappedAllocator::Instance()->UnmapRW(pStubRW);
+            }
         }
     }
 

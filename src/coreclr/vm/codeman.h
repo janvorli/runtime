@@ -303,11 +303,22 @@ public:
     }
     void SetEHInfo(PTR_EE_ILEXCEPTION pEH)
     {
-        pRealCodeHeader->phdrJitEHInfo = pEH;
+        RealCodeHeader* pRealCodeHeaderRW = (RealCodeHeader*)DoubleMappedAllocator::Instance()->MapRW(pRealCodeHeader, sizeof(RealCodeHeader));
+        pRealCodeHeaderRW->phdrJitEHInfo = pEH;
+        if (pRealCodeHeader != pRealCodeHeaderRW)
+        {
+            DoubleMappedAllocator::Instance()->UnmapRW(pRealCodeHeaderRW);
+        }
     }
     void SetGCInfo(PTR_BYTE pGC)
     {
-        pRealCodeHeader->phdrJitGCInfo = pGC;
+        // TODO: Can we avoid this?
+        RealCodeHeader* pRealCodeHeaderRW = (RealCodeHeader*)DoubleMappedAllocator::Instance()->MapRW(pRealCodeHeader, sizeof(RealCodeHeader));
+        pRealCodeHeaderRW->phdrJitGCInfo = pGC;
+        if (pRealCodeHeader != pRealCodeHeaderRW)
+        {
+            DoubleMappedAllocator::Instance()->UnmapRW(pRealCodeHeaderRW);
+        }
     }
     void SetMethodDesc(PTR_MethodDesc pMD)
     {
