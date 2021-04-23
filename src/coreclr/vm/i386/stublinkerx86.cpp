@@ -5394,8 +5394,12 @@ BOOL FixupPrecode::SetTargetInterlocked(TADDR target, TADDR expected)
     // TODO: how can we prevent frequent mappings?
     FixupPrecode* pPrecodeRW = (FixupPrecode*)DoubleMappedAllocator::Instance()->MapRW(this, sizeof(FixupPrecode));
 #ifdef FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
-    // TODO: where to get the 12?
-    PCODE pDynamicMethodEntryJumpStubRW = (PCODE)DoubleMappedAllocator::Instance()->MapRW((void*)GetDynamicMethodEntryJumpStub(), 12);
+    PCODE pDynamicMethodEntryJumpStubRW = NULL;
+    if (pMD->IsLCGMethod())
+    {
+        // TODO: where to get the 12?
+        pDynamicMethodEntryJumpStubRW = (PCODE)DoubleMappedAllocator::Instance()->MapRW((void*)GetDynamicMethodEntryJumpStub(), 12);
+    }
 #endif    
     *(INT32*)(&pNewValue[offsetof(FixupPrecode, m_rel32)]) =
 #ifdef FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
@@ -5404,7 +5408,10 @@ BOOL FixupPrecode::SetTargetInterlocked(TADDR target, TADDR expected)
 #endif // FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
             rel32UsingJumpStub(&m_rel32, target, pMD);
 #ifdef FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
-    DoubleMappedAllocator::Instance()->UnmapRW((void*)pDynamicMethodEntryJumpStubRW);
+    if (pDynamicMethodEntryJumpStubRW != NULL)
+    {
+        DoubleMappedAllocator::Instance()->UnmapRW((void*)pDynamicMethodEntryJumpStubRW);
+    }
 #endif    
 
     _ASSERTE(IS_ALIGNED(this, sizeof(INT64)));

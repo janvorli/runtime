@@ -28,7 +28,7 @@ namespace SuperPMICollection
     internal class Global
     {
         // Arguments to the program. These should not be touched by Initialize(), as they are set earlier than that.
-        internal static bool SkipCleanup = true;          // Should we skip all cleanup? That is, should we keep all temporary files? Useful for debugging.
+        internal static bool SkipCleanup = false;          // Should we skip all cleanup? That is, should we keep all temporary files? Useful for debugging.
 
         // Computed values based on the environment and platform.
         internal static bool IsWindows { get; private set; }

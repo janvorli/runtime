@@ -1661,6 +1661,10 @@ void MyICJI::allocMem(uint32_t           hotCodeSize,   /* IN */
     else
         *roDataBlock = nullptr;
 
+    *hotCodeBlockRW = *hotCodeBlock;
+    *coldCodeBlockRW = *coldCodeBlock;
+    *roDataBlockRW = *roDataBlock;
+
     jitInstance->mc->cr->recAllocMem(hotCodeSize, coldCodeSize, roDataSize, xcptnsCount, flag, hotCodeBlock,
                                      coldCodeBlock, roDataBlock);
 }
