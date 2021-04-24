@@ -6329,23 +6329,22 @@ void Module::FixupVTables()
                         (UINT_PTR)&(pPointers[iMethod]), pMD->m_pszDebugMethodName, pMD));
 
                     TaggedMemAllocPtr umEntryThunk = (GetDllThunkHeap()->AllocAlignedMem(sizeof(UMEntryThunk), CODE_SIZE_ALIGN)); // UMEntryThunk contains code
-                    UMEntryThunk *pUMEntryThunkRW =  (UMEntryThunk*)umEntryThunk.GetRW();
-                    UMEntryThunk *pUMEntryThunkRX =  (UMEntryThunk*)umEntryThunk.GetRX();
+                    UMEntryThunk *pUMEntryThunk =  (UMEntryThunk*)(void*)umEntryThunk;
+                    UMEntryThunk *pUMEntryThunkRW = (UMEntryThunk*)DoubleMappedAllocator::Instance()->MapRW(pUMEntryThunk, sizeof(UMEntryThunk));
                     FillMemory(pUMEntryThunkRW, sizeof(*pUMEntryThunkRW), 0);
 
                     TaggedMemAllocPtr mem = (GetThunkHeap()->AllocAlignedMem(sizeof(UMThunkMarshInfo), CODE_SIZE_ALIGN));
-                    UMThunkMarshInfo *pUMThunkMarshInfo = (UMThunkMarshInfo*)mem.GetRX();
-                    UMThunkMarshInfo *pUMThunkMarshInfoRW = (UMThunkMarshInfo*)mem.GetRW();
+                    UMThunkMarshInfo *pUMThunkMarshInfo = (UMThunkMarshInfo*)(void*)mem;
+                    UMThunkMarshInfo *pUMThunkMarshInfoRW = (UMThunkMarshInfo*)DoubleMappedAllocator::Instance()->MapRW(pUMThunkMarshInfo, sizeof(UMThunkMarshInfo));
                     FillMemory(pUMThunkMarshInfoRW, sizeof(*pUMThunkMarshInfo), 0);
 
                     pUMThunkMarshInfoRW->LoadTimeInit(pMD);
-                    pUMEntryThunkRW->LoadTimeInit(pUMEntryThunkRX, NULL, NULL, pUMThunkMarshInfo, pMD);
+                    pUMEntryThunkRW->LoadTimeInit(pUMEntryThunk, NULL, NULL, pUMThunkMarshInfo, pMD);
 
-                    mem.GetDoublePtr().UnmapRW();
+                    DoubleMappedAllocator::Instance()->UnmapRW(pUMThunkMarshInfoRW);
+                    DoubleMappedAllocator::Instance()->UnmapRW(pUMEntryThunkRW);
 
-                    umEntryThunk.GetDoublePtr().UnmapRW();
-
-                    SetTargetForVTableEntry(hInstThis, (BYTE **)&pPointers[iMethod], (BYTE *)pUMEntryThunkRX->GetCode());
+                    SetTargetForVTableEntry(hInstThis, (BYTE **)&pPointers[iMethod], (BYTE *)pUMEntryThunk->GetCode());
 
                     pData->MarkMethodFixedUp(iFixup, iMethod);
                 }

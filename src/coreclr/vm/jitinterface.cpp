@@ -11132,7 +11132,7 @@ void CEEJitInfo::BackoutJitData(EEJitManager * jitMgr)
 
     DoublePtrT<CodeHeader> pCodeHeader = GetCodeHeader();
     if (!pCodeHeader.IsNull())
-        jitMgr->RemoveJitData(pCodeHeader, m_GCinfo_len, m_EHinfo_len);
+        jitMgr->RemoveJitData(pCodeHeader.GetRX(), m_GCinfo_len, m_EHinfo_len);
 }
 
 /*********************************************************************/
@@ -12278,12 +12278,18 @@ void CEEJitInfo::allocMem (
             hotCodeSize + coldCodeSize, roDataSize, totalSize.Value(), flag, GetClrInstanceId());
     }
 
-    m_CodeHeader = m_jitManager->allocCode(m_pMethodBeingCompiled, totalSize.Value(), GetReserveForJumpStubs(), flag
+    
+    CodeHeader* pCodeHeader = m_jitManager->allocCode(m_pMethodBeingCompiled, totalSize.Value(), GetReserveForJumpStubs(), flag
 #ifdef FEATURE_EH_FUNCLETS
                                            , m_totalUnwindInfos
                                            , &m_moduleBase
 #endif
                                            );
+
+    // TODO: is the totalSize.Value the correct one?
+    CodeHeader* pCodeHeaderRW = (CodeHeader*)DoubleMappedAllocator::Instance()->MapRW(pCodeHeader, totalSize.Value() + sizeof(CodeHeader));
+    m_CodeHeader = DoublePtrT<CodeHeader>(pCodeHeader, pCodeHeaderRW, NULL);
+
     // TODO: store the m_CodeHeader as double pointer and release the memory all at once after the JIT writes the code?
     // Seems we will need that unless the other stuff allocated from this memory like the GC info is accessed out of the 
     // method that calls the allocMem.

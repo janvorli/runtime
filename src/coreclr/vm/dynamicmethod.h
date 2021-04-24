@@ -280,11 +280,11 @@ private:
     LoaderAllocator*m_pAllocator;
 
 public:
-    static DoublePtrT<HeapList> CreateCodeHeap(CodeHeapRequestInfo *pInfo, EEJitManager *pJitManager);
+    static HeapList *CreateCodeHeap(CodeHeapRequestInfo *pInfo, EEJitManager *pJitManager);
 
 private:
     HostCodeHeap(EEJitManager *pJitManager);
-    DoublePtrT<HeapList> InitializeHeapList(CodeHeapRequestInfo *pInfo);
+    HeapList *InitializeHeapList(CodeHeapRequestInfo *pInfo);
     TrackAllocation* AllocFromFreeList(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs);
     void AddToFreeList(TrackAllocation *pBlockToInsert, TrackAllocation *pBlockToInsertRW);
 
@@ -292,7 +292,7 @@ private:
 
 public:
     // Space for header is reserved immediately before. It is not included in size.
-    virtual DoublePtr AllocMemForCode_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs) DAC_EMPTY_RET(DoublePtr::Null());
+    virtual void *AllocMemForCode_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs) DAC_EMPTY_RET(NULL);
 
     virtual ~HostCodeHeap() DAC_EMPTY();
 

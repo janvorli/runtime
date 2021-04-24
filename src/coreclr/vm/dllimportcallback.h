@@ -133,7 +133,7 @@ private:
 #endif
 
 public:
-    static DoublePtrT<UMEntryThunk> CreateUMEntryThunk();
+    static UMEntryThunk *CreateUMEntryThunk();
     static VOID FreeUMEntryThunk(UMEntryThunk* p);
 
 #ifndef DACCESS_COMPILE

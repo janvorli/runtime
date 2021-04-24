@@ -1232,10 +1232,11 @@ LPVOID COMDelegate::ConvertToCallback(OBJECTREF pDelegateObj)
             _ASSERTE(pUMThunkMarshInfo != NULL);
             _ASSERTE(pUMThunkMarshInfo == pClass->m_pUMThunkMarshInfo);
 
-            //pUMEntryThunk = UMEntryThunk::CreateUMEntryThunk();
-            DoublePtrT<UMEntryThunk> thunk = UMEntryThunk::CreateUMEntryThunk();
+            pUMEntryThunk = UMEntryThunk::CreateUMEntryThunk();
+            UMEntryThunk* pUMEntryThunkRW = (UMEntryThunk*)DoubleMappedAllocator::Instance()->MapRW(pUMEntryThunk, sizeof(UMEntryThunk));
+
             Holder<UMEntryThunk *, DoNothing, UMEntryThunk::FreeUMEntryThunk> umHolder;
-            umHolder.Assign(thunk.GetRX());
+            umHolder.Assign(pUMEntryThunk);
 
             // multicast. go thru Invoke
             OBJECTHANDLE objhnd = GetAppDomain()->CreateLongWeakHandle(pDelegate);
@@ -1245,23 +1246,21 @@ LPVOID COMDelegate::ConvertToCallback(OBJECTREF pDelegateObj)
             PCODE pManagedTargetForDiagnostics = (pDelegate->GetMethodPtrAux() != NULL) ? pDelegate->GetMethodPtrAux() : pDelegate->GetMethodPtr();
 
             // MethodDesc is passed in for profiling to know the method desc of target
-            thunk.GetRW()->LoadTimeInit(
-                thunk.GetRX(),
+            pUMEntryThunkRW->LoadTimeInit(
+                pUMEntryThunk,
                 pManagedTargetForDiagnostics,
                 objhnd,
                 pUMThunkMarshInfo, pInvokeMeth);
 
-            
+            DoubleMappedAllocator::Instance()->UnmapRW(pUMEntryThunkRW);
 
-            if (!pInteropInfo->SetUMEntryThunk(thunk.GetRX()))
+            if (!pInteropInfo->SetUMEntryThunk(pUMEntryThunk))
             {
                 pUMEntryThunk = (UMEntryThunk*)pInteropInfo->GetUMEntryThunk();
             }
             else
             {
                 umHolder.SuppressRelease();
-                pUMEntryThunk = thunk.GetRX();
-                thunk.UnmapRW();
 
                 // Insert the delegate handle / UMEntryThunk* into the hash
                 LPVOID key = (LPVOID)pUMEntryThunk;

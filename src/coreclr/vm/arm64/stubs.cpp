@@ -1855,8 +1855,8 @@ void StubLinkerCPU::EmitCallManagedMethod(MethodDesc *pMD, BOOL fTailCall)
     SIZE_T cb = size; \
     SIZE_T cbAligned = ALIGN_UP(cb, DYNAMIC_HELPER_ALIGNMENT); \
     TaggedMemAllocPtr start = pAllocator->GetDynamicHelpersHeap()->AllocAlignedMem(cbAligned, DYNAMIC_HELPER_ALIGNMENT); \
-    BYTE * pStart = (BYTE *)start.GetRW(); \
-    BYTE * pStartRX = (BYTE *)start.GetRX(); \
+    BYTE * pStartRX = (BYTE *)(void*)start; \
+    BYTE * pStart = (BYTE *)DoubleMappedAllocator::Instance()->MapRW(pStartRX, cbAligned); \
     size_t rxOffset = pStartRX - pStart; \
     BYTE * p = pStart;
 
@@ -1864,7 +1864,7 @@ void StubLinkerCPU::EmitCallManagedMethod(MethodDesc *pMD, BOOL fTailCall)
     _ASSERTE(pStart + cb == p); \
     while (p < pStart + cbAligned) { *(DWORD*)p = 0xBADC0DF0; p += 4; }\
     ClrFlushInstructionCache(pStartRX, cbAligned); \
-    start.GetDoublePtr().UnmapRW(); \
+    DoubleMappedAllocator::Instance()->UnmapRW(pStart); \
     return (PCODE)pStartRX
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
 

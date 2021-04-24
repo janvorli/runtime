@@ -205,7 +205,7 @@ class ILoaderHeapBackout
 #endif
 
 public:
-    virtual void RealBackoutMem(DoublePtr pMem
+    virtual void RealBackoutMem(void *pMem
                         , size_t dwSize
 #ifdef _DEBUG
                         , __in __in_z const char *szFile
@@ -226,7 +226,7 @@ struct TaggedMemAllocPtr
 {
     // Note: For AllocAlignedMem blocks, m_pMem and m_dwRequestedSize are the actual values to pass
     // to BackoutMem. Do not add "m_dwExtra"
-    DoublePtr    m_pMem;                //Pointer to AllocMem'd block (needed to pass back to BackoutMem)
+    void        *m_pMem;                //Pointer to AllocMem'd block (needed to pass back to BackoutMem)
     size_t       m_dwRequestedSize;     //Requested allocation size (needed to pass back to BackoutMem)
 
     ILoaderHeapBackout  *m_pHeap;          //The heap that alloc'd the block (needed to know who to call BackoutMem on)
@@ -254,27 +254,7 @@ struct TaggedMemAllocPtr
     operator void*() const
     {
         LIMITED_METHOD_CONTRACT;
-        _ASSERTE(m_pMem.GetRW() == m_pMem.GetRX());
-        return (void*)(m_dwExtra + (BYTE*)m_pMem.GetRW());
-    }
-
-    void* GetRX() const
-    {
-        LIMITED_METHOD_CONTRACT;
-        _ASSERTE(m_pMem.GetRX() != NULL);
-        return (void*)(m_dwExtra + (BYTE*)m_pMem.GetRX());
-    }
-
-    void* GetRW() const
-    {
-        LIMITED_METHOD_CONTRACT;
-        _ASSERTE(m_pMem.GetRW() != NULL);
-        return (void*)(m_dwExtra + (BYTE*)m_pMem.GetRW());
-    }
-
-    DoublePtr GetDoublePtr() const
-    {
-        return m_pMem;
+        return (void*)(m_dwExtra + (BYTE*)m_pMem);
     }
 
     template < typename T >
@@ -998,13 +978,13 @@ protected:
     // get careless, and end up reading from memory that it doesn't own - but since it will be
     // reading some other allocation's vtable, no crash will occur.  By keeping a gap between
     // allocations, it is more likely that these errors will be encountered.
-    DoublePtr UnlockedAllocMem(size_t dwSize
+    void *UnlockedAllocMem(size_t dwSize
 #ifdef _DEBUG
                           ,__in __in_z const char *szFile
                           ,int  lineNum
 #endif
                           );
-    DoublePtr UnlockedAllocMem_NoThrow(size_t dwSize
+    void *UnlockedAllocMem_NoThrow(size_t dwSize
 #ifdef _DEBUG
                                    ,__in __in_z const char *szFile
                                    ,int  lineNum
@@ -1036,7 +1016,7 @@ protected:
     // behind the scenes.
     //
     //
-    DoublePtr UnlockedAllocAlignedMem(size_t  dwRequestedSize
+    void *UnlockedAllocAlignedMem(size_t  dwRequestedSize
                                  ,size_t  dwAlignment
                                  ,size_t *pdwExtra
 #ifdef _DEBUG
@@ -1045,7 +1025,7 @@ protected:
 #endif
                                  );
 
-    DoublePtr UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSize
+    void *UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSize
                                          ,size_t  dwAlignment
                                          ,size_t *pdwExtra
 #ifdef _DEBUG
@@ -1058,7 +1038,7 @@ protected:
     // This frees memory allocated by UnlockAllocMem. It's given this horrible name to emphasize
     // that it's purpose is for error path leak prevention purposes. You shouldn't
     // use LoaderHeap's as general-purpose alloc-free heaps.
-    void UnlockedBackoutMem(DoublePtr pMem
+    void UnlockedBackoutMem(void *pMem
                           , size_t dwSize
 #ifdef _DEBUG
                           , __in __in_z const char *szFile
@@ -1092,7 +1072,7 @@ public:
 #endif
 
 protected:
-    DoublePtr UnlockedAllocMemForCode_NoThrow(size_t dwHeaderSize, size_t dwCodeSize, DWORD dwCodeAlignment, size_t dwReserveForJumpStubs);
+    void *UnlockedAllocMemForCode_NoThrow(size_t dwHeaderSize, size_t dwCodeSize, DWORD dwCodeAlignment, size_t dwReserveForJumpStubs);
 
     void UnlockedSetReservedRegion(BYTE* dwReservedRegionAddress, SIZE_T dwReservedRegionSize, BOOL fReleaseMemory);
 };
@@ -1206,7 +1186,7 @@ public:
 
         if(dwSize.IsOverflow()) {
             TaggedMemAllocPtr tmap;
-            tmap.m_pMem             = DoublePtr(NULL, NULL, NULL);
+            tmap.m_pMem             = NULL;
             tmap.m_dwRequestedSize  = dwSize.Value();
             tmap.m_pHeap            = this;
             tmap.m_dwExtra          = 0;
@@ -1235,7 +1215,7 @@ private:
         auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
 
-        DoublePtr pResult;
+        void *pResult;
         TaggedMemAllocPtr tmap;
 
         CRITSEC_Holder csh(m_CriticalSection);
@@ -1266,7 +1246,7 @@ private:
     {
         WRAPPER_NO_CONTRACT;
 
-        DoublePtr pResult;
+        void *pResult;
         TaggedMemAllocPtr tmap;
 
         CRITSEC_Holder csh(m_CriticalSection);
@@ -1319,7 +1299,7 @@ public:
 
 
         TaggedMemAllocPtr tmap;
-        DoublePtr pResult;
+        void *pResult;
         size_t dwExtra;
 
         pResult = UnlockedAllocAlignedMem(dwRequestedSize
@@ -1331,7 +1311,7 @@ public:
 #endif
                                      );
 
-        tmap.m_pMem             = DoublePtr((void*)(((BYTE*)pResult.GetRX()) - dwExtra), (void*)(((BYTE*)pResult.GetRW()) - dwExtra), -(int)dwExtra, this);
+        tmap.m_pMem             = (void*)(((BYTE*)pResult) - dwExtra);
         tmap.m_dwRequestedSize  = dwRequestedSize + dwExtra;
         tmap.m_pHeap            = this;
         tmap.m_dwExtra          = dwExtra;
@@ -1358,7 +1338,7 @@ public:
 
 
         TaggedMemAllocPtr tmap;
-        DoublePtr pResult;
+        void *pResult;
         size_t dwExtra;
 
         pResult = UnlockedAllocAlignedMem_NoThrow(dwRequestedSize
@@ -1370,9 +1350,9 @@ public:
 #endif
                                             );
 
-        _ASSERTE(!(pResult.IsNull() && dwExtra != 0));
+        _ASSERTE(!(pResult == NULL && dwExtra != 0));
 
-        tmap.m_pMem             = DoublePtr((void*)(((BYTE*)pResult.GetRX()) - dwExtra), (void*)(((BYTE*)pResult.GetRW()) - dwExtra), this);
+        tmap.m_pMem             = (void*)(((BYTE*)pResult) - dwExtra);
         tmap.m_dwRequestedSize  = dwRequestedSize + dwExtra;
         tmap.m_pHeap            = this;
         tmap.m_dwExtra          = dwExtra;
@@ -1389,7 +1369,7 @@ public:
     // This frees memory allocated by AllocMem. It's given this horrible name to emphasize
     // that it's purpose is for error path leak prevention purposes. You shouldn't
     // use LoaderHeap's as general-purpose alloc-free heaps.
-    void RealBackoutMem(DoublePtr pMem
+    void RealBackoutMem(void *pMem
                         , size_t dwSize
 #ifdef _DEBUG
                         , __in __in_z const char *szFile
@@ -1469,7 +1449,7 @@ public:
 #endif // DACCESS_COMPILE
 
 public:
-    DoublePtr RealAllocMem(size_t dwSize
+    void *RealAllocMem(size_t dwSize
 #ifdef _DEBUG
                        ,__in __in_z const char *szFile
                        ,int  lineNum
@@ -1478,7 +1458,7 @@ public:
     {
         WRAPPER_NO_CONTRACT;
 
-        DoublePtr pResult;
+        void *pResult;
 
         pResult = UnlockedAllocMem(dwSize
 #ifdef _DEBUG
@@ -1489,7 +1469,7 @@ public:
         return pResult;
     }
 
-    DoublePtr RealAllocMem_NoThrow(size_t dwSize
+    void *RealAllocMem_NoThrow(size_t dwSize
 #ifdef _DEBUG
                                ,__in __in_z const char *szFile
                                ,int  lineNum
@@ -1498,7 +1478,7 @@ public:
     {
         WRAPPER_NO_CONTRACT;
 
-        DoublePtr pResult;
+        void *pResult;
 
         pResult = UnlockedAllocMem_NoThrow(dwSize
 #ifdef _DEBUG
@@ -1511,7 +1491,7 @@ public:
 
 
 public:
-    DoublePtr AllocMemForCode_NoThrow(size_t dwHeaderSize, size_t dwCodeSize, DWORD dwCodeAlignment, size_t dwReserveForJumpStubs)
+    void *AllocMemForCode_NoThrow(size_t dwHeaderSize, size_t dwCodeSize, DWORD dwCodeAlignment, size_t dwReserveForJumpStubs)
     {
         WRAPPER_NO_CONTRACT;
         return UnlockedAllocMemForCode_NoThrow(dwHeaderSize, dwCodeSize, dwCodeAlignment, dwReserveForJumpStubs);
@@ -1567,7 +1547,7 @@ class AllocMemHolder
         {
             LIMITED_METHOD_CONTRACT;
 
-            m_value.m_pMem = DoublePtr::Null();
+            m_value.m_pMem = NULL;
             m_value.m_dwRequestedSize = 0;
             m_value.m_pHeap = 0;
             m_value.m_dwExtra = 0;
@@ -1603,7 +1583,7 @@ class AllocMemHolder
         ~AllocMemHolder()
         {
             WRAPPER_NO_CONTRACT;
-            if (m_fAcquired && !m_value.m_pMem.IsNull())
+            if (m_fAcquired && m_value.m_pMem)
             {
                 m_value.m_pHeap->RealBackoutMem(m_value.m_pMem,
                                                 m_value.m_dwRequestedSize
@@ -1627,7 +1607,7 @@ class AllocMemHolder
         {
             WRAPPER_NO_CONTRACT;
             // However, prevent repeated assignments as that would leak.
-            _ASSERTE(m_value.m_pMem.IsNull() && !m_fAcquired);
+            _ASSERTE(m_value.m_pMem == NULL && !m_fAcquired);
             m_value = value;
             m_fAcquired = TRUE;
         }
@@ -1663,18 +1643,7 @@ class AllocMemHolder
         operator TYPE* ()
         {
             LIMITED_METHOD_CONTRACT;
-            return (TYPE*)m_value.GetRW();
-        }
-
-        TYPE* GetRX()
-        {
-            LIMITED_METHOD_CONTRACT;
-            return (TYPE*)m_value.GetRX();
-        }
-
-        DoublePtrT<TYPE> GetDoublePtr()
-        {
-            return DoublePtrT<TYPE>(m_value.GetDoublePtr());
+            return (TYPE*)(void*)m_value;
         }
 
     public:
@@ -1726,8 +1695,7 @@ class AllocMemTracker
         //
         // If Track fails due to an OOM allocating node space, it will backout the loaderheap block before returning.
         void* Track(TaggedMemAllocPtr tmap);
-        DoublePtr Track2(TaggedMemAllocPtr tmap);
-        DoublePtr Track_NoThrow(TaggedMemAllocPtr tmap);
+        void* Track_NoThrow(TaggedMemAllocPtr tmap);
 
         void SuppressRelease();
 

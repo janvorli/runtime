@@ -453,7 +453,7 @@ public:
 
     // Alloc the specified numbers of bytes for code. Returns NULL if the request does not fit
     // Space for header is reserved immediately before. It is not included in size.
-    virtual DoublePtr AllocMemForCode_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs) = 0;
+    virtual void *AllocMemForCode_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs) = 0;
 
 #ifdef DACCESS_COMPILE
     virtual void EnumMemoryRegions(CLRDataEnumMemoryFlags flags) = 0;
@@ -525,7 +525,7 @@ private:
     LoaderCodeHeap();
 
 public:
-    static DoublePtrT<HeapList> CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap *pJitMetaHeap);
+    static HeapList *CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap *pJitMetaHeap);
 
 public:
     virtual ~LoaderCodeHeap()
@@ -533,7 +533,7 @@ public:
         WRAPPER_NO_CONTRACT;
     }
 
-    virtual DoublePtr AllocMemForCode_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs) DAC_EMPTY_RET(DoublePtr::Null());
+    virtual void *AllocMemForCode_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs) DAC_EMPTY_RET(NULL);
 
 #ifdef DACCESS_COMPILE
     virtual void EnumMemoryRegions(CLRDataEnumMemoryFlags flags)
@@ -682,7 +682,7 @@ class CodeFragmentHeap : public ILoaderHeapBackout
 
     Crst                m_CritSec;
 
-    void AddBlock(DoublePtr pMem, size_t dwSize);
+    void AddBlock(void *pMem, size_t dwSize);
     void RemoveBlock(FreeBlock ** ppBlock, FreeBlock* pBlockRW);
 
 public:
@@ -697,7 +697,7 @@ public:
 #endif
                                          );
 
-    virtual void RealBackoutMem(DoublePtr pMem
+    virtual void RealBackoutMem(void *pMem
                         , size_t dwSize
 #ifdef _DEBUG
                         , __in __in_z const char *szFile
@@ -971,13 +971,13 @@ public:
     GCInfoToken         GetGCInfoToken(const METHODTOKEN& MethodToken);
 #endif // !CROSSGEN_COMPILE
 #if !defined DACCESS_COMPILE && !defined CROSSGEN_COMPILE
-    void                RemoveJitData(DoublePtrT<CodeHeader> pCHdr, size_t GCinfo_len, size_t EHinfo_len);
+    void                RemoveJitData(CodeHeader* pCHdr, size_t GCinfo_len, size_t EHinfo_len);
     void                Unload(LoaderAllocator* pAllocator);
     void                CleanupCodeHeaps();
 
     BOOL                LoadJIT();
 
-    DoublePtrT<CodeHeader> allocCode(MethodDesc* pFD, size_t blockSize, size_t reserveForJumpStubs, CorJitAllocMemFlag flag
+    CodeHeader *allocCode(MethodDesc* pFD, size_t blockSize, size_t reserveForJumpStubs, CorJitAllocMemFlag flag
 #ifdef FEATURE_EH_FUNCLETS
                                   , UINT nUnwindInfos
                                   , TADDR * pModuleBase
@@ -985,12 +985,12 @@ public:
                                   );
     BYTE *              allocGCInfo(CodeHeader* pCodeHeader, DWORD blockSize, size_t * pAllocationSize);
     EE_ILEXCEPTION*     allocEHInfo(CodeHeader* pCodeHeader, unsigned numClauses, size_t * pAllocationSize);
-    DoublePtrT<JumpStubBlockHeader> allocJumpStubBlock(MethodDesc* pMD, DWORD numJumps,
+    JumpStubBlockHeader* allocJumpStubBlock(MethodDesc* pMD, DWORD numJumps,
                                             BYTE * loAddr, BYTE * hiAddr,
                                             LoaderAllocator *pLoaderAllocator,
                                             bool throwOnOutOfMemoryWithinRange);
 
-    DoublePtr           allocCodeFragmentBlock(size_t blockSize, unsigned alignment, LoaderAllocator *pLoaderAllocator, StubCodeBlockKind kind);
+    void *allocCodeFragmentBlock(size_t blockSize, unsigned alignment, LoaderAllocator *pLoaderAllocator, StubCodeBlockKind kind);
 #endif // !DACCESS_COMPILE && !CROSSGEN_COMPILE
 
     static CodeHeader * GetCodeHeader(const METHODTOKEN& MethodToken);
@@ -1055,7 +1055,7 @@ private :
 #ifndef CROSSGEN_COMPILE
     HeapList*   NewCodeHeap(CodeHeapRequestInfo *pInfo, DomainCodeHeapList *pADHeapList);
     bool        CanUseCodeHeap(CodeHeapRequestInfo *pInfo, HeapList *pCodeHeap);
-    DoublePtr   allocCodeRaw(CodeHeapRequestInfo *pInfo,
+    void*       allocCodeRaw(CodeHeapRequestInfo *pInfo,
                              size_t header, size_t blockSize, unsigned align,
                              HeapList ** ppCodeHeap);
 

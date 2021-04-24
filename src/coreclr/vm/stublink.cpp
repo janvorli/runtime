@@ -2229,25 +2229,22 @@ DoublePtrT<Stub> Stub::NewStub(PTR_VOID pCode, DWORD flags)
 
     size_t totalSize = size.Value();
 
-    BYTE *pBlockRW;
-    BYTE *pBlockRX;
+    BYTE *pBlock;
 
     if (pHeap == NULL)
     {
         // TODO: It seems this is a case when there is no code in the stub itself, thus no stub RW release would be needed.
         // Maybe store the allocator in the DoublePtr and have it NULL for this case.
 #ifndef TARGET_UNIX
-        pBlockRW = new BYTE[totalSize]; //new (executable) BYTE[totalSize];
+        pBlock = new BYTE[totalSize]; //new (executable) BYTE[totalSize];
 #else
-        pBlockRW = new BYTE[totalSize];
+        pBlock = new BYTE[totalSize];
 #endif
-        pBlockRX = pBlockRW;
     }
     else
     {
         TaggedMemAllocPtr ptr = pHeap->AllocAlignedMem(totalSize, CODE_SIZE_ALIGN);
-        pBlockRW = (BYTE*)ptr.GetRW();
-        pBlockRX = (BYTE*)ptr.GetRX();
+        pBlock = (BYTE*)(void*)ptr;
         flags |= NEWSTUB_FL_LOADERHEAP;
     }
 
@@ -2255,8 +2252,8 @@ DoublePtrT<Stub> Stub::NewStub(PTR_VOID pCode, DWORD flags)
         (sizeof(Stub) + ((flags & NEWSTUB_FL_EXTERNAL) ? sizeof(PTR_PCODE) : numCodeBytes));
 
     // Make sure that the payload of the stub is aligned
-    Stub* pStubRW = (Stub*)(pBlockRW + stubPayloadOffset);
-    Stub* pStubRX = (Stub*)(pBlockRX + stubPayloadOffset);
+    Stub* pStubRX = (Stub*)(pBlock + stubPayloadOffset);
+    Stub* pStubRW = (Stub*)DoubleMappedAllocator::Instance()->MapRW(pStubRX, sizeof(Stub));
 
     pStubRW->SetupStub(
             numCodeBytes,
@@ -2266,7 +2263,7 @@ DoublePtrT<Stub> Stub::NewStub(PTR_VOID pCode, DWORD flags)
 #endif
             );
 
-    _ASSERTE((BYTE *)pStubRX->GetAllocationBase() == pBlockRX);
+    _ASSERTE((BYTE *)pStubRX->GetAllocationBase() == pBlock);
 
     return DoublePtrT<Stub>(pStubRX, pStubRW, pHeap);
 }
