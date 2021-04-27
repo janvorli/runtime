@@ -66,6 +66,65 @@ StubCacheBase::~StubCacheBase()
 
 
 
+class StubHolder3
+{
+    DoublePtrT<Stub> m_stub;
+public:
+    
+    StubHolder3& operator=(DoublePtrT<Stub> stub)
+    {
+        m_stub.GetRW()->DecRef();
+        m_stub.UnmapRW();
+        m_stub = stub;
+        return *this;
+    }
+
+    StubHolder3() : m_stub(NULL, NULL, NULL)
+    {
+
+    }
+
+    StubHolder3(DoublePtrT<Stub> stub) : m_stub(stub)
+    {
+
+    }
+
+    ~StubHolder3()
+    {
+        if (m_stub.GetRW() != NULL)
+        {
+            m_stub.GetRW()->DecRef();
+            m_stub.UnmapRW();
+        }
+    }
+
+    void SuppressRelease()
+    {
+        // TODO
+    }
+
+    Stub* GetRW()
+    {
+        return m_stub.GetRW();
+    }
+    Stub* GetRX()
+    {
+        return m_stub.GetRX();
+    }
+    DoublePtrT<Stub> Extract()
+    {
+        DoublePtrT<Stub> result = m_stub;
+        m_stub = DoublePtrT<Stub>();
+        return result;
+    } 
+
+    bool IsNull()
+    {
+        return m_stub.IsNull();
+    }   
+};
+
+
 //---------------------------------------------------------
 // Returns the equivalent hashed Stub, creating a new hash
 // entry if necessary. If the latter, will call out to CompileStub.
@@ -113,11 +172,7 @@ DoublePtrT<Stub> StubCacheBase::Canonicalize(const BYTE * pRawStub)
     // and link up the stub.
     CodeLabel *plabel = psl->EmitNewCodeLabel();
     psl->EmitBytes(pRawStub, Length(pRawStub));
-    StubHolder<Stub> pstub;
-    // TODO: cleanup this ugly mess
-    DoublePtrT<Stub> stub = sl.Link(m_heap);
-    pstub = stub.GetRX(); // TODO: this should get the writeable one. Or rather, make the StubHolder hold the double pointer
-    pstubRW = stub.GetRW();
+    StubHolder3 pstub = sl.Link(m_heap);;
 
     UINT32 offset = psl->GetLabelOffset(plabel);
 
@@ -133,10 +188,10 @@ DoublePtrT<Stub> StubCacheBase::Canonicalize(const BYTE * pRawStub)
         {
             if (bNew)
             {
-                phe->m_pStub = pstub;
+                phe->m_pStub = pstub.GetRX();
                 phe->m_offsetOfRawStub = (UINT16)offset;
 
-                AddStub(pRawStub, pstub);
+                AddStub(pRawStub, pstub.GetRX());
             }
             else
             {
@@ -151,13 +206,13 @@ DoublePtrT<Stub> StubCacheBase::Canonicalize(const BYTE * pRawStub)
 
                 //Use the previously created stub
                 // This will DecRef the new stub for us.
-                stub.UnmapRW();
                 // TODO: Free the pstub!
-                pstub = phe->m_pStub;
-                pstubRW = (Stub*)DoubleMappedAllocator::Instance()->MapRW(pstub, sizeof(Stub));
+
+                Stub* pStubRW = (Stub*)DoubleMappedAllocator::Instance()->MapRW(phe->m_pStub, sizeof(Stub));
+                pstub = DoublePtrT<Stub>(phe->m_pStub, pstubRW, NULL);
             }
             // IncRef so that caller has firm ownership of stub.
-            pstubRW->IncRef();
+            pstub.GetRW()->IncRef();
         }
     }
 
@@ -170,8 +225,7 @@ DoublePtrT<Stub> StubCacheBase::Canonicalize(const BYTE * pRawStub)
         COMPlusThrowOM();
     }
 
-    pstub.SuppressRelease();
-    RETURN DoublePtrT<Stub>(pstub, pstubRW, NULL);
+    RETURN pstub.Extract();
 }
 
 

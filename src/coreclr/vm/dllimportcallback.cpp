@@ -68,7 +68,7 @@ public:
         return pThunk;
     }
 
-    void AddToList(UMEntryThunk *pThunk)
+    void AddToList(UMEntryThunk *pThunk, UMEntryThunk *pThunkRW)
     {
         CONTRACTL
         {
@@ -89,11 +89,13 @@ public:
         }
         else
         {
-            m_pTail->m_pNextFreeThunk = pThunk;
+            UMEntryThunk* pTailThunkRW = (UMEntryThunk*)DoubleMappedAllocator::Instance()->MapRW(m_pTail, sizeof(UMEntryThunk));
+            pTailThunkRW->m_pNextFreeThunk = pThunk;
+            DoubleMappedAllocator::Instance()->UnmapRW(pTailThunkRW);
             m_pTail = pThunk;
         }
 
-        pThunk->m_pNextFreeThunk = NULL;
+        pThunkRW->m_pNextFreeThunk = NULL;
 
         ++m_count;
     }
@@ -332,7 +334,8 @@ void UMEntryThunk::Terminate()
     }
     CONTRACTL_END;
 
-    m_code.Poison();
+    UMEntryThunk* pThunkRW = (UMEntryThunk*)DoubleMappedAllocator::Instance()->MapRW(this, sizeof(UMEntryThunk));
+    pThunkRW->m_code.Poison();
 
     if (GetObjectHandle())
     {
@@ -341,10 +344,10 @@ void UMEntryThunk::Terminate()
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
 
         DestroyLongWeakHandle(GetObjectHandle());
-        m_pObjectHandle = 0;
+        pThunkRW->m_pObjectHandle = 0;
     }
-
-    s_thunkFreeList.AddToList(this);
+    s_thunkFreeList.AddToList(this, pThunkRW);
+    DoubleMappedAllocator::Instance()->UnmapRW(pThunkRW);
 }
 
 VOID UMEntryThunk::FreeUMEntryThunk(UMEntryThunk* p)

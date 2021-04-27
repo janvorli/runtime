@@ -2242,9 +2242,9 @@ static size_t GetDefaultReserveForJumpStubs(size_t codeHeapSize)
 #endif
 }
 
-HeapList *LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap *pJitMetaHeap)
+HeapList* LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap *pJitMetaHeap)
 {
-    CONTRACT(HeapList*) {
+    CONTRACT(HeapList *) {
         THROWS;
         GC_NOTRIGGER;
         POSTCONDITION((RETVAL != NULL) || !pInfo->getThrowOnOutOfMemoryWithinRange());
@@ -2272,7 +2272,6 @@ HeapList *LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
     BYTE * pBaseAddr = NULL;
     DWORD dwSizeAcquiredFromInitialBlock = 0;
     bool fAllocatedFromEmergencyJumpStubReserve = false;
-    int baseAddrSource = 0;
 
     pBaseAddr = (BYTE *)pInfo->m_pAllocator->GetCodeHeapInitialBlock(loAddr, hiAddr, (DWORD)initialRequestSize, &dwSizeAcquiredFromInitialBlock);
     if (pBaseAddr != NULL)
@@ -2290,11 +2289,9 @@ HeapList *LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
             if (!pInfo->getThrowOnOutOfMemoryWithinRange() && PEDecoder::GetForceRelocs())
                 RETURN NULL;
 #endif
-            // TODO: how to handle allocation in range with the double mapped allocator? 
             pBaseAddr = ClrVirtualAllocWithinRange(loAddr, hiAddr,
                                                    reserveSize, MEM_RESERVE, PAGE_NOACCESS);
 
-            baseAddrSource = 2;
             if (!pBaseAddr)
             {
                 // Conserve emergency jump stub reserve until when it is really needed
@@ -2302,7 +2299,6 @@ HeapList *LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
                     RETURN NULL;
 #ifdef TARGET_AMD64
                 pBaseAddr = ExecutionManager::GetEEJitManager()->AllocateFromEmergencyJumpStubReserve(loAddr, hiAddr, &reserveSize);
-                baseAddrSource = 3;
                 if (!pBaseAddr)
                     ThrowOutOfMemoryWithinRange();
                 fAllocatedFromEmergencyJumpStubReserve = true;
@@ -2314,8 +2310,6 @@ HeapList *LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
         else
         {
             DoubleMappedAllocator::Instance()->Allocate(reserveSize, reserveSize, (void**)&pBaseAddr, (void**)&pBaseAddrRW);
-            baseAddrSource = 4;
-            //pBaseAddr = ClrVirtualAllocExecutable(reserveSize, MEM_RESERVE, PAGE_NOACCESS);
             if (!pBaseAddr)
                 ThrowOutOfMemory();
         }
@@ -2326,7 +2320,7 @@ HeapList *LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
 
 
     // this first allocation is critical as it sets up correctly the loader heap info
-    HeapList* pHp = (HeapList*)pCodeHeap->m_LoaderHeap.AllocMem(sizeof(HeapList));
+    HeapList *pHp = (HeapList*)pCodeHeap->m_LoaderHeap.AllocMem(sizeof(HeapList));
     // TODO: it seems this memory needs to be only RW, so what should we do with it? Can we teach the heap to allocate pure RW memory?
     // or should we waste RX mapping space? Or actually, the RX mapping is probably needed to ensure relative distance from the code? So this should
     // stay double mapped forever?
@@ -2376,7 +2370,7 @@ void *LoaderCodeHeap::AllocMemForCode_NoThrow(size_t header, size_t size, DWORD 
 
     if (m_cbMinNextPad > (SSIZE_T)header) header = m_cbMinNextPad;
 
-    void *p = m_LoaderHeap.AllocMemForCode_NoThrow(header, size, alignment, reserveForJumpStubs);
+    void * p = m_LoaderHeap.AllocMemForCode_NoThrow(header, size, alignment, reserveForJumpStubs);
     if (p == NULL)
         return NULL;
 
@@ -2573,11 +2567,11 @@ HeapList* EEJitManager::NewCodeHeap(CodeHeapRequestInfo *pInfo, DomainCodeHeapLi
     RETURN(pHpRX);
 }
 
-void *EEJitManager::allocCodeRaw(CodeHeapRequestInfo *pInfo,
+void* EEJitManager::allocCodeRaw(CodeHeapRequestInfo *pInfo,
                                  size_t header, size_t blockSize, unsigned align,
                                  HeapList ** ppCodeHeap)
 {
-    CONTRACT(void*) {
+    CONTRACT(void *) {
         THROWS;
         GC_NOTRIGGER;
         PRECONDITION(m_CodeHeapCritSec.OwnedByCurrentThread());
@@ -2586,8 +2580,8 @@ void *EEJitManager::allocCodeRaw(CodeHeapRequestInfo *pInfo,
 
     pInfo->setRequestSize(header+blockSize+(align-1)+pInfo->getReserveForJumpStubs());
 
-    void *      mem           = NULL;
-    HeapList * pCodeHeap      = NULL;
+    void *      mem         = NULL;
+    HeapList * pCodeHeap    = NULL;
     DomainCodeHeapList *pList = NULL;
 
     // Avoid going through the full list in the common case - try to use the most recently used codeheap
@@ -2648,8 +2642,7 @@ void *EEJitManager::allocCodeRaw(CodeHeapRequestInfo *pInfo,
             mem = (pCodeHeap->pHeap)->AllocMemForCode_NoThrow(header, blockSize, align, pInfo->getReserveForJumpStubs());
             if (mem == NULL)
                 ThrowOutOfMemory();
-            // TODO: this is not needed
-            _ASSERTE(mem != NULL);
+            _ASSERTE(mem);
         }
     }
 
@@ -2665,7 +2658,7 @@ void *EEJitManager::allocCodeRaw(CodeHeapRequestInfo *pInfo,
     // Record the pCodeHeap value into ppCodeHeap
     *ppCodeHeap = pCodeHeap;
 
-    _ASSERTE((TADDR)mem >= pCodeHeap->startAddress);
+    _ASSERTE((TADDR) mem >= pCodeHeap->startAddress);
 
     if (((TADDR)mem)+blockSize > (TADDR)pCodeHeap->endAddress)
     {
@@ -2678,14 +2671,14 @@ void *EEJitManager::allocCodeRaw(CodeHeapRequestInfo *pInfo,
     RETURN(mem);
 }
 
-CodeHeader *EEJitManager::allocCode(MethodDesc* pMD, size_t blockSize, size_t reserveForJumpStubs, CorJitAllocMemFlag flag
+CodeHeader* EEJitManager::allocCode(MethodDesc* pMD, size_t blockSize, size_t reserveForJumpStubs, CorJitAllocMemFlag flag
 #ifdef FEATURE_EH_FUNCLETS
                                     , UINT nUnwindInfos
                                     , TADDR * pModuleBase
 #endif
                                     )
 {
-    CONTRACT(CodeHeader*) {
+    CONTRACT(CodeHeader *) {
         THROWS;
         GC_NOTRIGGER;
         POSTCONDITION(CheckPointer(RETVAL));
@@ -2721,7 +2714,7 @@ CodeHeader *EEJitManager::allocCode(MethodDesc* pMD, size_t blockSize, size_t re
 
     SIZE_T totalSize = blockSize;
 
-    CodeHeader* pCodeHdr;
+    CodeHeader * pCodeHdr = NULL;
     
     CodeHeapRequestInfo requestInfo(pMD);
 #if defined(FEATURE_JIT_PITCHING)
@@ -2751,22 +2744,22 @@ CodeHeader *EEJitManager::allocCode(MethodDesc* pMD, size_t blockSize, size_t re
 
         HeapList *pCodeHeap = NULL;
 
-        void *pCode = allocCodeRaw(&requestInfo, sizeof(CodeHeader), totalSize, alignment, &pCodeHeap);
+        TADDR pCode = (TADDR) allocCodeRaw(&requestInfo, sizeof(CodeHeader), totalSize, alignment, &pCodeHeap);
 
         _ASSERTE(pCodeHeap);
 
         if (pMD->IsLCGMethod())
         {
-            pMD->AsDynamicMethodDesc()->GetLCGMethodResolver()->m_recordCodePointer = (void*)pCode;
+            pMD->AsDynamicMethodDesc()->GetLCGMethodResolver()->m_recordCodePointer = (void*) pCode;
         }
 
-        _ASSERTE(IS_ALIGNED((TADDR)pCode, alignment));
+        _ASSERTE(IS_ALIGNED(pCode, alignment));
 
         // Initialize the CodeHeader *BEFORE* we publish this code range via the nibble
         // map so that we don't have to harden readers against uninitialized data.
         // However because we hold the lock, this initialization should be fast and cheap!
 
-        pCodeHdr = (CodeHeader *)pCode - 1;
+        pCodeHdr = ((CodeHeader *)pCode) - 1;
 
         CodeHeader* pCodeHdrRW = (CodeHeader*)DoubleMappedAllocator::Instance()->MapRW(pCodeHdr, sizeof(CodeHeader));
 
@@ -3059,12 +3052,12 @@ EE_ILEXCEPTION* EEJitManager::allocEHInfo(CodeHeader* pCodeHeader, unsigned numC
     return(pCodeHeader->GetEHInfo());
 }
 
-JumpStubBlockHeader* EEJitManager::allocJumpStubBlock(MethodDesc* pMD, DWORD numJumps,
+JumpStubBlockHeader * EEJitManager::allocJumpStubBlock(MethodDesc* pMD, DWORD numJumps,
                                                         BYTE * loAddr, BYTE * hiAddr,
                                                         LoaderAllocator *pLoaderAllocator,
                                                         bool throwOnOutOfMemoryWithinRange)
 {
-    CONTRACT(JumpStubBlockHeader*) {
+    CONTRACT(JumpStubBlockHeader *) {
         THROWS;
         GC_NOTRIGGER;
         PRECONDITION(loAddr < hiAddr);
@@ -3087,7 +3080,7 @@ JumpStubBlockHeader* EEJitManager::allocJumpStubBlock(MethodDesc* pMD, DWORD num
         CrstHolder ch(&m_CodeHeapCritSec);
 
         // Note: TADDR was a bug here, we were just lucky that it has the same size
-        mem = (TADDR)allocCodeRaw(&requestInfo, sizeof(CodeHeader), blockSize, CODE_SIZE_ALIGN, &pCodeHeap);
+        mem = (TADDR) allocCodeRaw(&requestInfo, sizeof(CodeHeader), blockSize, CODE_SIZE_ALIGN, &pCodeHeap);
         if (mem == NULL)
         {
             _ASSERTE(!throwOnOutOfMemoryWithinRange);
@@ -3123,9 +3116,9 @@ JumpStubBlockHeader* EEJitManager::allocJumpStubBlock(MethodDesc* pMD, DWORD num
     RETURN((JumpStubBlockHeader*)mem);
 }
 
-void *EEJitManager::allocCodeFragmentBlock(size_t blockSize, unsigned alignment, LoaderAllocator *pLoaderAllocator, StubCodeBlockKind kind)
+void * EEJitManager::allocCodeFragmentBlock(size_t blockSize, unsigned alignment, LoaderAllocator *pLoaderAllocator, StubCodeBlockKind kind)
 {
-    CONTRACT(void*) {
+    CONTRACT(void *) {
         THROWS;
         GC_NOTRIGGER;
         PRECONDITION(pLoaderAllocator != NULL);
@@ -3141,13 +3134,13 @@ void *EEJitManager::allocCodeFragmentBlock(size_t blockSize, unsigned alignment,
     requestInfo.setReserveForJumpStubs((blockSize / 8) * JUMP_ALLOCATE_SIZE);
 #endif
 
-    TADDR             mem;
+    TADDR                  mem;
 
     // Scope the lock
     {
         CrstHolder ch(&m_CodeHeapCritSec);
 
-        mem = (TADDR)allocCodeRaw(&requestInfo, sizeof(CodeHeader), blockSize, alignment, &pCodeHeap);
+        mem = (TADDR) allocCodeRaw(&requestInfo, sizeof(CodeHeader), blockSize, alignment, &pCodeHeap);
 
         // CodeHeader comes immediately before the block
         CodeHeader * pCodeHdr = (CodeHeader *) (mem - sizeof(CodeHeader));
@@ -3164,7 +3157,7 @@ void *EEJitManager::allocCodeFragmentBlock(size_t blockSize, unsigned alignment,
         DoubleMappedAllocator::Instance()->UnmapRW(pCodeHeapRW);
     }
 
-    RETURN((void*)mem);
+    RETURN((void *)mem);
 }
 
 #endif // !DACCESS_COMPILE

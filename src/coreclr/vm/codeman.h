@@ -453,7 +453,7 @@ public:
 
     // Alloc the specified numbers of bytes for code. Returns NULL if the request does not fit
     // Space for header is reserved immediately before. It is not included in size.
-    virtual void *AllocMemForCode_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs) = 0;
+    virtual void* AllocMemForCode_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs) = 0;
 
 #ifdef DACCESS_COMPILE
     virtual void EnumMemoryRegions(CLRDataEnumMemoryFlags flags) = 0;
@@ -525,7 +525,7 @@ private:
     LoaderCodeHeap();
 
 public:
-    static HeapList *CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap *pJitMetaHeap);
+    static HeapList* CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap *pJitMetaHeap);
 
 public:
     virtual ~LoaderCodeHeap()
@@ -533,7 +533,7 @@ public:
         WRAPPER_NO_CONTRACT;
     }
 
-    virtual void *AllocMemForCode_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs) DAC_EMPTY_RET(NULL);
+    virtual void* AllocMemForCode_NoThrow(size_t header, size_t size, DWORD alignment, size_t reserveForJumpStubs) DAC_EMPTY_RET(NULL);
 
 #ifdef DACCESS_COMPILE
     virtual void EnumMemoryRegions(CLRDataEnumMemoryFlags flags)
@@ -682,7 +682,7 @@ class CodeFragmentHeap : public ILoaderHeapBackout
 
     Crst                m_CritSec;
 
-    void AddBlock(void *pMem, size_t dwSize);
+    void AddBlock(VOID * pMem, size_t dwSize);
     void RemoveBlock(FreeBlock ** ppBlock, FreeBlock* pBlockRW);
 
 public:
@@ -971,13 +971,13 @@ public:
     GCInfoToken         GetGCInfoToken(const METHODTOKEN& MethodToken);
 #endif // !CROSSGEN_COMPILE
 #if !defined DACCESS_COMPILE && !defined CROSSGEN_COMPILE
-    void                RemoveJitData(CodeHeader* pCHdr, size_t GCinfo_len, size_t EHinfo_len);
+    void                RemoveJitData(CodeHeader * pCHdr, size_t GCinfo_len, size_t EHinfo_len);
     void                Unload(LoaderAllocator* pAllocator);
     void                CleanupCodeHeaps();
 
     BOOL                LoadJIT();
 
-    CodeHeader *allocCode(MethodDesc* pFD, size_t blockSize, size_t reserveForJumpStubs, CorJitAllocMemFlag flag
+    CodeHeader*         allocCode(MethodDesc* pFD, size_t blockSize, size_t reserveForJumpStubs, CorJitAllocMemFlag flag
 #ifdef FEATURE_EH_FUNCLETS
                                   , UINT nUnwindInfos
                                   , TADDR * pModuleBase
@@ -990,7 +990,7 @@ public:
                                             LoaderAllocator *pLoaderAllocator,
                                             bool throwOnOutOfMemoryWithinRange);
 
-    void *allocCodeFragmentBlock(size_t blockSize, unsigned alignment, LoaderAllocator *pLoaderAllocator, StubCodeBlockKind kind);
+    void*               allocCodeFragmentBlock(size_t blockSize, unsigned alignment, LoaderAllocator *pLoaderAllocator, StubCodeBlockKind kind);
 #endif // !DACCESS_COMPILE && !CROSSGEN_COMPILE
 
     static CodeHeader * GetCodeHeader(const METHODTOKEN& MethodToken);

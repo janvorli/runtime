@@ -641,7 +641,7 @@ void NDirectImportPrecode::Fixup(DataImage *image)
 }
 #endif
 
-void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator, int iMethodDescChunkIndex /*=0*/, int iPrecodeChunkIndex /*=0*/)
+void FixupPrecode::Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocator, int iMethodDescChunkIndex /*=0*/, int iPrecodeChunkIndex /*=0*/)
 {
     WRAPPER_NO_CONTRACT;
 
@@ -667,10 +667,13 @@ void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocat
         }
 
         if (*(void**)GetBase() == NULL)
+        {
             *(void**)GetBase() = (BYTE*)pMD - (iMethodDescChunkIndex * MethodDesc::ALIGNMENT);
+            DoubleMappedAllocator::Instance()->UnmapRW(pBaseRW);
+        }
     }
 
-    _ASSERTE(GetMethodDesc() == (TADDR)pMD);
+    _ASSERTE(pPrecodeRX->GetMethodDesc() == (TADDR)pMD);
 
     if (pLoaderAllocator != NULL)
     {

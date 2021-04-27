@@ -494,7 +494,14 @@ void Precode::Reset()
     WRAPPER_NO_CONTRACT;
 
     MethodDesc* pMD = GetMethodDesc();
-    Precode* precodeRW = (Precode*)DoubleMappedAllocator::Instance()->MapRW(this, SizeOf());
+    // TODO: fix this to not to have to check the type - add a new method to get size of the Precode including extra data that can be written
+    size_t precodeSize = SizeOf();
+    if (GetType() == PRECODE_FIXUP)
+    {
+        precodeSize = ((FixupPrecode*)this)->GetBase() - (TADDR)this + sizeof(void*);
+    }
+
+    Precode* precodeRW = (Precode*)DoubleMappedAllocator::Instance()->MapRW(this, precodeSize);
     precodeRW->Init(GetType(), pMD, pMD->GetLoaderAllocator(), this);
     DoubleMappedAllocator::Instance()->UnmapRW(precodeRW);
     ClrFlushInstructionCache(this, SizeOf());
@@ -592,8 +599,8 @@ TADDR Precode::AllocateTemporaryEntryPoints(MethodDescChunk *  pChunk,
             // Emit the jump for the precode fixup jump stub now. This jump stub immediately follows the MethodDesc (see
             // GetDynamicMethodPrecodeFixupJumpStub()).
             precodeFixupJumpStubRX = (TADDR)temporaryEntryPoints + count * sizeof(FixupPrecode) + sizeof(PTR_MethodDesc);
-            // TODO: how to get the real size? The 8 is an upper limit
-            precodeFixupJumpStubRW = (PCODE)DoubleMappedAllocator::Instance()->MapRW((void*)precodeFixupJumpStubRX, 8);
+            // TODO: how to get the size?
+            precodeFixupJumpStubRW = (PCODE)DoubleMappedAllocator::Instance()->MapRW((void*)precodeFixupJumpStubRX, 12);
 #ifndef CROSSGEN_COMPILE
             emitBackToBackJump((LPBYTE)precodeFixupJumpStubRW, (LPVOID)GetEEFuncEntryPoint(PrecodeFixupThunk));
             DoubleMappedAllocator::Instance()->UnmapRW((void*)precodeFixupJumpStubRW);

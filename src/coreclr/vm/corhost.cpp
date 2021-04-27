@@ -396,6 +396,8 @@ HRESULT CorHost2::ExecuteAssembly(DWORD dwAppDomainId,
 
 ErrExit:
 
+    DoubleMappedAllocator::ReportState();
+
     return hr;
 }
 

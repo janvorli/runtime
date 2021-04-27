@@ -22,6 +22,9 @@ volatile DoubleMappedAllocator* DoubleMappedAllocator::g_instance = NULL;
     size_t DoubleMappedAllocator::g_allocCalls = 0;
     size_t DoubleMappedAllocator::g_reserveCalls = 0;
     size_t DoubleMappedAllocator::g_reserveAtCalls = 0;
+    size_t DoubleMappedAllocator::g_mapReusePossibility = 0;
+    size_t DoubleMappedAllocator::g_maxRWMappingCount = 0;
+    size_t DoubleMappedAllocator::g_RWMappingCount = 0;
 
 #ifdef RANDOMIZE_ALLOC
 #include <time.h>

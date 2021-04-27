@@ -2768,7 +2768,7 @@ DispatchHolder *VirtualCallStubManager::GenerateDispatchStub(PCODE            ad
         dispatch_heap->AllocAlignedMem(dispatchHolderSize, CODE_SIZE_ALIGN);
 
     DispatchHolder * holderRX = (DispatchHolder*)(void*)holder;
-    DispatchHolder * holderRW = (DispatchHolder*)DoubleMappedAllocator::Instance()->MapRW(holderRX, sizeof(DispatchHolder));
+    DispatchHolder * holderRW = (DispatchHolder*)DoubleMappedAllocator::Instance()->MapRW(holderRX, sizeof(DispatchHolder) + sizeof(DispatchStubShort));
 
 #ifdef TARGET_AMD64
     if (!DispatchHolder::CanShortJumpDispatchStubReachFailTarget(addrOfFail, (LPCBYTE)holderRX))
@@ -2846,7 +2846,7 @@ DispatchHolder *VirtualCallStubManager::GenerateDispatchStubLong(PCODE          
         dispatch_heap->AllocAlignedMem(DispatchHolder::GetHolderSize(DispatchStub::e_TYPE_LONG), CODE_SIZE_ALIGN);
 
     DispatchHolder * holderRX = (DispatchHolder *)(void*)holder;
-    DispatchHolder * holderRW = (DispatchHolder *)DoubleMappedAllocator::Instance()->MapRW(holderRX, sizeof(DispatchHolder));
+    DispatchHolder * holderRW = (DispatchHolder *)DoubleMappedAllocator::Instance()->MapRW(holderRX, sizeof(DispatchHolder) + sizeof(DispatchStubLong));
 
     holderRW->Initialize(holderRX, addrOfCode,
                        addrOfFail,

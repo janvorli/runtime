@@ -282,7 +282,9 @@ class DoubleMappedAllocator
         MappedBlock* next;
 
         void* baseRW;
+        void* baseRX;
         size_t size;
+        size_t refCount;
     };
 
     Block* m_firstBlock = NULL;
@@ -334,10 +336,32 @@ public:
         return m_hSharedMemoryFile != NULL;    
     }
 
-    bool AddMappedBlock(void* base, size_t size)
+    void* FindMappedBlock(void* baseRX, size_t size)
+    {
+        for (MappedBlock* b = m_firstMappedBlock; b != NULL; b = b->next)
+        {
+            if (b->baseRX <= baseRX && ((size_t)baseRX + size) <= ((size_t)b->baseRX + b->size))
+            {
+                b->refCount++;
+                return (BYTE*)b->baseRW + (baseRX - b->baseRX);
+            }
+        }
+
+        return NULL;
+    }
+
+    bool AddMappedBlock(void* base, void* baseRX, size_t size)
     {
 //        CRITSEC_Holder csh(m_CriticalSection);
 
+        for (MappedBlock* b = m_firstMappedBlock; b != NULL; b = b->next)
+        {
+            if (b->baseRX <= baseRX && ((size_t)baseRX + size) <= ((size_t)b->baseRX + b->size))
+            {
+                InterlockedIncrement(&g_mapReusePossibility);
+                break;
+            }
+        }
 
         MappedBlock* mappedBlock = (MappedBlock*)malloc(sizeof(MappedBlock));// new (nothrow) MappedBlock();
         if (mappedBlock == NULL)
@@ -346,9 +370,13 @@ public:
         }
 
         mappedBlock->baseRW = base;
+        mappedBlock->baseRX = baseRX;
         mappedBlock->size = size;
         mappedBlock->next = m_firstMappedBlock;
+        mappedBlock->refCount = 1;
         m_firstMappedBlock = mappedBlock;
+
+        InterlockedIncrement(&g_RWMappingCount);
 
         return true;
     }
@@ -372,6 +400,12 @@ public:
                     prevMappedBlock->next = mappedBlock->next;
                 }
 
+                InterlockedDecrement(&g_RWMappingCount);
+                if (g_RWMappingCount > g_maxRWMappingCount)
+                {
+                    g_maxRWMappingCount = g_RWMappingCount;
+                }
+
                 //delete mappedBlock;
                 free(mappedBlock);
                 return true;
@@ -382,6 +416,49 @@ public:
 
         return false;
     }
+
+    bool RemoveMappedBlock2(void* base)
+    {
+//        CRITSEC_Holder csh(m_CriticalSection);
+
+        MappedBlock* prevMappedBlock = NULL;
+        for (MappedBlock* mappedBlock = m_firstMappedBlock; mappedBlock != NULL; mappedBlock = mappedBlock->next)
+        {
+            if (mappedBlock->baseRW <= base && (size_t)base <  (size_t)mappedBlock->baseRW + mappedBlock->size)
+            {
+                // found
+                mappedBlock->refCount--;
+                if (mappedBlock->refCount != 0)
+                {
+                    return true;
+                }
+
+                if (prevMappedBlock == NULL)
+                {
+                    m_firstMappedBlock = mappedBlock->next;
+                }
+                else
+                {
+                    prevMappedBlock->next = mappedBlock->next;
+                }
+
+                InterlockedDecrement(&g_RWMappingCount);
+                if (g_RWMappingCount > g_maxRWMappingCount)
+                {
+                    g_maxRWMappingCount = g_RWMappingCount;
+                }
+
+                //delete mappedBlock;
+                free(mappedBlock);
+                return true;
+            }
+
+            prevMappedBlock = mappedBlock;
+        }
+
+        return false;
+    }
+
 
     bool Allocate(size_t size, size_t rwSize, void** ppRX, void** ppRW)
     {
@@ -424,7 +501,7 @@ public:
                         LODWORD(offset),
                         size);
 
-        AddMappedBlock(*ppRW, rwSize);
+        AddMappedBlock(*ppRW, *ppRX, rwSize);
 
         block->baseRX = *ppRX;
         block->offset = offset;
@@ -553,14 +630,32 @@ public:
     static size_t g_rwUnmaps;
     static size_t g_failedRwUnmaps;
     static size_t g_failedRwMaps;
+    static size_t g_mapReusePossibility;
+    static size_t g_RWMappingCount;
+    static size_t g_maxRWMappingCount;
+
+    static void ReportState()
+    {
+        printf("Alloc calls: %zd\n", g_allocCalls);
+        printf("Reserve calls: %zd\n", g_reserveCalls);
+        printf("Reserve-at calls: %zd\n", g_reserveAtCalls);
+        printf("RW Maps: %zd\n", g_rwMaps);
+        printf("RW Unmaps: %zd\n", g_rwUnmaps);
+        printf("Failed RW Maps: %zd\n", g_failedRwMaps);
+        printf("Failed RW Unmaps: %zd\n", g_failedRwUnmaps);
+        printf("Map reuse possibility: %zd\n", g_mapReusePossibility);
+        printf("RW mappings count: %zd\n", g_RWMappingCount);
+        printf("Max RW mappings count: %zd\n", g_maxRWMappingCount);
+    }
 
     void UnmapRW(void* pRW)
     {
+#ifndef CROSSGEN_COMPILE
         CRITSEC_Holder csh(m_CriticalSection);
         _ASSERTE(pRW != NULL);
         //_ASSERTE(pRW < (void*)0x700000000000ULL);
 
-//#ifdef _DEBUG
+#ifdef _DEBUG
         MEMORY_BASIC_INFORMATION mbi;
         SIZE_T cbBytes = ClrVirtualQuery(pRW, &mbi, sizeof(mbi));
         _ASSERTE(cbBytes);
@@ -569,7 +664,7 @@ public:
             __debugbreak();
         }
         //printf("UnmapRW: RW=%p, base=%p, size=%p, prot=%08x, state=%08x, type=%08x, caller=%p\n", pRW, (void*)mbi.BaseAddress, (void*)mbi.RegionSize, mbi.Protect, mbi.State, mbi.Type, (void*)_ReturnAddress());
-//#endif
+#endif
         // TODO: Linux will need the full range. So we may need to store all the RW mappings in a separate list (per RX mapping)
         InterlockedIncrement(&g_rwUnmaps);
         void* unmapAddress = ALIGN_DOWN(pRW, Granularity());
@@ -584,7 +679,7 @@ public:
             InterlockedIncrement(&g_failedRwUnmaps);
             __debugbreak();
         }
-
+#endif
     }
 
     void* MapRW(void* pRX, size_t size)
@@ -607,15 +702,15 @@ public:
                                 mapSize);
 
                 //printf("MapRW: baseRX=%p, RX=%p, RW=%p, mapOffset=%p, size=%p, mapSize=%p\n", b->baseRX, pRX, pRW, (void*)mapOffset, (void*)size, (void*)mapSize);
-                InterlockedIncrement(&g_rwMaps);
-
                 if (pRW == NULL)
                 {
                     __debugbreak();
                     return NULL;
                 }
 
-                AddMappedBlock(pRW, mapSize);
+                InterlockedIncrement(&g_rwMaps);
+
+                AddMappedBlock(pRW, pRX, mapSize);
 
                 return (void*)((size_t)pRW + (offset - mapOffset));
             }
