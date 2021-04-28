@@ -319,7 +319,7 @@ void DynamicMethodTable::LinkMethod(DynamicMethodDesc *pMethod)
 //
 // CodeHeap implementation
 //
-HeapList *HostCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, EEJitManager *pJitManager)
+HeapList* HostCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, EEJitManager *pJitManager)
 {
     CONTRACT (HeapList*)
     {
@@ -327,7 +327,7 @@ HeapList *HostCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, EEJitManager 
         GC_NOTRIGGER;
         MODE_ANY;
         INJECT_FAULT(COMPlusThrowOM());
-        POSTCONDITION(RETVAL != NULL || !pInfo->getThrowOnOutOfMemoryWithinRange());
+        POSTCONDITION((RETVAL != NULL) || !pInfo->getThrowOnOutOfMemoryWithinRange());
     }
     CONTRACT_END;
 
@@ -384,7 +384,7 @@ HostCodeHeap::~HostCodeHeap()
     LOG((LF_BCL, LL_INFO10, "Level1 - CodeHeap destroyed {0x%p}\n", this));
 }
 
-HeapList *HostCodeHeap::InitializeHeapList(CodeHeapRequestInfo *pInfo)
+HeapList* HostCodeHeap::InitializeHeapList(CodeHeapRequestInfo *pInfo)
 {
     CONTRACTL
     {

@@ -302,7 +302,7 @@ void STDCALL UMEntryThunk::DoRunTimeInit(UMEntryThunk* pUMEntryThunk)
     UNINSTALL_MANAGED_EXCEPTION_DISPATCHER;
 }
 
-UMEntryThunk *UMEntryThunk::CreateUMEntryThunk()
+UMEntryThunk* UMEntryThunk::CreateUMEntryThunk()
 {
     CONTRACT (UMEntryThunk*)
     {
@@ -314,7 +314,7 @@ UMEntryThunk *UMEntryThunk::CreateUMEntryThunk()
     }
     CONTRACT_END;
 
-    UMEntryThunk* pThunk = s_thunkFreeList.GetUMEntryThunk();
+    UMEntryThunk * pThunk = s_thunkFreeList.GetUMEntryThunk();
 
     if (pThunk == NULL)
     {

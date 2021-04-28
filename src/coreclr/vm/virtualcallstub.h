@@ -1089,18 +1089,6 @@ public:
         _ASSERTE(VirtualCallStubManager::isLookupStubStatic((PCODE)s));
 
         stub = (LookupStub*) s;
-        MEMORY_BASIC_INFORMATION mbi;
-        SIZE_T cbBytes = ClrVirtualQuery(stub, &mbi, sizeof(mbi));
-        if (cbBytes == 0)
-        {
-            __debugbreak();
-        }
-
-        if ((mbi.Protect & PAGE_READWRITE))
-        {
-            __debugbreak();
-        }
-
     }
 
     //default contructor to allow stack and inline allocation of lookup entries
@@ -1118,18 +1106,6 @@ public:
         LIMITED_METHOD_CONTRACT;
         _ASSERTE(VirtualCallStubManager::isLookupStubStatic((PCODE)contents));
         stub = LookupHolder::FromLookupEntry((PCODE)contents)->stub();
-        MEMORY_BASIC_INFORMATION mbi;
-        SIZE_T cbBytes = ClrVirtualQuery(stub, &mbi, sizeof(mbi));
-        if (cbBytes == 0)
-        {
-            __debugbreak();
-        }
-
-        if ((mbi.Protect & PAGE_READWRITE))
-        {
-            __debugbreak();
-        }
-
     }
 
     //extract the token of the underlying lookup stub

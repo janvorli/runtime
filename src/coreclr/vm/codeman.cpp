@@ -1935,7 +1935,7 @@ TaggedMemAllocPtr CodeFragmentHeap::RealAllocAlignedMem(size_t  dwRequestedSize
         ppFreeBlock = &(*ppFreeBlock)->m_pNext;
     }
 
-    void *pMem;
+    VOID * pMem;
     SIZE_T dwSize;
     if (ppBestFit != NULL)
     {
@@ -2356,7 +2356,6 @@ HeapList* LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
     DoubleMappedAllocator::Instance()->UnmapRW(pHpRW);
 
     pCodeHeap.SuppressRelease();
-
     RETURN pHp;
 }
 
@@ -2483,7 +2482,7 @@ HeapList* EEJitManager::NewCodeHeap(CodeHeapRequestInfo *pInfo, DomainCodeHeapLi
 
     pInfo->setReserveSize(reserveSize);
 
-    HeapList* pHp;
+    HeapList *pHp = NULL;
 
     DWORD flags = RangeSection::RANGE_SECTION_CODEHEAP;
 
@@ -2714,7 +2713,7 @@ CodeHeader* EEJitManager::allocCode(MethodDesc* pMD, size_t blockSize, size_t re
     SIZE_T totalSize = blockSize;
 
     CodeHeader * pCodeHdr = NULL;
-    
+
     CodeHeapRequestInfo requestInfo(pMD);
 #if defined(FEATURE_JIT_PITCHING)
     if (pMD && pMD->IsPitchable() && CLRConfig::GetConfigValue(CLRConfig::INTERNAL_JitPitchMethodSizeThreshold) < blockSize)
@@ -3274,7 +3273,7 @@ TypeHandle EEJitManager::ResolveEHClause(EE_ILEXCEPTION_CLAUSE* pEHClause,
                                                        ClassLoader::ReturnNullIfNotFound);
 }
 
-void EEJitManager::RemoveJitData (CodeHeader* pCHdr, size_t GCinfo_len, size_t EHinfo_len)
+void EEJitManager::RemoveJitData (CodeHeader * pCHdr, size_t GCinfo_len, size_t EHinfo_len)
 {
     CONTRACTL {
         NOTHROW;
@@ -3333,8 +3332,7 @@ void EEJitManager::RemoveJitData (CodeHeader* pCHdr, size_t GCinfo_len, size_t E
 
     // Backout the GCInfo
     if (GCinfo_len > 0) {
-        void* gcInfo = pCHdr->GetGCInfo();
-        GetJitMetaHeap(pMD)->BackoutMem(gcInfo, GCinfo_len);
+        GetJitMetaHeap(pMD)->BackoutMem(pCHdr->GetGCInfo(), GCinfo_len);
     }
 
     // Backout the EHInfo

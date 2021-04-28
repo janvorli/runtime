@@ -1114,9 +1114,7 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
     dwSizeToCommit = ALIGN_UP(dwSizeToCommit, GetOsPageSize());
 
     void *pData = NULL;
-    void *pDataRW = NULL;
     BOOL fReleaseMemory = TRUE;
-    int allocationSource = 0;
 
     // We were provided with a reserved memory block at instance creation time, so use it if it's big enough.
     if (m_reservedBlock.pVirtualAddress != NULL &&
@@ -1129,25 +1127,6 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
 
         // Zero the block so this memory doesn't get used again.
         m_reservedBlock.Init(NULL, 0, FALSE);
-        allocationSource = 1;
-
-        pDataRW = pData;
-        if ((m_Options & LHF_EXECUTABLE))
-        {
-            pDataRW = DoubleMappedAllocator::Instance()->MapRW(pData, dwSizeToCommit);
-        }
-
-        if (pDataRW == NULL)
-        {
-            __debugbreak();
-        }
-        if ((m_Options & LHF_EXECUTABLE))
-        {
-            if (pDataRW == pData)
-            {
-                __debugbreak();
-            }
-        }
     }
     // The caller is asking us to allocate the memory
     else
@@ -1172,7 +1151,8 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
 
         if (m_Options & LHF_EXECUTABLE)
         {
-            if (!DoubleMappedAllocator::Instance()->Allocate(dwSizeToReserve, dwSizeToReserve, &pData, &pDataRW))
+            pData = DoubleMappedAllocator::Instance()->Reserve(dwSizeToReserve);
+            if (pData == NULL)
             {
                 __debugbreak();
                 return FALSE;
@@ -1198,8 +1178,6 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
         // {
         //     return FALSE;
         // }
-
-        allocationSource = 2;
     }
 
     // When the user passes in the reserved memory, the commit size is 0 and is adjusted to be the sizeof(LoaderHeap).
@@ -1254,32 +1232,31 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
 
     m_dwTotalAlloc += dwSizeToCommit;
 
+    LoaderHeapBlock *pNewBlockRW;
     LoaderHeapBlock *pNewBlock;
-    LoaderHeapBlock *pNewBlockRX;
 
 #if defined(HOST_OSX) && defined(HOST_ARM64)
     // Always assume we are touching executable heap
     auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
 
+    pNewBlock = (LoaderHeapBlock *) pData;
+    pNewBlockRW = pNewBlock;
+
     if ((m_Options & LHF_EXECUTABLE))
     {
-        if (pDataRW == NULL)
-        {
-            __debugbreak();
-        }
+        pNewBlockRW = (LoaderHeapBlock*)DoubleMappedAllocator::Instance()->MapRW(pNewBlock, sizeof(LoaderHeapBlock));
     }
-    else
-    {
-        pDataRW = pData;
-    }
-    pNewBlock = (LoaderHeapBlock *) pDataRW;
-    pNewBlockRX = (LoaderHeapBlock *) pData;
 
-    pNewBlock->dwVirtualSize    = dwSizeToReserve;
-    pNewBlock->pVirtualAddress  = pData;
-    pNewBlock->pNext            = NULL;
-    pNewBlock->m_fReleaseMemory = fReleaseMemory;
+    pNewBlockRW->dwVirtualSize    = dwSizeToReserve;
+    pNewBlockRW->pVirtualAddress  = pData;
+    pNewBlockRW->pNext            = NULL;
+    pNewBlockRW->m_fReleaseMemory = fReleaseMemory;
+
+    if ((m_Options & LHF_EXECUTABLE))
+    {
+        DoubleMappedAllocator::Instance()->UnmapRW(pNewBlockRW);
+    }
 
     LoaderHeapBlock *pCurBlock = m_pCurBlock;
 
@@ -1296,24 +1273,19 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
         {
             pCurBlockRW = (LoaderHeapBlock*)DoubleMappedAllocator::Instance()->MapRW(pCurBlock, sizeof(LoaderHeapBlock));
         }
-        pCurBlockRW->pNext = pNewBlockRX;
+        pCurBlockRW->pNext = pNewBlock;
         if ((m_Options & LHF_EXECUTABLE))
         {
             DoubleMappedAllocator::Instance()->UnmapRW(pCurBlockRW);
         }
     }
     else
-        m_pFirstBlock = pNewBlockRX;
+        m_pFirstBlock = pNewBlock;
 
     // If we want to use the memory immediately...
-    m_pCurBlock = pNewBlockRX;
+    m_pCurBlock = pNewBlock;
 
     SETUP_NEW_BLOCK(pData, dwSizeToCommit, dwSizeToReserve);
-
-    if ((m_Options & LHF_EXECUTABLE))
-    {
-        DoubleMappedAllocator::Instance()->UnmapRW(pDataRW);
-    }
 
     return TRUE;
 }
@@ -1431,7 +1403,7 @@ void *UnlockedLoaderHeap::UnlockedAllocMem_NoThrow(size_t dwSize
         INSTANCE_CHECK;
         NOTHROW;
         GC_NOTRIGGER;
-        INJECT_FAULT(CONTRACT_RETURN NULL);
+        INJECT_FAULT(CONTRACT_RETURN NULL;);
         PRECONDITION(dwSize != 0);
         POSTCONDITION(CheckPointer(RETVAL, NULL_OK));
     }
@@ -1516,7 +1488,6 @@ again:
 #endif
 
             EtwAllocRequest(this, pData, dwSize);
-
             RETURN pData;
         }
     }
@@ -1720,7 +1691,7 @@ void *UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSiz
 
         PRECONDITION( alignment != 0 );
         PRECONDITION(0 == (alignment & (alignment - 1))); // require power of 2
-        POSTCONDITION( (RETVAL != NULL) ?
+        POSTCONDITION( (RETVAL) ?
                        (0 == ( ((UINT_PTR)(RETVAL)) & (alignment - 1))) : // If non-null, pointer must be aligned
                        (pdwExtra == NULL || 0 == *pdwExtra)    //   or else *pdwExtra must be set to 0
                      );
@@ -1841,6 +1812,7 @@ void *UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSiz
     }
 
     RETURN pResult;
+
 }
 
 
@@ -1864,7 +1836,7 @@ void *UnlockedLoaderHeap::UnlockedAllocAlignedMem(size_t  dwRequestedSize,
                                                     COMMA_INDEBUG(szFile)
                                                     COMMA_INDEBUG(lineNum));
 
-    if (pResult == NULL)
+    if (!pResult)
     {
         ThrowOutOfMemory();
     }
@@ -2304,7 +2276,6 @@ AllocMemTracker::~AllocMemTracker()
             for (int i = pBlock->m_nextFree - 1; i >= 0; i--)
             {
                 AllocMemTrackerNode *pNode = &(pBlock->m_Node[i]);
-
                 pNode->m_pHeap->RealBackoutMem(pNode->m_pMem
                                                ,pNode->m_dwRequestedSize
 #ifdef _DEBUG
@@ -2333,7 +2304,7 @@ AllocMemTracker::~AllocMemTracker()
     INDEBUG(memset(this, 0xcc, sizeof(*this));)
 }
 
-void* AllocMemTracker::Track(TaggedMemAllocPtr tmap)
+void *AllocMemTracker::Track(TaggedMemAllocPtr tmap)
 {
     CONTRACTL
     {
@@ -2403,7 +2374,7 @@ void *AllocMemTracker::Track_NoThrow(TaggedMemAllocPtr tmap)
 
 
     }
-    return (void*)tmap;
+    return (void *)tmap;
 }
 
 

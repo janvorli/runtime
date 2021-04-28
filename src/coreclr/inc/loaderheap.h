@@ -20,65 +20,6 @@
 
 class UnlockedLoaderHeap;
 
-// class DoublePtr
-// {
-//     void* m_pRW;
-//     void* m_pRX;
-//     LoaderHeap* m_pHeap;
-
-// public:
-//     DoublePtr() : m_pRW(NULL), m_pRX(NULL), m_pHeap(NULL)
-//     {
-//     }
-
-//     // TODO: get separate RX and RW
-//     DoublePtr(void* pRX) : m_pRW(pRX), m_pRX(pRX)
-//     {
-//     }
-
-//     DoublePtr(void* pRX, void* pRW, LoaderHeap* pHeap) : m_pRW(pRX), m_pRX(pRW), m_pHeap(pHeap)
-//     {
-//     }
-
-//     void* GetRX() const
-//     {
-//         return m_pRX;
-//     }
-
-//     void* GetRW() const
-//     {
-//         return m_pRW;
-//     }
-
-//     LoaderHeap* Heap() const
-//     {
-//         return m_pHeap;
-//     }
-
-//     bool IsNull() const
-//     {
-//         return m_pRX == NULL;
-//     }
-
-//     // operator const void*()
-//     // {
-//     //     return m_pRX;
-//     // }
-
-//     // operator void*()
-//     // {
-//     //     return m_pRW;
-//     // }
-
-//     DoublePtr& operator=(const DoublePtr& other)
-//     {
-//         m_pRW = other.m_pRW;
-//         m_pRX = other.m_pRX;
-
-//         return *this;
-//     }
-// };
-
 template<typename T>
 class DoublePtrT
 {
@@ -164,34 +105,6 @@ public:
 };
 
 typedef DoublePtrT<void> DoublePtr;
-
-// template<typename T>
-// class DoublePtrT : public DoublePtr
-// {
-// public:
-//     DoublePtrT(T* pRX, T* pRW, LoaderHeap* pHeap) : DoublePtr(pRX, pRW, pHeap)
-//     {
-//     }
-
-//     DoublePtrT& operator=(const DoublePtr& other)
-//     {
-//         m_pRW = other.m_pRW;
-//         m_pRX = other.m_pRX;
-
-//         return *this;
-//     }
-
-//     T* GetRX() const
-//     {
-//         return (T*)DoublePtr::GetRX();
-//     }
-
-//     T* GetRW() const
-//     {
-//         return (T*)DoublePtr::GetRW();
-//     }
-// };
-
 
 //==============================================================================
 // Interface used to back out loader heap allocations.
@@ -467,64 +380,6 @@ public:
         return false;
     }
 
-
-    bool Allocate(size_t size, size_t rwSize, void** ppRX, void** ppRW)
-    {
-        _ASSERTE((size & (Granularity() - 1)) == 0);
-        _ASSERTE((rwSize & (Granularity() - 1)) == 0);
-        CRITSEC_Holder csh(m_CriticalSection);
-
-        InterlockedIncrement(&g_allocCalls);
-
-        size_t offset;
-        size_t newFreeOffset;
-
-        do
-        {
-            offset = m_freeOffset;
-            newFreeOffset = offset + size;
-
-            if (newFreeOffset > maxSize)
-            {
-                __debugbreak();
-                return false;
-            }
-        }
-        while (InterlockedCompareExchangeT(&m_freeOffset, newFreeOffset, offset) != offset);
-
-        Block* block = new (nothrow) Block();
-        if (block == NULL)
-        {
-            return false;
-        }
-
-        *ppRW = MapViewOfFile(m_hSharedMemoryFile,
-                        FILE_MAP_READ | FILE_MAP_WRITE,
-                        HIDWORD(offset),
-                        LODWORD(offset),
-                        rwSize);
-        *ppRX = MapViewOfFile(m_hSharedMemoryFile,
-                        FILE_MAP_EXECUTE | FILE_MAP_READ | FILE_MAP_WRITE, // TODO: can we add the write only for reservations that will be for both data and execution, like the loader allocator? Or should we split the initial allocation to two parts - exe and non-exe?
-                        HIDWORD(offset),
-                        LODWORD(offset),
-                        size);
-
-        AddMappedBlock(*ppRW, *ppRX, rwSize);
-
-        block->baseRX = *ppRX;
-        block->offset = offset;
-        block->size = size;
-
-        // TODO: probably use lock so that we can search the list? Hmm, we will never remove blocks, will we?
-        do
-        {
-            block->next = m_firstBlock;
-        }
-        while (InterlockedCompareExchangeT(&m_firstBlock, block, block->next) != block->next);
-
-        return true;
-    }
-
     void* Reserve(size_t size)
     {
         _ASSERTE((size & (Granularity() - 1)) == 0);
@@ -766,117 +621,6 @@ public:
         return pRX;
     }
 };
-
-// class DoubleMappedAllocator
-// {
-//     // Let's use one allocator per virtual memory block?
-//     HANDLE hSharedMemoryFile;
-//     size_t maxSize = 1024*1024;
-//     size_t freeOffset;
-
-//     struct RWMappedBlock
-//     {
-//         RWMappedBlock *next;
-//         void* pBase;
-//         size_t size;
-//         int refCount;
-//     };
-
-//     struct Segment
-//     {
-//         size_t offset; // in the shared memory
-//         void* pRXBase;
-//         size_t size;
-
-//         RWMappedBlock *rwMappedBlocks; // TODO: maybe just an array of addresses or offsets and refcounts
-//     };
-
-//     struct RWMappedBlock2 // each block is allocation granularity sized
-//     {
-//         void* pBase; // Or offset
-//         int refCount;
-//     };
-
-//     struct Segment2 // dynamically sized struct based on the size
-//     {
-//         size_t offset; // in the shared memory
-//         void* pRXBase;
-//         size_t size;
-
-//         RWMappedBlock2 rwMappedBlocks[1]; // each block is allocation granularity sized
-//     };
-
-//     size_t Granularity()
-//     {
-//         return 64 * 1024;
-//     }
-
-// public:
-
-//     ~DoubleMappedAllocator()
-//     {
-
-//     }
-
-//     bool Initialize()
-//     {
-//         hSharedMemoryFile = WszCreateFileMapping(
-//                  INVALID_HANDLE_VALUE,    // use paging file
-//                  NULL,                    // default security
-//                  PAGE_EXECUTE_READWRITE,  // read/write/execute access
-//                  0,                       // maximum object size (high-order DWORD)
-//                  1024*1024,               // maximum object size (low-order DWORD)
-//                  NULL);        
-//     }
-
-//     void* Reserve(size_t size) // MapViewOfFile2 seems to allow reserving, Unix has it too
-//     {
-//         // TODO: interlocked
-//         if (freeOffset + size > maxSize)
-//         {
-//             return NULL;
-//         }
-
-//         size_t offset = freeOffset;
-//         freeOffset += size;
-
-//         void* base = WszMapViewOfFile(hSharedMemoryFile
-//                         FILE_MAP_EXECUTE,
-//                         offset / ((size_t)1) >> 32,
-//                         offset & 0xFFFFFFFFUL,
-//                         size);
-
-//         size_t blockCount = (size + Granularity() - 1) / Granularity();
-//         Segment2 *pSegment = (Segment2*)new uint8_t[sizeof(Segment2) + sizeof(RWMappedBlock2) * (blockCount - 1)];
-//         pSegment->offset = offset;
-//         pSegment->size = size;
-//         pSegment->pRXBase = base;
-//         memset(pSegment->rwMappedBlocks, 0, sizeof(RWMappedBlock2) * blockCount);
-
-//         return base;
-//     }
-
-//     DoublePtr Map(void* pRX, size_t size)
-//     {
-
-//     }
-
-//     void Free(void* pBase) // TODO: maybe allow just freeing all in the destructor
-//     {
-
-//     }
-
-//     void* MapRW(void* pRX, size_t size)
-//     {
-
-//     }
-
-//     // TODO: or should we pass in the RX pointer? Might be easier from the lookup point of view
-//     void ReleaseRW(void* pRW, void* size)
-//     {
-
-//     }
-// };
 
 // # bytes to leave between allocations in debug mode
 // Set to a > 0 boundary to debug problems - I've made this zero, otherwise a 1 byte allocation becomes
@@ -1814,8 +1558,8 @@ class AllocMemTracker
         // Ok to call on failed loaderheap allocation (will just do nothing and propagate the OOM as apropos).
         //
         // If Track fails due to an OOM allocating node space, it will backout the loaderheap block before returning.
-        void* Track(TaggedMemAllocPtr tmap);
-        void* Track_NoThrow(TaggedMemAllocPtr tmap);
+        void *Track(TaggedMemAllocPtr tmap);
+        void *Track_NoThrow(TaggedMemAllocPtr tmap);
 
         void SuppressRelease();
 

@@ -5298,7 +5298,6 @@ void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocat
             *(void**)GetBase() = (BYTE*)pMD - (iMethodDescChunkIndex * MethodDesc::ALIGNMENT);
     }
 
-    MethodDesc* debugMethodDesc = (MethodDesc*)GetMethodDesc();
     _ASSERTE(GetMethodDesc() == (TADDR)pMD);
 
     PCODE target = (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk);

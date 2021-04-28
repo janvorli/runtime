@@ -1261,7 +1261,6 @@ LPVOID COMDelegate::ConvertToCallback(OBJECTREF pDelegateObj)
             else
             {
                 umHolder.SuppressRelease();
-
                 // Insert the delegate handle / UMEntryThunk* into the hash
                 LPVOID key = (LPVOID)pUMEntryThunk;
 
@@ -2316,7 +2315,6 @@ FCIMPL1(PCODE, COMDelegate::GetMulticastInvoke, Object* refThisIn)
             sl.EmitMulticastInvoke(hash);
 
             // The cache is process-wide, based on signature.  It never unloads
-            Stub *pCandidate = 
             DoublePtrT<Stub> candidate = sl.Link(SystemDomain::GetGlobalLoaderAllocator()->GetStubHeap(), NEWSTUB_FL_MULTICAST);
             Stub *pCandidate = candidate.GetRX();
 
