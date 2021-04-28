@@ -16,6 +16,7 @@ INDEBUG(DWORD UnlockedLoaderHeap::s_dwNumInstancesOfLoaderHeaps = 0;)
 
 volatile DoubleMappedAllocator* DoubleMappedAllocator::g_instance = NULL;
     size_t DoubleMappedAllocator::g_rwMaps = 0;
+    size_t DoubleMappedAllocator::g_reusedRwMaps = 0;
     size_t DoubleMappedAllocator::g_rwUnmaps = 0;
     size_t DoubleMappedAllocator::g_failedRwUnmaps = 0;
     size_t DoubleMappedAllocator::g_failedRwMaps = 0;
@@ -25,6 +26,7 @@ volatile DoubleMappedAllocator* DoubleMappedAllocator::g_instance = NULL;
     size_t DoubleMappedAllocator::g_mapReusePossibility = 0;
     size_t DoubleMappedAllocator::g_maxRWMappingCount = 0;
     size_t DoubleMappedAllocator::g_RWMappingCount = 0;
+    size_t DoubleMappedAllocator::g_maxReusedRwMapsRefcount = 0;
 
 #ifdef RANDOMIZE_ALLOC
 #include <time.h>
@@ -1128,7 +1130,13 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
         // Zero the block so this memory doesn't get used again.
         m_reservedBlock.Init(NULL, 0, FALSE);
         allocationSource = 1;
-        pDataRW = DoubleMappedAllocator::Instance()->MapRW(pData, dwSizeToCommit);
+
+        pDataRW = pData;
+        if ((m_Options & LHF_EXECUTABLE))
+        {
+            pDataRW = DoubleMappedAllocator::Instance()->MapRW(pData, dwSizeToCommit);
+        }
+
         if (pDataRW == NULL)
         {
             __debugbreak();
@@ -1283,7 +1291,11 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
     if (pCurBlock != NULL)
     {
         // TODO: BUG??? is it really m_pCurBlock and not pCurBlock? I believe it was a bug
-        LoaderHeapBlock *pCurBlockRW = (LoaderHeapBlock*)DoubleMappedAllocator::Instance()->MapRW(pCurBlock, sizeof(LoaderHeapBlock));
+        LoaderHeapBlock *pCurBlockRW = pCurBlock;
+        if ((m_Options & LHF_EXECUTABLE))
+        {
+            pCurBlockRW = (LoaderHeapBlock*)DoubleMappedAllocator::Instance()->MapRW(pCurBlock, sizeof(LoaderHeapBlock));
+        }
         pCurBlockRW->pNext = pNewBlockRX;
         if ((m_Options & LHF_EXECUTABLE))
         {
@@ -1653,7 +1665,11 @@ void UnlockedLoaderHeap::UnlockedBackoutMem(void *pMem,
         // Cool. This was the last block allocated. We can just undo the allocation instead
         // of going to the freelist.
         // TODO: do this for executable heap only
-        void* pMemRW = DoubleMappedAllocator::Instance()->MapRW(pMem, dwSize);
+        void* pMemRW = pMem;
+        if (m_Options & LHF_EXECUTABLE)
+        {
+            pMemRW = DoubleMappedAllocator::Instance()->MapRW(pMem, dwSize);
+        }
         memset(pMemRW, 0x00, dwSize); // Fill freed region with 0
         if (m_Options & LHF_EXECUTABLE)
         {

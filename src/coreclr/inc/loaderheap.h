@@ -343,14 +343,19 @@ public:
             if (b->baseRX <= baseRX && ((size_t)baseRX + size) <= ((size_t)b->baseRX + b->size))
             {
                 b->refCount++;
-                return (BYTE*)b->baseRW + (baseRX - b->baseRX);
+                if (b->refCount > g_maxReusedRwMapsRefcount)
+                {
+                    g_maxReusedRwMapsRefcount = b->refCount;
+                }
+                //printf("Reusing mapping at %p for %p\n", b->baseRW, baseRX);
+                return (BYTE*)b->baseRW + ((size_t)baseRX - (size_t)b->baseRX);
             }
         }
 
         return NULL;
     }
 
-    bool AddMappedBlock(void* base, void* baseRX, size_t size)
+    bool AddMappedBlock(void* baseRW, void* baseRX, size_t size)
     {
 //        CRITSEC_Holder csh(m_CriticalSection);
 
@@ -369,7 +374,7 @@ public:
             return false;
         }
 
-        mappedBlock->baseRW = base;
+        mappedBlock->baseRW = baseRW;
         mappedBlock->baseRX = baseRX;
         mappedBlock->size = size;
         mappedBlock->next = m_firstMappedBlock;
@@ -417,19 +422,20 @@ public:
         return false;
     }
 
-    bool RemoveMappedBlock2(void* base)
+    bool RemoveMappedBlock2(void* pRW, void** pUnmapAddress)
     {
 //        CRITSEC_Holder csh(m_CriticalSection);
 
         MappedBlock* prevMappedBlock = NULL;
         for (MappedBlock* mappedBlock = m_firstMappedBlock; mappedBlock != NULL; mappedBlock = mappedBlock->next)
         {
-            if (mappedBlock->baseRW <= base && (size_t)base <  (size_t)mappedBlock->baseRW + mappedBlock->size)
+            if (mappedBlock->baseRW <= pRW && (size_t)pRW <  ((size_t)mappedBlock->baseRW + mappedBlock->size))
             {
                 // found
                 mappedBlock->refCount--;
                 if (mappedBlock->refCount != 0)
                 {
+                    *pUnmapAddress = NULL;
                     return true;
                 }
 
@@ -447,6 +453,8 @@ public:
                 {
                     g_maxRWMappingCount = g_RWMappingCount;
                 }
+
+                *pUnmapAddress = mappedBlock->baseRW;
 
                 //delete mappedBlock;
                 free(mappedBlock);
@@ -627,6 +635,8 @@ public:
     static size_t g_reserveCalls;
     static size_t g_reserveAtCalls;
     static size_t g_rwMaps;
+    static size_t g_reusedRwMaps;
+    static size_t g_maxReusedRwMapsRefcount;
     static size_t g_rwUnmaps;
     static size_t g_failedRwUnmaps;
     static size_t g_failedRwMaps;
@@ -640,6 +650,8 @@ public:
         printf("Reserve calls: %zd\n", g_reserveCalls);
         printf("Reserve-at calls: %zd\n", g_reserveAtCalls);
         printf("RW Maps: %zd\n", g_rwMaps);
+        printf("Reused RW Maps: %zd\n", g_reusedRwMaps);
+        printf("Max reused RW Maps refcount: %zd\n", g_maxReusedRwMapsRefcount);
         printf("RW Unmaps: %zd\n", g_rwUnmaps);
         printf("Failed RW Maps: %zd\n", g_failedRwMaps);
         printf("Failed RW Unmaps: %zd\n", g_failedRwUnmaps);
@@ -667,14 +679,18 @@ public:
 #endif
         // TODO: Linux will need the full range. So we may need to store all the RW mappings in a separate list (per RX mapping)
         InterlockedIncrement(&g_rwUnmaps);
-        void* unmapAddress = ALIGN_DOWN(pRW, Granularity());
 
-        if (!RemoveMappedBlock(unmapAddress))
+        void* unmapAddress = NULL;
+        if (!RemoveMappedBlock2(pRW, &unmapAddress))
         {
             __debugbreak();            
         }
 
-        if (!UnmapViewOfFile(unmapAddress))
+        if (unmapAddress)
+        {
+            //printf("Unmapping %p called from %p\n", unmapAddress, (void*)_ReturnAddress());
+        }
+        if (unmapAddress && !UnmapViewOfFile(unmapAddress))
         {
             InterlockedIncrement(&g_failedRwUnmaps);
             __debugbreak();
@@ -685,6 +701,14 @@ public:
     void* MapRW(void* pRX, size_t size)
     {
         CRITSEC_Holder csh(m_CriticalSection);
+
+        void* result = FindMappedBlock(pRX, size);
+        if (result != NULL)
+        {
+            InterlockedIncrement(&g_reusedRwMaps);
+            return result;
+        }
+
         for (Block* b = m_firstBlock; b != NULL; b = b->next)
         {
             if (pRX >= b->baseRX && ((size_t)pRX + size) <= ((size_t)b->baseRX + b->size))
@@ -710,7 +734,8 @@ public:
 
                 InterlockedIncrement(&g_rwMaps);
 
-                AddMappedBlock(pRW, pRX, mapSize);
+                //printf("Created mapping at %p for %p, size %p\n", pRW, (BYTE*)b->baseRX + mapOffset, (void*)mapSize);
+                AddMappedBlock(pRW, (BYTE*)b->baseRX + mapOffset, mapSize);
 
                 return (void*)((size_t)pRW + (offset - mapOffset));
             }

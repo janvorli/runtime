@@ -463,6 +463,7 @@ HeapList *HostCodeHeap::InitializeHeapList(CodeHeapRequestInfo *pInfo)
     size_t nibbleMapSize = HEAP2MAPSIZE(ROUND_UP_TO_PAGE(pHp->maxCodeHeapSize));
     pHpRW->pHdrMap = new DWORD[nibbleMapSize / sizeof(DWORD)];
     ZeroMemory(pHp->pHdrMap, nibbleMapSize);
+    //printf("InitializeHeapList: pHp=%p, pHdrMap=%p\n", pHp, pHp->pHdrMap);
 
     DoubleMappedAllocator::Instance()->UnmapRW(pHpRW);
 
