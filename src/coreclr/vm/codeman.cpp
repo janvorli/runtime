@@ -2280,8 +2280,6 @@ HeapList* LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
     }
     else
     {
-        BYTE* pBaseAddrRW = NULL;
-
         if (loAddr != NULL || hiAddr != NULL)
         {
 #ifdef _DEBUG
@@ -2309,7 +2307,7 @@ HeapList* LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
         }
         else
         {
-            DoubleMappedAllocator::Instance()->Allocate(reserveSize, reserveSize, (void**)&pBaseAddr, (void**)&pBaseAddrRW);
+            pBaseAddr = (BYTE*)DoubleMappedAllocator::Instance()->Reserve(reserveSize);
             if (!pBaseAddr)
                 ThrowOutOfMemory();
         }
