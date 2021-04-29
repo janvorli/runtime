@@ -172,7 +172,7 @@ DoublePtrT<Stub> StubCacheBase::Canonicalize(const BYTE * pRawStub)
     // and link up the stub.
     CodeLabel *plabel = psl->EmitNewCodeLabel();
     psl->EmitBytes(pRawStub, Length(pRawStub));
-    StubHolder3 pstub = sl.Link(m_heap);;
+    StubHolder3 pstub = sl.Link(m_heap);
 
     UINT32 offset = psl->GetLabelOffset(plabel);
 
@@ -208,7 +208,7 @@ DoublePtrT<Stub> StubCacheBase::Canonicalize(const BYTE * pRawStub)
                 // This will DecRef the new stub for us.
                 // TODO: Free the pstub!
 
-                Stub* pStubRW = (Stub*)DoubleMappedAllocator::Instance()->MapRW(phe->m_pStub, sizeof(Stub));
+                pstubRW = (Stub*)DoubleMappedAllocator::Instance()->MapRW(phe->m_pStub, sizeof(Stub));
                 pstub = DoublePtrT<Stub>(phe->m_pStub, pstubRW, NULL);
             }
             // IncRef so that caller has firm ownership of stub.
