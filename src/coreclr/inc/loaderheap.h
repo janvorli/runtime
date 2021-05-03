@@ -200,11 +200,20 @@ class DoubleMappedAllocator
         size_t refCount;
     };
 
+    struct UsersListEntry
+    {
+        UsersListEntry* next;
+        size_t count;
+        void *user;
+    };
+
     Block* m_firstBlock = NULL;
     MappedBlock* m_firstMappedBlock = NULL;
     HANDLE m_hSharedMemoryFile = NULL;
     size_t maxSize = 2048ULL*1024*1024;
     size_t m_freeOffset = 0;
+    UsersListEntry *m_mapUsers = NULL;
+
     CRITSEC_COOKIE m_CriticalSection;
 
     size_t Granularity()
@@ -499,21 +508,7 @@ public:
     static size_t g_RWMappingCount;
     static size_t g_maxRWMappingCount;
 
-    static void ReportState()
-    {
-        printf("Alloc calls: %zd\n", g_allocCalls);
-        printf("Reserve calls: %zd\n", g_reserveCalls);
-        printf("Reserve-at calls: %zd\n", g_reserveAtCalls);
-        printf("RW Maps: %zd\n", g_rwMaps);
-        printf("Reused RW Maps: %zd\n", g_reusedRwMaps);
-        printf("Max reused RW Maps refcount: %zd\n", g_maxReusedRwMapsRefcount);
-        printf("RW Unmaps: %zd\n", g_rwUnmaps);
-        printf("Failed RW Maps: %zd\n", g_failedRwMaps);
-        printf("Failed RW Unmaps: %zd\n", g_failedRwUnmaps);
-        printf("Map reuse possibility: %zd\n", g_mapReusePossibility);
-        printf("RW mappings count: %zd\n", g_RWMappingCount);
-        printf("Max RW mappings count: %zd\n", g_maxRWMappingCount);
-    }
+    void ReportState();
 
     void UnmapRW(void* pRW)
     {
@@ -553,9 +548,29 @@ public:
 #endif
     }
 
+    void RecordUser(void* callAddress)
+    {
+        for (UsersListEntry* user = m_mapUsers; user != NULL; user = user->next)
+        {
+            if (user->user == callAddress)
+            {
+                user->count++;
+                return;
+            }
+        }
+
+        UsersListEntry* newEntry = new (nothrow) UsersListEntry();
+        newEntry->count = 1;
+        newEntry->user = callAddress;
+        newEntry->next = m_mapUsers;
+        m_mapUsers = newEntry;
+    }
+
     void* MapRW(void* pRX, size_t size)
     {
         CRITSEC_Holder csh(m_CriticalSection);
+
+        RecordUser((void*)_ReturnAddress());
 
         void* result = FindMappedBlock(pRX, size);
         if (result != NULL)

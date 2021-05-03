@@ -39,6 +39,13 @@ HINSTANCE LoadDbgHelp();
 
 #endif
 
+struct SYM_INFO
+{
+    DWORD_PTR   dwOffset;
+    char        achModule[cchMaxAssertModuleLen];
+    char        achSymbol[cchMaxAssertSymbolLen];
+};
+
 //
 //--- Prototypes --------------------------------------------------------------
 //

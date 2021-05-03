@@ -7,6 +7,7 @@
 #include "pedecoder.h"
 #define DONOT_DEFINE_ETW_CALLBACK
 #include "eventtracebase.h"
+#include "stacktrace.h"
 
 #define LHF_EXECUTABLE  0x1
 
@@ -27,6 +28,41 @@ volatile DoubleMappedAllocator* DoubleMappedAllocator::g_instance = NULL;
     size_t DoubleMappedAllocator::g_maxRWMappingCount = 0;
     size_t DoubleMappedAllocator::g_RWMappingCount = 0;
     size_t DoubleMappedAllocator::g_maxReusedRwMapsRefcount = 0;
+
+void FillSymbolInfo
+(
+SYM_INFO *psi,
+DWORD_PTR dwAddr
+);
+
+void MagicInit();
+
+void DoubleMappedAllocator::ReportState()
+{
+    printf("Alloc calls: %zd\n", g_allocCalls);
+    printf("Reserve calls: %zd\n", g_reserveCalls);
+    printf("Reserve-at calls: %zd\n", g_reserveAtCalls);
+    printf("RW Maps: %zd\n", g_rwMaps);
+    printf("Reused RW Maps: %zd\n", g_reusedRwMaps);
+    printf("Max reused RW Maps refcount: %zd\n", g_maxReusedRwMapsRefcount);
+    printf("RW Unmaps: %zd\n", g_rwUnmaps);
+    printf("Failed RW Maps: %zd\n", g_failedRwMaps);
+    printf("Failed RW Unmaps: %zd\n", g_failedRwUnmaps);
+    printf("Map reuse possibility: %zd\n", g_mapReusePossibility);
+    printf("RW mappings count: %zd\n", g_RWMappingCount);
+    printf("Max RW mappings count: %zd\n", g_maxRWMappingCount);
+
+    printf("\n");
+    printf("MapRW users:\n");
+
+    MagicInit();
+    for (UsersListEntry* user = m_mapUsers; user != NULL; user = user->next)
+    {
+        SYM_INFO psi;
+        FillSymbolInfo(&psi, (DWORD_PTR)user->user);
+        printf(" %p - count = %zd: %s\n", user->user, user->count, psi.achSymbol);
+    }
+}
 
 #ifdef RANDOMIZE_ALLOC
 #include <time.h>
