@@ -673,6 +673,7 @@ class CodeFragmentHeap : public ILoaderHeapBackout
     struct FreeBlock
     {
         DPTR(FreeBlock) m_pNext;    // Next block
+        void  *m_pBlock;
         SIZE_T m_dwSize;            // Size of this block (includes size of FreeBlock)
     };
     typedef DPTR(FreeBlock) PTR_FreeBlock;
@@ -683,7 +684,7 @@ class CodeFragmentHeap : public ILoaderHeapBackout
     Crst                m_CritSec;
 
     void AddBlock(VOID * pMem, size_t dwSize);
-    void RemoveBlock(FreeBlock ** ppBlock, FreeBlock* pBlockRW);
+    void RemoveBlock(FreeBlock ** ppBlock);
 
 public:
     CodeFragmentHeap(LoaderAllocator * pAllocator, StubCodeBlockKind kind);

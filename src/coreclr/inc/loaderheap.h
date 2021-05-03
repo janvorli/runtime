@@ -570,14 +570,14 @@ public:
     {
         CRITSEC_Holder csh(m_CriticalSection);
 
-        RecordUser((void*)_ReturnAddress());
-
         void* result = FindMappedBlock(pRX, size);
         if (result != NULL)
         {
             InterlockedIncrement(&g_reusedRwMaps);
             return result;
         }
+
+        RecordUser((void*)_ReturnAddress());
 
         for (Block* b = m_firstBlock; b != NULL; b = b->next)
         {

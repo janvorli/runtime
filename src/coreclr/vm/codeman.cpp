@@ -1878,20 +1878,22 @@ void CodeFragmentHeap::AddBlock(void *pMem, size_t dwSize)
 {
     LIMITED_METHOD_CONTRACT;
 //    printf("Adding block %p, 0x%zx\n", pMem, dwSize);
-    FreeBlock * pBlock = (FreeBlock *)DoubleMappedAllocator::Instance()->MapRW(pMem, sizeof(FreeBlock));;
+
+    FreeBlock * pBlock = (FreeBlock *)malloc(sizeof(FreeBlock));
     pBlock->m_pNext = m_pFreeBlocks;
+    pBlock->m_pBlock = pMem;
     pBlock->m_dwSize = dwSize;
-    DoubleMappedAllocator::Instance()->UnmapRW(pBlock);
-    m_pFreeBlocks = (FreeBlock *)pMem;
+    m_pFreeBlocks = pBlock;
 }
 
-void CodeFragmentHeap::RemoveBlock(FreeBlock ** ppBlock, FreeBlock* pBlockRW)
+void CodeFragmentHeap::RemoveBlock(FreeBlock ** ppBlock)
 {
     LIMITED_METHOD_CONTRACT;
     FreeBlock * pBlock = *ppBlock;
 //    printf("Removing block %p, 0x%zx\n", pBlock, pBlock->m_dwSize);
     *ppBlock = pBlock->m_pNext;
-    ZeroMemory(pBlockRW, sizeof(FreeBlock));
+    ZeroMemory(pBlock, sizeof(FreeBlock));
+    free(pBlock);
 }
 
 TaggedMemAllocPtr CodeFragmentHeap::RealAllocAlignedMem(size_t  dwRequestedSize
@@ -1939,21 +1941,10 @@ TaggedMemAllocPtr CodeFragmentHeap::RealAllocAlignedMem(size_t  dwRequestedSize
     SIZE_T dwSize;
     if (ppBestFit != NULL)
     {
-        pMem = *ppBestFit;
+        pMem = (*ppBestFit)->m_pBlock;
         dwSize = (*ppBestFit)->m_dwSize;
 
-        FreeBlock ** ppBestFitRW = (FreeBlock **)DoubleMappedAllocator::Instance()->MapRW(ppBestFit, sizeof(FreeBlock));
-        void *pMemRW = DoubleMappedAllocator::Instance()->MapRW(pMem, sizeof(FreeBlock));
-        RemoveBlock(ppBestFitRW, (FreeBlock*)pMemRW);
-        if (pMem != pMemRW)
-        {
-            DoubleMappedAllocator::Instance()->UnmapRW(pMemRW);
-        }
-
-        if (ppBestFitRW != ppBestFit)
-        {
-            DoubleMappedAllocator::Instance()->UnmapRW(ppBestFitRW);
-        }
+        RemoveBlock(ppBestFit);
     }
     else
     {
@@ -2021,44 +2012,16 @@ void CodeFragmentHeap::RealBackoutMem(void *pMem
             // pMem = pMem;
 //            printf("Coalescing blocks %p, 0x%zx and %p, 0x%zx\n", pMem, dwSize, pFreeBlock, pFreeBlock->m_dwSize);
             dwSize += pFreeBlock->m_dwSize;
-            // TODO: we should move the list away from the exec memory, this is just crazy to do on every manipulation
-            FreeBlock** ppFreeBlockRW = (FreeBlock**)DoubleMappedAllocator::Instance()->MapRW(ppFreeBlock, sizeof(FreeBlock*));
-
-            FreeBlock* pFreeBlockRW = (FreeBlock*)DoubleMappedAllocator::Instance()->MapRW(pFreeBlock, sizeof(FreeBlock));
-            RemoveBlock(ppFreeBlockRW, pFreeBlockRW);
-            if (pFreeBlockRW != pFreeBlock)
-            {
-                DoubleMappedAllocator::Instance()->UnmapRW(pFreeBlockRW);
-            }
-            else
-            {
-                __debugbreak();
-            }
-            
-            if (ppFreeBlockRW != ppFreeBlock)
-            {
-                DoubleMappedAllocator::Instance()->UnmapRW(ppFreeBlockRW);
-            }
+            RemoveBlock(ppFreeBlock);
             continue;
         }
         else
         if ((BYTE *)pFreeBlock + pFreeBlock->m_dwSize == (BYTE *)pMem)
         {
 //            printf("Coalescing blocks %p, 0x%zx and %p, 0x%zx\n", pFreeBlock, pFreeBlock->m_dwSize, pMem, dwSize);
-            // We only need to map the FreeBlock as RW
-            FreeBlock* pFreeBlockRW = (FreeBlock*)DoubleMappedAllocator::Instance()->MapRW(pFreeBlock, sizeof(FreeBlock));
             pMem = pFreeBlock;
             dwSize += pFreeBlock->m_dwSize;
-            FreeBlock** ppFreeBlockRW = (FreeBlock**)DoubleMappedAllocator::Instance()->MapRW(ppFreeBlock, sizeof(FreeBlock*));
-            RemoveBlock(ppFreeBlockRW, pFreeBlockRW);
-            if (ppFreeBlockRW != ppFreeBlock)
-            {
-                DoubleMappedAllocator::Instance()->UnmapRW(ppFreeBlockRW);
-            }
-            if (pFreeBlockRW != pFreeBlock)
-            {
-                DoubleMappedAllocator::Instance()->UnmapRW(pFreeBlockRW);
-            }
+            RemoveBlock(ppFreeBlock);
             continue;
         }
 
