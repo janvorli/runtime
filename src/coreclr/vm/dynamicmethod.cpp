@@ -396,11 +396,8 @@ HeapList* HostCodeHeap::InitializeHeapList(CodeHeapRequestInfo *pInfo)
 
     size_t ReserveBlockSize = pInfo->getRequestSize();
 
-    // Add TrackAllocation, HeapList and very conservative padding to make sure we have enough for the allocation
-    ReserveBlockSize += sizeof(TrackAllocation) + sizeof(HeapList) + HOST_CODEHEAP_SIZE_ALIGN + 0x100;
-
-    // reserve ReserveBlockSize rounded-up to VIRTUAL_ALLOC_RESERVE_GRANULARITY of memory
-    ReserveBlockSize = ALIGN_UP(ReserveBlockSize, VIRTUAL_ALLOC_RESERVE_GRANULARITY);
+    // Add a very conservative padding to make sure we have enough for the allocation
+    ReserveBlockSize += HOST_CODEHEAP_SIZE_ALIGN + 0x100;
 
     if (pInfo->m_loAddr != NULL || pInfo->m_hiAddr != NULL)
     {
@@ -428,44 +425,57 @@ HeapList* HostCodeHeap::InitializeHeapList(CodeHeapRequestInfo *pInfo)
     m_ApproximateLargestBlock = ReserveBlockSize;
     m_pAllocator = pInfo->m_pAllocator;
 
-    TrackAllocation *pTracker = AllocMemory_NoThrow(0, sizeof(HeapList), sizeof(void*), 0);
-    if (pTracker == NULL)
+    HeapList* pHp = (HeapList*)malloc(sizeof(HeapList));
+    if (pHp == NULL)
     {
         // This should only ever happen with fault injection
         _ASSERTE(g_pConfig->ShouldInjectFault(INJECTFAULT_DYNAMICCODEHEAP));
         ThrowOutOfMemory();
     }
 
-    HeapList* pHp = (HeapList *)(pTracker + 1);
-    HeapList* pHpRW = (HeapList*)DoubleMappedAllocator::Instance()->MapRW(pHp, sizeof(HeapList));
+    TrackAllocation *pTracker = NULL;
 
-    pHpRW->hpNext = NULL;
-    pHpRW->pHeap = (PTR_CodeHeap)this;
+#if defined(TARGET_AMD64) || defined(TARGET_ARM64)
+
+    pTracker = AllocMemory_NoThrow(0, JUMP_ALLOCATE_SIZE, sizeof(void*), 0);
+    if (pTracker == NULL)
+    {
+        // This should only ever happen with fault injection
+        _ASSERTE(g_pConfig->ShouldInjectFault(INJECTFAULT_DYNAMICCODEHEAP));
+        free(pHp);
+        ThrowOutOfMemory();
+    }
+
+    pHp->CLRPersonalityRoutine = (BYTE *)(pTracker + 1);
+#endif
+
+    pHp->hpNext = NULL;
+    pHp->pHeap = (PTR_CodeHeap)this;
     // wire it back
     m_pHeapList = (PTR_HeapList)pHp;
 
     LOG((LF_BCL, LL_INFO100, "Level2 - CodeHeap creation {0x%p} - size available 0x%p, private data ptr [0x%p, 0x%p]\n",
         (HostCodeHeap*)this, m_TotalBytesAvailable, pTracker, pTracker->size));
 
-    // It is imporant to exclude the CLRPersonalityRoutine from the tracked range
-    pHpRW->startAddress = dac_cast<TADDR>(m_pBaseAddr) + pTracker->size;
-    pHpRW->mapBase = ROUND_DOWN_TO_PAGE(pHp->startAddress);  // round down to next lower page align
-    pHpRW->pHdrMap = NULL;
-    pHpRW->endAddress = pHp->startAddress;
+    // It is important to exclude the CLRPersonalityRoutine from the tracked range
+    pHp->startAddress = dac_cast<TADDR>(m_pBaseAddr) + (pTracker ? pTracker->size : 0);    
+    pHp->mapBase = ROUND_DOWN_TO_PAGE(pHp->startAddress);  // round down to next lower page align
+    pHp->pHdrMap = NULL;
+    pHp->endAddress = pHp->startAddress;
 
-    pHpRW->maxCodeHeapSize = m_TotalBytesAvailable - pTracker->size;
-    pHpRW->reserveForJumpStubs = 0;
+    pHp->maxCodeHeapSize = m_TotalBytesAvailable - (pTracker ? pTracker->size : 0);
+    pHp->reserveForJumpStubs = 0;
 
 #ifdef HOST_64BIT
-    emitJump((LPBYTE)pHpRW->CLRPersonalityRoutine, (void *)ProcessCLRException);
+    BYTE* personalityRoutineRW = (BYTE*)DoubleMappedAllocator::Instance()->MapRW(pHp->CLRPersonalityRoutine, 12);
+    emitJump(personalityRoutineRW, (void *)ProcessCLRException);
+    DoubleMappedAllocator::Instance()->UnmapRW(personalityRoutineRW);
 #endif
 
     size_t nibbleMapSize = HEAP2MAPSIZE(ROUND_UP_TO_PAGE(pHp->maxCodeHeapSize));
-    pHpRW->pHdrMap = new DWORD[nibbleMapSize / sizeof(DWORD)];
+    pHp->pHdrMap = new DWORD[nibbleMapSize / sizeof(DWORD)];
     ZeroMemory(pHp->pHdrMap, nibbleMapSize);
     //printf("InitializeHeapList: pHp=%p, pHdrMap=%p\n", pHp, pHp->pHdrMap);
-
-    DoubleMappedAllocator::Instance()->UnmapRW(pHpRW);
 
     return pHp;
 }

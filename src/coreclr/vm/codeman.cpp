@@ -2281,30 +2281,36 @@ HeapList* LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
 
 
     // this first allocation is critical as it sets up correctly the loader heap info
-    HeapList *pHp = (HeapList*)pCodeHeap->m_LoaderHeap.AllocMem(sizeof(HeapList));
-    // TODO: it seems this memory needs to be only RW, so what should we do with it? Can we teach the heap to allocate pure RW memory?
-    // or should we waste RX mapping space? Or actually, the RX mapping is probably needed to ensure relative distance from the code? So this should
-    // stay double mapped forever?
-    HeapList *pHpRW = (HeapList*)DoubleMappedAllocator::Instance()->MapRW(pHp, sizeof(HeapList));
+    HeapList *pHp = (HeapList*)malloc(sizeof(HeapList));
 
-    pHpRW->pHeap = pCodeHeap;
+#if defined(TARGET_AMD64)
+    pHp->CLRPersonalityRoutine = (BYTE *)pCodeHeap->m_LoaderHeap.AllocMem(JUMP_ALLOCATE_SIZE);
+    // TODO: do we need alignment of the size here?
+    pHp->startAddress = (TADDR)pHp->CLRPersonalityRoutine + JUMP_ALLOCATE_SIZE;
+#elif defined(TARGET_ARM64)
+    pHp->CLRPersonalityRoutine = (UINT32 *)pCodeHeap->m_LoaderHeap.AllocMem(JUMP_ALLOCATE_SIZE);
+    pHp->startAddress = (TADDR)pHp->CLRPersonalityRoutine + JUMP_ALLOCATE_SIZE;
+#else
+    // Dummy allocation - can we do something better? E.g. add method to get base address
+    pHp->startAddress = (TADDR)pCodeHeap->m_LoaderHeap.AllocMem(16) + 16;
+#endif
+
+    pHp->pHeap = pCodeHeap;
 
     size_t heapSize = pCodeHeap->m_LoaderHeap.GetReservedBytesFree();
     size_t nibbleMapSize = HEAP2MAPSIZE(ROUND_UP_TO_PAGE(heapSize));
 
-    pHpRW->startAddress    = (TADDR)pHp + sizeof(HeapList);
-
-    pHpRW->endAddress      = pHp->startAddress;
-    pHpRW->maxCodeHeapSize = heapSize;
-    pHpRW->reserveForJumpStubs = fAllocatedFromEmergencyJumpStubReserve ? pHp->maxCodeHeapSize : GetDefaultReserveForJumpStubs(pHp->maxCodeHeapSize);
+    pHp->endAddress      = pHp->startAddress;
+    pHp->maxCodeHeapSize = heapSize;
+    pHp->reserveForJumpStubs = fAllocatedFromEmergencyJumpStubReserve ? pHp->maxCodeHeapSize : GetDefaultReserveForJumpStubs(pHp->maxCodeHeapSize);
 
     _ASSERTE(heapSize >= initialRequestSize);
 
     // We do not need to memset this memory, since ClrVirtualAlloc() guarantees that the memory is zero.
     // Furthermore, if we avoid writing to it, these pages don't come into our working set
 
-    pHpRW->mapBase         = ROUND_DOWN_TO_PAGE(pHp->startAddress);  // round down to next lower page align
-    pHpRW->pHdrMap         = (DWORD*)(void*)pJitMetaHeap->AllocMem(S_SIZE_T(nibbleMapSize));
+    pHp->mapBase         = ROUND_DOWN_TO_PAGE(pHp->startAddress);  // round down to next lower page align
+    pHp->pHdrMap         = (DWORD*)(void*)pJitMetaHeap->AllocMem(S_SIZE_T(nibbleMapSize));
     //printf("CreateCodeHeap: pHp=%p, pHdrMap=%p\n", pHp, pHp->pHdrMap);
 
     LOG((LF_JIT, LL_INFO100,
@@ -2313,10 +2319,10 @@ HeapList* LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
          ));
 
 #ifdef TARGET_64BIT
-    emitJump((LPBYTE)pHpRW->CLRPersonalityRoutine, (void *)ProcessCLRException);
+    BYTE* personalityRoutineRW = (BYTE*)DoubleMappedAllocator::Instance()->MapRW(pHp->CLRPersonalityRoutine, 12);
+    emitJump(personalityRoutineRW, (void *)ProcessCLRException);
+    DoubleMappedAllocator::Instance()->UnmapRW(personalityRoutineRW);
 #endif // TARGET_64BIT
-
-    DoubleMappedAllocator::Instance()->UnmapRW(pHpRW);
 
     pCodeHeap.SuppressRelease();
     RETURN pHp;
@@ -2432,13 +2438,7 @@ HeapList* EEJitManager::NewCodeHeap(CodeHeapRequestInfo *pInfo, DomainCodeHeapLi
     }
 #endif
 
-    // <BUGNUM> VSW 433293 </BUGNUM>
-    // SETUP_NEW_BLOCK reserves the first sizeof(LoaderHeapBlock) bytes for LoaderHeapBlock.
-    // In other word, the first m_pAllocPtr starts at sizeof(LoaderHeapBlock) bytes
-    // after the allocated memory. Therefore, we need to take it into account.
-    size_t requestAndHeadersSize = sizeof(LoaderHeapBlock) + sizeof(HeapList) + initialRequestSize;
-
-    size_t reserveSize = requestAndHeadersSize;
+    size_t reserveSize = initialRequestSize;
     if (reserveSize < minReserveSize)
         reserveSize = minReserveSize;
     reserveSize = ALIGN_UP(reserveSize, VIRTUAL_ALLOC_RESERVE_GRANULARITY);
@@ -2471,25 +2471,21 @@ HeapList* EEJitManager::NewCodeHeap(CodeHeapRequestInfo *pInfo, DomainCodeHeapLi
 
     _ASSERTE (pHp != NULL);
 
-    HeapList* pHpRX = pHp;
-    HeapList* pHpRW = (HeapList*)DoubleMappedAllocator::Instance()->MapRW(pHpRX, sizeof(HeapList));
+    _ASSERTE (pHp->maxCodeHeapSize >= initialRequestSize);
 
-    _ASSERTE (pHpRX->maxCodeHeapSize >= initialRequestSize);
+    pHp->SetNext(GetCodeHeapList());
 
-    pHpRW->SetNext(GetCodeHeapList());
-
-    DoubleMappedAllocator::Instance()->UnmapRW(pHpRW);
 
     EX_TRY
     {
-        TADDR pStartRange = (TADDR) pHpRX;
-        TADDR pEndRange = (TADDR) &((BYTE*)pHpRX->startAddress)[pHpRX->maxCodeHeapSize];
+        TADDR pStartRange = pHp->GetModuleBase();
+        TADDR pEndRange = (TADDR) &((BYTE*)pHp->startAddress)[pHp->maxCodeHeapSize];
 
         ExecutionManager::AddCodeRange(pStartRange,
                                        pEndRange,
                                        this,
                                        (RangeSection::RangeSectionFlags)flags,
-                                       pHpRX);
+                                       pHp);
         //
         // add a table to cover each range in the range list
         //
@@ -2506,8 +2502,8 @@ HeapList* EEJitManager::NewCodeHeap(CodeHeapRequestInfo *pInfo, DomainCodeHeapLi
         // If we failed to alloc memory in ExecutionManager::AddCodeRange()
         // then we will delete the LoaderHeap that we allocated
 
-        // pHp is allocated in pHeap, so only need to delete the LoaderHeap itself
-        delete pHpRX->pHeap;
+        delete pHp->pHeap;
+        free(pHp);
 
         pHp = NULL;
     }
@@ -2518,14 +2514,14 @@ HeapList* EEJitManager::NewCodeHeap(CodeHeapRequestInfo *pInfo, DomainCodeHeapLi
         ThrowOutOfMemory();
     }
 
-    m_pCodeHeap = pHpRX;
+    m_pCodeHeap = pHp;
 
     HeapList **ppHeapList = pADHeapList->m_CodeHeapList.AppendThrowing();
-    *ppHeapList = pHpRX;
+    *ppHeapList = pHp;
 
     // TODO: release the RW mapping or return the double ptr
 
-    RETURN(pHpRX);
+    RETURN(pHp);
 }
 
 void* EEJitManager::allocCodeRaw(CodeHeapRequestInfo *pInfo,
@@ -2624,9 +2620,7 @@ void* EEJitManager::allocCodeRaw(CodeHeapRequestInfo *pInfo,
     if (((TADDR)mem)+blockSize > (TADDR)pCodeHeap->endAddress)
     {
         // Update the CodeHeap endAddress
-        HeapList* pCodeHeapRW = (HeapList*)DoubleMappedAllocator::Instance()->MapRW(pCodeHeap, sizeof(HeapList));
-        pCodeHeapRW->endAddress = (TADDR)mem+blockSize;
-        DoubleMappedAllocator::Instance()->UnmapRW(pCodeHeapRW);
+        pCodeHeap->endAddress = (TADDR)mem+blockSize;
     }
 
     RETURN(mem);
@@ -2747,7 +2741,7 @@ CodeHeader* EEJitManager::allocCode(MethodDesc* pMD, size_t blockSize, size_t re
         pCodeHdrRW->SetMethodDesc(pMD);
 #ifdef FEATURE_EH_FUNCLETS
         pCodeHdrRW->SetNumberOfUnwindInfos(nUnwindInfos);
-        *pModuleBase = (TADDR)pCodeHeap;
+        *pModuleBase = pCodeHeap->GetModuleBase();
 #endif
 
 #ifdef USE_INDIRECT_CODEHEADER
@@ -3109,13 +3103,10 @@ void * EEJitManager::allocCodeFragmentBlock(size_t blockSize, unsigned alignment
         pCodeHdrRW->SetStubCodeBlockKind(kind);
         DoubleMappedAllocator::Instance()->UnmapRW(pCodeHdrRW);
 
-        HeapList *pCodeHeapRW = (HeapList *)DoubleMappedAllocator::Instance()->MapRW(pCodeHeap, sizeof(HeapList));
-
         NibbleMapSet(pCodeHeap, mem, TRUE);
 
         // Record the jump stub reservation
-        pCodeHeapRW->reserveForJumpStubs += requestInfo.getReserveForJumpStubs();
-        DoubleMappedAllocator::Instance()->UnmapRW(pCodeHeapRW);
+        pCodeHeap->reserveForJumpStubs += requestInfo.getReserveForJumpStubs();
     }
 
     RETURN((void *)mem);
@@ -3607,14 +3598,12 @@ void EEJitManager::DeleteCodeHeap(HeapList *pHeapList)
             pHpNext = pHp->GetNext();
         }
 
-        HeapList* pHpRW = (HeapList*)DoubleMappedAllocator::Instance()->MapRW(pHp, sizeof(HeapList));
-        pHpRW->SetNext(pHeapList->GetNext());
-        DoubleMappedAllocator::Instance()->UnmapRW(pHpRW);
+        pHp->SetNext(pHeapList->GetNext());
     }
 
-    DeleteEEFunctionTable((PVOID)pHeapList);
+    DeleteEEFunctionTable((PVOID)pHeapList->mapBase);
 
-    ExecutionManager::DeleteRange((TADDR)pHeapList);
+    ExecutionManager::DeleteRange((TADDR)pHeapList->mapBase);
 
     LOG((LF_JIT, LL_INFO100, "DeleteCodeHeap start" FMT_ADDR "end" FMT_ADDR "\n",
                               (const BYTE*)pHeapList->startAddress,
@@ -3626,6 +3615,7 @@ void EEJitManager::DeleteCodeHeap(HeapList *pHeapList)
     // delete pHeapList->pHeap;
     CodeHeap* pHeap = pHeapList->pHeap;
     delete pHeap;
+    free(pHeapList);
 }
 
 #endif // #ifndef DACCESS_COMPILE

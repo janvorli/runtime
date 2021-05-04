@@ -489,11 +489,16 @@ typedef struct _HeapList
     size_t              maxCodeHeapSize;// Size of the entire contiguous block of memory
     size_t              reserveForJumpStubs; // Amount of memory reserved for jump stubs in this block
 
-#if defined(TARGET_AMD64)
-    BYTE        CLRPersonalityRoutine[JUMP_ALLOCATE_SIZE];                 // jump thunk to personality routine
-#elif defined(TARGET_ARM64)
-    UINT32      CLRPersonalityRoutine[JUMP_ALLOCATE_SIZE/sizeof(UINT32)];  // jump thunk to personality routine
+    BYTE*               CLRPersonalityRoutine;  // jump thunk to personality routine
+
+    TADDR GetModuleBase()
+    {
+#if defined(TARGET_AMD64) || defined(TARGET_ARM64)
+        return (TADDR)CLRPersonalityRoutine;
+#else
+        return (TADDR)mapBase;
 #endif
+    }
 
     PTR_HeapList GetNext()
     { SUPPORTS_DAC; return hpNext; }
@@ -1253,9 +1258,7 @@ public:
     static ULONG          GetCLRPersonalityRoutineValue()
     {
         LIMITED_METHOD_CONTRACT;
-        static_assert_no_msg(offsetof(HeapList, CLRPersonalityRoutine) ==
-            (size_t)((ULONG)offsetof(HeapList, CLRPersonalityRoutine)));
-        return offsetof(HeapList, CLRPersonalityRoutine);
+        return 0;
     }
 #endif // TARGET_64BIT
 
