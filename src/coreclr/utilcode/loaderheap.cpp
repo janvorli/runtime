@@ -1187,8 +1187,14 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
         // Reserve pages
         //
 
-        if (m_Options & LHF_EXECUTABLE)
+        //if (m_Options & LHF_EXECUTABLE)
         {
+            // Reserve the memory for even non-executable stuff close to the executable code, as it has profound effect
+            // on e.g. a static variable access performance.
+            // TODO: we really don't need to get the memory from the DoubleMappedAllocator. We need to reserve the VM range.
+            // So it would be better to have a separate method out of the DoubleMappedAllocator that would call into the ReserveAt or 
+            // ClrVirtualAlloc based on the executability. Call it e.g. ReserveExecutableMemoryRange(size, bool isExec)
+            // or "ReserveCloseToExecutableMemory"
             pData = DoubleMappedAllocator::Instance()->Reserve(dwSizeToReserve);
             if (pData == NULL)
             {
@@ -1198,18 +1204,18 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
             // TODO: is this correct? Do we actually need two state flag - uncommit and release? Uncommit for the double mapped allocation
             fReleaseMemory = FALSE;
         }
-        else
-        {
-            // TODO: or should it still use executable memory to ensure closer distance to code?
-            pData = ClrVirtualAlloc(NULL, dwSizeToReserve, MEM_RESERVE, PAGE_NOACCESS);
-            //pData = ClrVirtualAllocExecutable(dwSizeToReserve, MEM_RESERVE, PAGE_NOACCESS);
+        // else
+        // {
+        //     // TODO: or should it still use executable memory to ensure closer distance to code?
+        //     //pData = ClrVirtualAlloc(NULL, dwSizeToReserve, MEM_RESERVE, PAGE_NOACCESS);
+        //     //pData = ClrVirtualAllocExecutable(dwSizeToReserve, MEM_RESERVE, PAGE_NOACCESS);
 
-            if (pData == NULL)
-            {
-                __debugbreak();
-                return FALSE;
-            }
-        }
+        //     if (pData == NULL)
+        //     {
+        //         __debugbreak();
+        //         return FALSE;
+        //     }
+        // }
 
         // pData = ClrVirtualAllocExecutable(dwSizeToReserve, MEM_RESERVE, PAGE_NOACCESS);
         // if (pData == NULL)
