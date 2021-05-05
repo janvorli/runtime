@@ -39,6 +39,7 @@ void MagicInit();
 
 void DoubleMappedAllocator::ReportState()
 {
+#ifdef ENABLE_DOUBLE_MAPPING
     printf("Alloc calls: %zd\n", g_allocCalls);
     printf("Reserve calls: %zd\n", g_reserveCalls);
     printf("Reserve-at calls: %zd\n", g_reserveAtCalls);
@@ -62,6 +63,7 @@ void DoubleMappedAllocator::ReportState()
         FillSymbolInfo(&psi, (DWORD_PTR)user->user);
         printf(" %p - count = %zd: %s\n", user->user, user->count, psi.achSymbol);
     }
+#endif    
 }
 
 #ifdef RANDOMIZE_ALLOC
@@ -1232,7 +1234,11 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
 
     // Commit first set of pages, since it will contain the LoaderHeapBlock
     void *pPrevPData = pData;
+#ifdef ENABLE_DOUBLE_MAPPING
     void *pTemp = ClrVirtualAlloc(pData, dwSizeToCommit, MEM_COMMIT, (m_Options & LHF_EXECUTABLE) ? PAGE_EXECUTE_READ : PAGE_READWRITE);
+#else
+    void *pTemp = ClrVirtualAlloc(pData, dwSizeToCommit, MEM_COMMIT, (m_Options & LHF_EXECUTABLE) ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE);
+#endif
     if (pTemp == NULL)
     {
         //_ASSERTE(!"Unable to ClrVirtualAlloc commit in a loaderheap");
@@ -1356,7 +1362,11 @@ BOOL UnlockedLoaderHeap::GetMoreCommittedPages(size_t dwMinSize)
         dwSizeToCommit = ALIGN_UP(dwSizeToCommit, GetOsPageSize());
 
         // Yes, so commit the desired number of reserved pages
+#ifdef ENABLE_DOUBLE_MAPPING
         void *pData = ClrVirtualAlloc(m_pPtrToEndOfCommittedRegion, dwSizeToCommit, MEM_COMMIT, (m_Options & LHF_EXECUTABLE) ? PAGE_EXECUTE_READ : PAGE_READWRITE);
+#else
+        void *pData = ClrVirtualAlloc(m_pPtrToEndOfCommittedRegion, dwSizeToCommit, MEM_COMMIT, (m_Options & LHF_EXECUTABLE) ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE);
+#endif
         if (pData == NULL)
         {
             __debugbreak();

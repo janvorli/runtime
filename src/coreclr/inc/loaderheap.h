@@ -20,6 +20,8 @@
 
 class UnlockedLoaderHeap;
 
+#define ENABLE_DOUBLE_MAPPING
+
 template<typename T>
 class DoublePtrT
 {
@@ -92,7 +94,7 @@ public:
 
     void UnmapRW()
     {
-#ifndef CROSSGEN_COMPILE        
+#if !defined(CROSSGEN_COMPILE) && defined(ENABLE_DOUBLE_MAPPING)
         //_ASSERTE(m_pRW != m_pRX);
         if (m_pRW == m_pRX)
         {
@@ -178,6 +180,14 @@ struct TaggedMemAllocPtr
     }
 };
 
+#ifdef ENABLE_DOUBLE_MAPPING
+
+
+extern BYTE * s_CodeMinAddr;        // Preferred region to allocate the code in.
+extern BYTE * s_CodeMaxAddr;
+extern BYTE * s_CodeAllocStart;
+extern BYTE * s_CodeAllocHint;      // Next address to try to allocate for code in the preferred region.
+
 class DoubleMappedAllocator
 {
     static volatile DoubleMappedAllocator* g_instance;
@@ -258,6 +268,34 @@ public:
         return m_hSharedMemoryFile != NULL;    
     }
 
+    MappedBlock* m_cachedMapping = NULL;
+
+    void UpdateCachedMapping(MappedBlock *b)
+    {
+        /*
+        if (m_cachedMapping == NULL)
+        {
+            m_cachedMapping = b;
+            b->refCount++;
+        }
+        else if (m_cachedMapping != b)
+        {
+            void* unmapAddress = NULL;
+            if (!RemoveMappedBlock2(m_cachedMapping->baseRW, &unmapAddress))
+            {
+                __debugbreak();
+            }
+            if (unmapAddress && !UnmapViewOfFile(unmapAddress))
+            {
+                InterlockedIncrement(&g_failedRwUnmaps);
+                __debugbreak();
+            }
+            m_cachedMapping = b;
+            b->refCount++;
+        }
+        */
+    }
+
     void* FindMappedBlock(void* baseRX, size_t size)
     {
         for (MappedBlock* b = m_firstMappedBlock; b != NULL; b = b->next)
@@ -269,6 +307,7 @@ public:
                 {
                     g_maxReusedRwMapsRefcount = b->refCount;
                 }
+                UpdateCachedMapping(b);
                 //printf("Reusing mapping at %p for %p\n", b->baseRW, baseRX);
                 return (BYTE*)b->baseRW + ((size_t)baseRX - (size_t)b->baseRX);
             }
@@ -302,6 +341,8 @@ public:
         mappedBlock->next = m_firstMappedBlock;
         mappedBlock->refCount = 1;
         m_firstMappedBlock = mappedBlock;
+
+        UpdateCachedMapping(mappedBlock);
 
         InterlockedIncrement(&g_RWMappingCount);
 
@@ -389,6 +430,150 @@ public:
         return false;
     }
 
+    BYTE * ReserveWithinRange(const BYTE *pMinAddr,
+                              const BYTE *pMaxAddr,
+                              SIZE_T dwSize,
+                              SIZE_T offset)
+    {
+        BYTE *pResult = nullptr;  // our return value;
+
+        if (dwSize == 0)
+        {
+            return nullptr;
+        }
+
+        //
+        // First lets normalize the pMinAddr and pMaxAddr values
+        //
+        // If pMinAddr is NULL then set it to BOT_MEMORY
+        if ((pMinAddr == 0) || (pMinAddr < (BYTE *) BOT_MEMORY))
+        {
+            pMinAddr = (BYTE *) BOT_MEMORY;
+        }
+
+        // If pMaxAddr is NULL then set it to TOP_MEMORY
+        if ((pMaxAddr == 0) || (pMaxAddr > (BYTE *) TOP_MEMORY))
+        {
+            pMaxAddr = (BYTE *) TOP_MEMORY;
+        }
+
+        // If pMaxAddr is not greater than pMinAddr we can not make an allocation
+        if (pMaxAddr <= pMinAddr)
+        {
+            return nullptr;
+        }
+
+        // If pMinAddr is BOT_MEMORY and pMaxAddr is TOP_MEMORY
+        // then we can call ClrVirtualAlloc instead
+        if ((pMinAddr == (BYTE *) BOT_MEMORY) && (pMaxAddr == (BYTE *) TOP_MEMORY))
+        {
+            return (BYTE*)MapViewOfFile(m_hSharedMemoryFile,
+                            FILE_MAP_EXECUTE | FILE_MAP_READ | FILE_MAP_WRITE, // TODO: can we add the write only for reservations that will be for both data and execution, like the loader allocator? Or should we split the initial allocation to two parts - exe and non-exe?
+                            offset / ((size_t)1) >> 32,
+                            offset & 0xFFFFFFFFUL,
+                            dwSize);
+        }
+
+        // We will do one scan from [pMinAddr .. pMaxAddr]
+        // First align the tryAddr up to next 64k base address.
+        // See docs for VirtualAllocEx and lpAddress and 64k alignment for reasons.
+        //
+        BYTE *   tryAddr            = (BYTE *)ALIGN_UP((BYTE *)pMinAddr, Granularity());
+        bool     virtualQueryFailed = false;
+#ifdef DEBUG        
+        bool     faultInjected      = false;
+#endif        
+        unsigned virtualQueryCount  = 0;
+
+        // Now scan memory and try to find a free block of the size requested.
+        while ((tryAddr + dwSize) <= (BYTE *) pMaxAddr)
+        {
+            MEMORY_BASIC_INFORMATION mbInfo;
+
+            // Use VirtualQuery to find out if this address is MEM_FREE
+            //
+            virtualQueryCount++;
+            if (!ClrVirtualQuery((LPCVOID)tryAddr, &mbInfo, sizeof(mbInfo)))
+            {
+                // Exit and return nullptr if the VirtualQuery call fails.
+                virtualQueryFailed = true;
+                break;
+            }
+
+            // Is there enough memory free from this start location?
+            // Note that for most versions of UNIX the mbInfo.RegionSize returned will always be 0
+            if ((mbInfo.State == MEM_FREE) &&
+                (mbInfo.RegionSize >= (SIZE_T) dwSize || mbInfo.RegionSize == 0))
+            {
+                pResult = (BYTE*) MapViewOfFileEx(m_hSharedMemoryFile,
+                        FILE_MAP_EXECUTE | FILE_MAP_READ | FILE_MAP_WRITE, // TODO: can we add the write only for reservations that will be for both data and execution, like the loader allocator? Or should we split the initial allocation to two parts - exe and non-exe?
+                        offset / ((size_t)1) >> 32,
+                        offset & 0xFFFFFFFFUL,
+                        dwSize,
+                        tryAddr);
+
+                // Normally this will be successful
+                //
+                if (pResult != nullptr)
+                {
+                    // return pResult
+                    break;
+                }
+
+    #ifdef _DEBUG
+                if (ShouldInjectFaultInRange())
+                {
+                    // return nullptr (failure)
+                    faultInjected = true;
+                    break;
+                }
+    #endif // _DEBUG
+
+                // On UNIX we can also fail if our request size 'dwSize' is larger than 64K and
+                // and our tryAddr is pointing at a small MEM_FREE region (smaller than 'dwSize')
+                // However we can't distinguish between this and the race case.
+
+                // We might fail in a race.  So just move on to next region and continue trying
+                tryAddr = tryAddr + Granularity();
+            }
+            else
+            {
+                // Try another section of memory
+                tryAddr = max(tryAddr + Granularity(),
+                            (BYTE*) mbInfo.BaseAddress + mbInfo.RegionSize);
+            }
+        }
+
+        // STRESS_LOG7(LF_JIT, LL_INFO100,
+        //             "ClrVirtualAllocWithinRange request #%u for %08x bytes in [ %p .. %p ], query count was %u - returned %s: %p\n",
+        //             countOfCalls, (DWORD)dwSize, pMinAddr, pMaxAddr,
+        //             virtualQueryCount, (pResult != nullptr) ? "success" : "failure", pResult);
+
+        // // If we failed this call the process will typically be terminated
+        // // so we log any additional reason for failing this call.
+        // //
+        // if (pResult == nullptr)
+        // {
+        //     if ((tryAddr + dwSize) > (BYTE *)pMaxAddr)
+        //     {
+        //         // Our tryAddr reached pMaxAddr
+        //         STRESS_LOG0(LF_JIT, LL_INFO100, "Additional reason: Address space exhausted.\n");
+        //     }
+
+        //     if (virtualQueryFailed)
+        //     {
+        //         STRESS_LOG0(LF_JIT, LL_INFO100, "Additional reason: VirtualQuery operation failed.\n");
+        //     }
+
+        //     if (faultInjected)
+        //     {
+        //         STRESS_LOG0(LF_JIT, LL_INFO100, "Additional reason: fault injected.\n");
+        //     }
+        // }
+
+        return pResult;
+    }
+
     void* Reserve(size_t size)
     {
         _ASSERTE((size & (Granularity() - 1)) == 0);
@@ -418,11 +603,54 @@ public:
             return NULL;
         }
 
-        void *result = MapViewOfFile(m_hSharedMemoryFile,
-                        FILE_MAP_EXECUTE | FILE_MAP_READ | FILE_MAP_WRITE, // TODO: can we add the write only for reservations that will be for both data and execution, like the loader allocator? Or should we split the initial allocation to two parts - exe and non-exe?
-                        offset / ((size_t)1) >> 32,
-                        offset & 0xFFFFFFFFUL,
-                        size);
+        BYTE *result = NULL;
+
+#if USE_UPPER_ADDRESS
+        //
+        // If we are using the UPPER_ADDRESS space (on Win64)
+        // then for any heap that will contain executable code
+        // we will place it in the upper address space
+        //
+        // This enables us to avoid having to use JumpStubs
+        // to reach the code for our ngen-ed images on x64,
+        // since they are also placed in the UPPER_ADDRESS space.
+        //
+        BYTE * pHint = s_CodeAllocHint;
+
+        if (size <= (SIZE_T)(s_CodeMaxAddr - s_CodeMinAddr) && pHint != NULL)
+        {
+            // Try to allocate in the preferred region after the hint
+            result = ReserveWithinRange(pHint, s_CodeMaxAddr, size, offset);
+
+            if (result != NULL)
+            {
+                s_CodeAllocHint = result + size;
+            }
+            else
+            {
+                // Try to allocate in the preferred region before the hint
+                result = ReserveWithinRange(s_CodeMinAddr, pHint + size, size, offset);
+
+                if (result != NULL)
+                {
+                    s_CodeAllocHint = result + size;
+                }
+
+                s_CodeAllocHint = NULL;
+            }
+        }
+
+        // Fall through to
+#endif // USE_UPPER_ADDRESS
+
+        if (result == NULL)
+        {
+            result = (BYTE*)MapViewOfFile(m_hSharedMemoryFile,
+                            FILE_MAP_EXECUTE | FILE_MAP_READ | FILE_MAP_WRITE, // TODO: can we add the write only for reservations that will be for both data and execution, like the loader allocator? Or should we split the initial allocation to two parts - exe and non-exe?
+                            offset / ((size_t)1) >> 32,
+                            offset & 0xFFFFFFFFUL,
+                            size);
+        }
 
         block->baseRX = result;
         block->offset = offset;
@@ -636,6 +864,84 @@ public:
         return pRX;
     }
 };
+
+#else // ENABLE_DOUBLE_MAPPING
+
+class DoubleMappedAllocator
+{
+    static volatile DoubleMappedAllocator* g_instance;
+
+    CRITSEC_COOKIE m_CriticalSection;
+
+    size_t Granularity()
+    {
+        return 64 * 1024;
+    }
+public:
+
+    static DoubleMappedAllocator* Instance()
+    {
+        if (g_instance == NULL)
+        {
+            DoubleMappedAllocator *instance = new (nothrow) DoubleMappedAllocator();
+            instance->Initialize();
+
+            if (InterlockedCompareExchangeT(const_cast<DoubleMappedAllocator**>(&g_instance), instance, NULL) != NULL)
+            {
+                delete instance;
+            }
+        }
+
+        return const_cast<DoubleMappedAllocator*>(g_instance);
+    }
+
+    ~DoubleMappedAllocator()
+    {
+    }
+
+    bool Initialize()
+    {
+        return true;
+    }
+
+    void* Reserve(size_t size)
+    {
+        return ClrVirtualAllocExecutable(size, MEM_RESERVE, PAGE_NOACCESS);
+    }
+
+    void* ReserveAt(void* baseAddressRX, size_t size)
+    {
+        return VirtualAlloc(baseAddressRX, size, MEM_RESERVE, PAGE_NOACCESS);
+    }
+
+    #pragma intrinsic(_ReturnAddress)
+
+    static size_t g_allocCalls;
+    static size_t g_reserveCalls;
+    static size_t g_reserveAtCalls;
+    static size_t g_rwMaps;
+    static size_t g_reusedRwMaps;
+    static size_t g_maxReusedRwMapsRefcount;
+    static size_t g_rwUnmaps;
+    static size_t g_failedRwUnmaps;
+    static size_t g_failedRwMaps;
+    static size_t g_mapReusePossibility;
+    static size_t g_RWMappingCount;
+    static size_t g_maxRWMappingCount;
+
+    void ReportState();
+
+    void UnmapRW(void* pRW)
+    {
+    }
+
+    void* MapRW(void* pRX, size_t size)
+    {
+        return pRX;
+    }
+};
+
+#endif // ENABLE_DOUBLE_MAPPING
 
 // # bytes to leave between allocations in debug mode
 // Set to a > 0 boundary to debug problems - I've made this zero, otherwise a 1 byte allocation becomes

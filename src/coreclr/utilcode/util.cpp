@@ -353,10 +353,10 @@ HRESULT FakeCoCreateInstanceEx(REFCLSID       rclsid,
 }
 
 #if USE_UPPER_ADDRESS
-static BYTE * s_CodeMinAddr;        // Preferred region to allocate the code in.
-static BYTE * s_CodeMaxAddr;
-static BYTE * s_CodeAllocStart;
-static BYTE * s_CodeAllocHint;      // Next address to try to allocate for code in the preferred region.
+BYTE * s_CodeMinAddr;        // Preferred region to allocate the code in.
+BYTE * s_CodeMaxAddr;
+BYTE * s_CodeAllocStart;
+BYTE * s_CodeAllocHint;      // Next address to try to allocate for code in the preferred region.
 #endif
 
 //

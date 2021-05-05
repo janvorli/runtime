@@ -281,7 +281,10 @@ const CallCountingStub *CallCountingManager::CallCountingStubAllocator::Allocate
             if (CallCountingStubShort::CanUseFor(allocationAddressHolder, targetForMethod))
         #endif
             {
-                stub = new(allocationAddressHolder) CallCountingStubShort(remainingCallCountCell, targetForMethod);
+                void *allocationAddressRW = DoubleMappedAllocator::Instance()->MapRW(allocationAddressHolder, sizeInBytes);
+                stub = new(allocationAddressRW) CallCountingStubShort(remainingCallCountCell, targetForMethod, (CallCountingStubShort*)(void*)allocationAddressHolder);
+                stub = (CallCountingStub*)(void*)allocationAddressHolder;
+                DoubleMappedAllocator::Instance()->UnmapRW(allocationAddressRW);
                 allocationAddressHolder.SuppressRelease();
                 break;
             }

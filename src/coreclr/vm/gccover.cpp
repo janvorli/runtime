@@ -1259,19 +1259,21 @@ bool IsGcCoverageInterrupt(LPVOID ip)
 void RemoveGcCoverageInterrupt(TADDR instrPtr, BYTE * savedInstrPtr, GCCoverageInfo* gcCover, DWORD offset)
 {
 #if defined(HOST_OSX) && defined(HOST_ARM64)
-        auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
+    auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
-
+    TADDR instrPtrRW = (TADDR)DoubleMappedAllocator::Instance()->MapRW(instrPtr, 4);
 #ifdef TARGET_ARM
-        if (GetARMInstructionLength(savedInstrPtr) == 2)
-            *(WORD *)instrPtr  = *(WORD *)savedInstrPtr;
-        else
-            *(DWORD *)instrPtr = *(DWORD *)savedInstrPtr;
+    if (GetARMInstructionLength(savedInstrPtr) == 2)
+        *(WORD *)instrPtrRW  = *(WORD *)savedInstrPtr;
+    else
+        *(DWORD *)instrPtrRW = *(DWORD *)savedInstrPtr;
 #elif defined(TARGET_ARM64)
-        *(DWORD *)instrPtr = *(DWORD *)savedInstrPtr;
+    *(DWORD *)instrPtrRW = *(DWORD *)savedInstrPtr;
 #else
-        *(BYTE *)instrPtr = *savedInstrPtr;
+    *(BYTE *)instrPtrRW = *savedInstrPtr;
 #endif
+
+    DoubleMappedAllocator::Instance()->UnmapRW(instrPtrRW);
 
 #ifdef TARGET_X86
     // Epilog checking relies on precise control of when instrumentation for the  first prolog 
