@@ -33,27 +33,27 @@ void EntryPointSlots::Backpatch_Locked(TADDR slot, SlotType slotType, PCODE entr
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
 
     // TODO: pass in the slot double pointer instead? It seems it is available up the call chain
-    void* slotRW = DoubleMappedAllocator::Instance()->MapRW((void*)slot, sizeof(PCODE*));
+    ExecutableWriterHolder<void> slotHolder((void*)slot, sizeof(PCODE*));
 
     switch (slotType)
     {
         case SlotType_Normal:
-            *(PCODE *)slotRW = entryPoint;
+            *(PCODE *)slotHolder.GetRW() = entryPoint;
             break;
 
         case SlotType_Vtable:
-            ((MethodTable::VTableIndir2_t *)slotRW)->SetValue(entryPoint);
+            ((MethodTable::VTableIndir2_t *)slotHolder.GetRW())->SetValue(entryPoint);
             break;
 
         case SlotType_Executable:
-            *(PCODE *)slotRW = entryPoint;
+            *(PCODE *)slotHolder.GetRW() = entryPoint;
             goto Flush;
 
         case SlotType_ExecutableRel32:
             // A rel32 may require a jump stub on some architectures, and is currently not supported
             _ASSERTE(sizeof(void *) <= 4);
 
-            *(PCODE *)slotRW = entryPoint - ((PCODE)slot + sizeof(PCODE));
+            *(PCODE *)slotHolder.GetRW() = entryPoint - ((PCODE)slot + sizeof(PCODE));
             // fall through
 
         Flush:
@@ -63,12 +63,6 @@ void EntryPointSlots::Backpatch_Locked(TADDR slot, SlotType slotType, PCODE entr
         default:
             UNREACHABLE();
             break;
-    }
-
-    // TODO: fix this hack
-    if ((void*)slot != slotRW)
-    {
-        DoubleMappedAllocator::Instance()->UnmapRW(slotRW);
     }
 }
 

@@ -360,9 +360,8 @@ Precode* Precode::Allocate(PrecodeType t, MethodDesc* pMD,
     }
 
     Precode* pPrecode = (Precode*)pamTracker->Track(pLoaderAllocator->GetPrecodeHeap()->AllocAlignedMem(size, AlignOf(t)));
-    Precode* pPrecodeRW = (Precode*)DoubleMappedAllocator::Instance()->MapRW(pPrecode, sizeof(Precode));
-    pPrecodeRW->Init(t, pMD, pLoaderAllocator, pPrecode);
-    DoubleMappedAllocator::Instance()->UnmapRW(pPrecodeRW);
+    ExecutableWriterHolder<Precode> precodeHolder(pPrecode, sizeof(Precode));
+    precodeHolder.GetRW()->Init(t, pMD, pLoaderAllocator, pPrecode);
 
 #ifndef CROSSGEN_COMPILE
     ClrFlushInstructionCache(pPrecode, size);
@@ -406,8 +405,8 @@ void Precode::ResetTargetInterlocked()
 {
     WRAPPER_NO_CONTRACT;
 
-    Precode* pPrecodeRW = (Precode*)DoubleMappedAllocator::Instance()->MapRW(this, this->SizeOf());
-    _ASSERTE(pPrecodeRW != this);
+    ExecutableWriterHolder<Precode> precodeHolder(this, this->SizeOf());
+    _ASSERTE(precodeHolder.GetRW() != this);
     
 #if defined(HOST_OSX) && defined(HOST_ARM64)
     auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
@@ -417,12 +416,12 @@ void Precode::ResetTargetInterlocked()
     switch (precodeType)
     {
         case PRECODE_STUB:
-            AsStubPrecode()->ResetTargetInterlocked(pPrecodeRW->AsStubPrecode());
+            AsStubPrecode()->ResetTargetInterlocked(precodeHolder.GetRW()->AsStubPrecode());
             break;
 
 #ifdef HAS_FIXUP_PRECODE
         case PRECODE_FIXUP:
-            AsFixupPrecode()->ResetTargetInterlocked(pPrecodeRW->AsFixupPrecode());
+            AsFixupPrecode()->ResetTargetInterlocked(precodeHolder.GetRW()->AsFixupPrecode());
             break;
 #endif // HAS_FIXUP_PRECODE
 
@@ -430,8 +429,6 @@ void Precode::ResetTargetInterlocked()
             UnexpectedPrecodeType("Precode::ResetTargetInterlocked", precodeType);
             break;
     }
-
-    DoubleMappedAllocator::Instance()->UnmapRW(pPrecodeRW);
 
     // Although executable code is modified on x86/x64, a FlushInstructionCache() is not necessary on those platforms due to the
     // interlocked operation above (see ClrFlushInstructionCache())
@@ -447,11 +444,6 @@ BOOL Precode::SetTargetInterlocked(PCODE target, BOOL fOnlyRedirectFromPrestub)
 
     if (fOnlyRedirectFromPrestub && !IsPointingToPrestub(expected))
         return FALSE;
-
-    ///// This is just debugging test
-    Precode* pPrecodeRW = (Precode*)DoubleMappedAllocator::Instance()->MapRW(this, this->SizeOf());
-    _ASSERTE(pPrecodeRW != this);
-    DoubleMappedAllocator::Instance()->UnmapRW(pPrecodeRW);
 
 #if defined(HOST_OSX) && defined(HOST_ARM64)
     auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
@@ -501,9 +493,8 @@ void Precode::Reset()
         precodeSize = ((FixupPrecode*)this)->GetBase() - (TADDR)this + sizeof(void*);
     }
 
-    Precode* precodeRW = (Precode*)DoubleMappedAllocator::Instance()->MapRW(this, precodeSize);
-    precodeRW->Init(GetType(), pMD, pMD->GetLoaderAllocator(), this);
-    DoubleMappedAllocator::Instance()->UnmapRW(precodeRW);
+    ExecutableWriterHolder<Precode> precodeHolder(this, precodeSize);
+    precodeHolder.GetRW()->Init(GetType(), pMD, pMD->GetLoaderAllocator(), this);
     ClrFlushInstructionCache(this, SizeOf());
 }
 
@@ -587,7 +578,7 @@ TADDR Precode::AllocateTemporaryEntryPoints(MethodDescChunk *  pChunk,
 #endif
 
     TADDR temporaryEntryPoints = (TADDR)pamTracker->Track(pLoaderAllocator->GetPrecodeHeap()->AllocAlignedMem(totalSize, AlignOf(t)));
-    TADDR temporaryEntryPointsRW = (TADDR)DoubleMappedAllocator::Instance()->MapRW((void*)temporaryEntryPoints, totalSize);
+    ExecutableWriterHolder<void> entryPointsHolder((void*)temporaryEntryPoints, totalSize);
 #ifdef HAS_FIXUP_PRECODE_CHUNKS
     if (t == PRECODE_FIXUP)
     {
@@ -600,16 +591,15 @@ TADDR Precode::AllocateTemporaryEntryPoints(MethodDescChunk *  pChunk,
             // GetDynamicMethodPrecodeFixupJumpStub()).
             precodeFixupJumpStubRX = (TADDR)temporaryEntryPoints + count * sizeof(FixupPrecode) + sizeof(PTR_MethodDesc);
             // TODO: how to get the size?
-            precodeFixupJumpStubRW = (PCODE)DoubleMappedAllocator::Instance()->MapRW((void*)precodeFixupJumpStubRX, 12);
 #ifndef CROSSGEN_COMPILE
-            emitBackToBackJump((LPBYTE)precodeFixupJumpStubRW, (LPVOID)GetEEFuncEntryPoint(PrecodeFixupThunk));
-            DoubleMappedAllocator::Instance()->UnmapRW((void*)precodeFixupJumpStubRW);
+            ExecutableWriterHolder<BYTE> precodeFixupJumpStubHolder((BYTE*)precodeFixupJumpStubRX, 12);
+            emitBackToBackJump(precodeFixupJumpStubHolder.GetRW(), (LPVOID)GetEEFuncEntryPoint(PrecodeFixupThunk));
 #endif // !CROSSGEN_COMPILE
         }
 #endif // FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
 
         TADDR entryPointRX = temporaryEntryPoints;
-        TADDR entryPointRW = temporaryEntryPointsRW;
+        TADDR entryPointRW = (TADDR)entryPointsHolder.GetRW();
 
         MethodDesc * pMD = pChunk->GetFirstMethodDesc();
         for (int i = 0; i < count; i++)
@@ -636,8 +626,6 @@ TADDR Precode::AllocateTemporaryEntryPoints(MethodDescChunk *  pChunk,
             pMD = (MethodDesc *)(dac_cast<TADDR>(pMD) + pMD->SizeOf());
         }
 
-        DoubleMappedAllocator::Instance()->UnmapRW((void*)temporaryEntryPointsRW);
-
 #ifdef FEATURE_PERFMAP
         PerfMap::LogStubs(__FUNCTION__, "PRECODE_FIXUP", (PCODE)temporaryEntryPoints, count * sizeof(FixupPrecode));
 #endif
@@ -649,7 +637,7 @@ TADDR Precode::AllocateTemporaryEntryPoints(MethodDescChunk *  pChunk,
 
     SIZE_T oneSize = SizeOfTemporaryEntryPoint(t);
     TADDR entryPointRX = temporaryEntryPoints;
-    TADDR entryPointRW = temporaryEntryPointsRW;
+    TADDR entryPointRW = (TADDR)entryPointsHolder.GetRW();
     MethodDesc * pMD = pChunk->GetFirstMethodDesc();
     for (int i = 0; i < count; i++)
     {
@@ -661,8 +649,6 @@ TADDR Precode::AllocateTemporaryEntryPoints(MethodDescChunk *  pChunk,
 
         pMD = (MethodDesc *)(dac_cast<TADDR>(pMD) + pMD->SizeOf());
     }
-
-    DoubleMappedAllocator::Instance()->UnmapRW((void*)temporaryEntryPointsRW);
 
 #ifdef FEATURE_PERFMAP
     PerfMap::LogStubs(__FUNCTION__, "PRECODE_STUB", (PCODE)temporaryEntryPoints, count * oneSize);

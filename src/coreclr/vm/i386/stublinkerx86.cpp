@@ -5390,36 +5390,25 @@ BOOL FixupPrecode::SetTargetInterlocked(TADDR target, TADDR expected)
         return FALSE;
     }
 
-    // TODO: how can we prevent frequent mappings?
-    FixupPrecode* pPrecodeRW = (FixupPrecode*)DoubleMappedAllocator::Instance()->MapRW(this, sizeof(FixupPrecode));
 #ifdef FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
-    PCODE pDynamicMethodEntryJumpStubRW = NULL;
+    ExecutableWriterHolder<void> dynamicMethodEntryJumpStubHolder;
     if (pMD->IsLCGMethod())
     {
         // TODO: where to get the 12?
-        pDynamicMethodEntryJumpStubRW = (PCODE)DoubleMappedAllocator::Instance()->MapRW((void*)GetDynamicMethodEntryJumpStub(), 12);
+        dynamicMethodEntryJumpStubHolder = ExecutableWriterHolder<void>((void*)GetDynamicMethodEntryJumpStub(), 12);
     }
 #endif    
     *(INT32*)(&pNewValue[offsetof(FixupPrecode, m_rel32)]) =
 #ifdef FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
         pMD->IsLCGMethod() ?
-            rel32UsingPreallocatedJumpStub(&m_rel32, target, GetDynamicMethodEntryJumpStub(), pDynamicMethodEntryJumpStubRW, true /* emitJump */) :
+            rel32UsingPreallocatedJumpStub(&m_rel32, target, GetDynamicMethodEntryJumpStub(), (PCODE)dynamicMethodEntryJumpStubHolder.GetRW(), true /* emitJump */) :
 #endif // FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
             rel32UsingJumpStub(&m_rel32, target, pMD);
-#ifdef FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
-    if (pDynamicMethodEntryJumpStubRW != NULL)
-    {
-        DoubleMappedAllocator::Instance()->UnmapRW((void*)pDynamicMethodEntryJumpStubRW);
-    }
-#endif    
 
     _ASSERTE(IS_ALIGNED(this, sizeof(INT64)));
 
-    _ASSERTE(pPrecodeRW != this);
-    bool result = FastInterlockCompareExchangeLong((INT64*)pPrecodeRW, newValue, oldValue) == oldValue;
-    DoubleMappedAllocator::Instance()->UnmapRW(pPrecodeRW);
-
-    return result;
+    ExecutableWriterHolder<FixupPrecode> precodeHolder(this, sizeof(FixupPrecode));
+    return FastInterlockCompareExchangeLong((INT64*)precodeHolder.GetRW(), newValue, oldValue) == oldValue;
 }
 
 #ifdef FEATURE_NATIVE_IMAGE_GENERATION
@@ -5523,10 +5512,8 @@ BOOL ThisPtrRetBufPrecode::SetTargetInterlocked(TADDR target, TADDR expected)
     INT32 newRel32 = rel32UsingJumpStub(&m_rel32, target, NULL /* pMD */, ((MethodDesc *)GetMethodDesc())->GetLoaderAllocator());
 
     _ASSERTE(IS_ALIGNED(&m_rel32, sizeof(INT32)));
-    LONG* pRel32RW = (LONG*)DoubleMappedAllocator::Instance()->MapRW(&m_rel32, sizeof(LONG));
-    _ASSERTE(pRel32RW != (LONG*)&m_rel32);
-    FastInterlockExchange(pRel32RW, (LONG)newRel32);
-    DoubleMappedAllocator::Instance()->UnmapRW(pRel32RW);
+    ExecutableWriterHolder<INT32> rel32Holder(&m_rel32, sizeof(INT32));
+    FastInterlockExchange((LONG*)rel32Holder.GetRW(), (LONG)newRel32);
 
     return TRUE;
 }

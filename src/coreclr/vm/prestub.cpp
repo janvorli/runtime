@@ -2318,23 +2318,15 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT, CallerGCMode callerGCMo
     {
         if (!GetOrCreatePrecode()->SetTargetInterlocked(pStub->GetEntryPoint()))
         {
-            Stub* pStubRW = (Stub*)DoubleMappedAllocator::Instance()->MapRW(pStub, sizeof(Stub));
-            pStubRW->DecRef();
-            if (pStubRW != pStub)
-            {
-                DoubleMappedAllocator::Instance()->UnmapRW(pStubRW);
-            }
+            ExecutableWriterHolder<Stub> stubHolder(pStub, sizeof(Stub));
+            stubHolder.GetRW()->DecRef();
         }
         else if (pStub->HasExternalEntryPoint())
         {
             // If the Stub wraps code that is outside of the Stub allocation, then we
             // need to free the Stub allocation now.
-            Stub* pStubRW = (Stub*)DoubleMappedAllocator::Instance()->MapRW(pStub, sizeof(Stub));
-            pStubRW->DecRef();
-            if (pStubRW != pStub)
-            {
-                DoubleMappedAllocator::Instance()->UnmapRW(pStubRW);
-            }
+            ExecutableWriterHolder<Stub> stubHolder(pStub, sizeof(Stub));
+            stubHolder.GetRW()->DecRef();
         }
     }
 

@@ -1212,10 +1212,8 @@ VTableCallHolder* VirtualCallStubManager::GenerateVTableCallStub(DWORD slot)
     TaggedMemAllocPtr holder = vtable_heap->AllocAlignedMem(VTableCallHolder::GetHolderSize(slot), CODE_SIZE_ALIGN);
 
     VTableCallHolder * pHolder = (VTableCallHolder *)(void*)holder;
-    VTableCallHolder * pHolderRW = (VTableCallHolder *)DoubleMappedAllocator::Instance()->MapRW(pHolder, sizeof(VTableCallHolder));
-
-    pHolderRW->Initialize(slot);
-    DoubleMappedAllocator::Instance()->UnmapRW(pHolderRW);
+    ExecutableWriterHolder<VTableCallHolder> vtableHolderHolder(pHolder, sizeof(VTableCallHolder));
+    vtableHolderHolder.GetRW()->Initialize(slot);
 
     ClrFlushInstructionCache(pHolder->stub(), pHolder->stub()->size());
 
@@ -2768,7 +2766,6 @@ DispatchHolder *VirtualCallStubManager::GenerateDispatchStub(PCODE            ad
         dispatch_heap->AllocAlignedMem(dispatchHolderSize, CODE_SIZE_ALIGN);
 
     DispatchHolder * holderRX = (DispatchHolder*)(void*)holder;
-    DispatchHolder * holderRW = (DispatchHolder*)DoubleMappedAllocator::Instance()->MapRW(holderRX, sizeof(DispatchHolder) + sizeof(DispatchStubShort));
 
 #ifdef TARGET_AMD64
     if (!DispatchHolder::CanShortJumpDispatchStubReachFailTarget(addrOfFail, (LPCBYTE)holderRX))
@@ -2778,15 +2775,14 @@ DispatchHolder *VirtualCallStubManager::GenerateDispatchStub(PCODE            ad
     }
 #endif
 
-    holderRW->Initialize(holderRX, addrOfCode,
+    ExecutableWriterHolder<DispatchHolder> dispatchHolderHolder(holderRX, sizeof(DispatchHolder) + sizeof(DispatchStubShort));
+    dispatchHolderHolder.GetRW()->Initialize(holderRX, addrOfCode,
                        addrOfFail,
                        (size_t)pMTExpected
 #ifdef TARGET_AMD64
                        , DispatchStub::e_TYPE_SHORT
 #endif
                        );
-
-    DoubleMappedAllocator::Instance()->UnmapRW(holderRW);
 
 #ifdef FEATURE_CODE_VERSIONING
     MethodDesc *pMD = MethodTable::GetMethodDescForSlotAddress(addrOfCode);
@@ -2846,14 +2842,12 @@ DispatchHolder *VirtualCallStubManager::GenerateDispatchStubLong(PCODE          
         dispatch_heap->AllocAlignedMem(DispatchHolder::GetHolderSize(DispatchStub::e_TYPE_LONG), CODE_SIZE_ALIGN);
 
     DispatchHolder * holderRX = (DispatchHolder *)(void*)holder;
-    DispatchHolder * holderRW = (DispatchHolder *)DoubleMappedAllocator::Instance()->MapRW(holderRX, sizeof(DispatchHolder) + sizeof(DispatchStubLong));
+    ExecutableWriterHolder<DispatchHolder> dispatchHolderHolder(holderRX, sizeof(DispatchHolder) + sizeof(DispatchStubLong));
 
-    holderRW->Initialize(holderRX, addrOfCode,
+    dispatchHolderHolder.GetRW()->Initialize(holderRX, addrOfCode,
                        addrOfFail,
                        (size_t)pMTExpected,
                        DispatchStub::e_TYPE_LONG);
-
-    DoubleMappedAllocator::Instance()->UnmapRW(holderRW);
 
 #ifdef FEATURE_CODE_VERSIONING
     MethodDesc *pMD = MethodTable::GetMethodDescForSlotAddress(addrOfCode);
@@ -2960,17 +2954,15 @@ ResolveHolder *VirtualCallStubManager::GenerateResolveStub(PCODE            addr
         resolve_heap->AllocAlignedMem(sizeof(ResolveHolder), CODE_SIZE_ALIGN);
 
     ResolveHolder * holderRX = (ResolveHolder*)(void*)holder;
-    ResolveHolder * holderRW = (ResolveHolder *)DoubleMappedAllocator::Instance()->MapRW(holderRX, sizeof(ResolveHolder));
+    ExecutableWriterHolder<ResolveHolder> resolveHolderHolder(holderRX, sizeof(ResolveHolder));
 
-    holderRW->Initialize(addrOfResolver, addrOfPatcher,
+    resolveHolderHolder.GetRW()->Initialize(addrOfResolver, addrOfPatcher,
                        dispatchToken, DispatchCache::HashToken(dispatchToken),
                        g_resolveCache->GetCacheBaseAddr(), counterAddr
 #if defined(TARGET_X86) && !defined(UNIX_X86_ABI)
                        , stackArgumentsSize
 #endif
                        );
-
-    DoubleMappedAllocator::Instance()->UnmapRW(holderRW);
 
     ClrFlushInstructionCache(holderRX->stub(), holderRX->stub()->size());
 
@@ -3009,11 +3001,9 @@ LookupHolder *VirtualCallStubManager::GenerateLookupStub(PCODE addrOfResolver, s
     //allocate from the requisite heap and copy the template over it.
     TaggedMemAllocPtr holder = lookup_heap->AllocAlignedMem(sizeof(LookupHolder), CODE_SIZE_ALIGN);
     LookupHolder * holderRX = (LookupHolder*)(void*)holder;
-    LookupHolder * holderRW = (LookupHolder*)DoubleMappedAllocator::Instance()->MapRW(holderRX, sizeof(LookupHolder));
+    ExecutableWriterHolder<LookupHolder> lookupHolderHolder(holderRX, sizeof(LookupHolder));
 
-    holderRW->Initialize(addrOfResolver, dispatchToken);
-
-    DoubleMappedAllocator::Instance()->UnmapRW(holderRW);
+    lookupHolderHolder.GetRW()->Initialize(addrOfResolver, dispatchToken);
 
     ClrFlushInstructionCache(holderRX->stub(), holderRX->stub()->size());
 

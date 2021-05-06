@@ -1377,7 +1377,8 @@ EXTERN_C PVOID STDCALL VirtualMethodFixupWorker(Object * pThisPtr,  CORCOMPILE_V
     SIZE_T cbAligned = ALIGN_UP(cb, DYNAMIC_HELPER_ALIGNMENT); \
     TaggedMemAllocPtr start = pAllocator->GetDynamicHelpersHeap()->AllocAlignedMem(cbAligned, DYNAMIC_HELPER_ALIGNMENT); \
     BYTE * pStartRX = (BYTE *)(void*)start; \
-    BYTE * pStart = (BYTE *)DoubleMappedAllocator::Instance()->MapRW(pStartRX, cbAligned); \
+    ExecutableWriterHolder<BYTE> startHolder(pStartRX, cbAligned); \
+    BYTE * pStart = startHolder.GetRW(); \
     size_t rxOffset = pStartRX - pStart; \
     BYTE * p = pStart;
 
@@ -1385,7 +1386,6 @@ EXTERN_C PVOID STDCALL VirtualMethodFixupWorker(Object * pThisPtr,  CORCOMPILE_V
     _ASSERTE(pStart + cb == p); \
     while (p < pStart + cbAligned) *p++ = X86_INSTR_INT3; \
     ClrFlushInstructionCache(pStartRX, cbAligned); \
-    DoubleMappedAllocator::Instance()->UnmapRW(pStart); \
     return (PCODE)pStartRX
 
 PCODE DynamicHelpers::CreateHelper(LoaderAllocator * pAllocator, TADDR arg, PCODE target)

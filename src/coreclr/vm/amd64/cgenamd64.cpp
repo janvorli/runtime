@@ -891,7 +891,8 @@ EXTERN_C PCODE VirtualMethodFixupWorker(TransitionBlock * pTransitionBlock, CORC
     SIZE_T cbAligned = ALIGN_UP(cb, DYNAMIC_HELPER_ALIGNMENT); \
     TaggedMemAllocPtr start = pAllocator->GetDynamicHelpersHeap()->AllocAlignedMem(cbAligned, DYNAMIC_HELPER_ALIGNMENT); \
     BYTE * pStartRX = (BYTE *)(void*)start; \
-    BYTE * pStart = (BYTE *)DoubleMappedAllocator::Instance()->MapRW(pStartRX, cbAligned); \
+    ExecutableWriterHolder<BYTE> startHolder(pStartRX, cbAligned); \
+    BYTE * pStart = startHolder.GetRW(); \
     size_t rxOffset = pStartRX - pStart; \
     BYTE * p = pStart;
 
@@ -899,7 +900,6 @@ EXTERN_C PCODE VirtualMethodFixupWorker(TransitionBlock * pTransitionBlock, CORC
     _ASSERTE(pStart + cb == p); \
     while (p < pStart + cbAligned) *p++ = X86_INSTR_INT3; \
     ClrFlushInstructionCache(pStartRX, cbAligned); \
-    DoubleMappedAllocator::Instance()->UnmapRW(pStart); \
     return (PCODE)pStartRX
 
 PCODE DynamicHelpers::CreateHelper(LoaderAllocator * pAllocator, TADDR arg, PCODE target)
@@ -1123,11 +1123,10 @@ PCODE DynamicHelpers::CreateDictionaryLookupHelper(LoaderAllocator * pAllocator,
 
     TaggedMemAllocPtr mem = pAllocator->GetDynamicHelpersHeap()->AllocAlignedMem(sizeof(GenericHandleArgs), DYNAMIC_HELPER_ALIGNMENT);
     GenericHandleArgs * pArgs = (GenericHandleArgs *)(void*)mem;
-    GenericHandleArgs * pArgsRW = (GenericHandleArgs *)DoubleMappedAllocator::Instance()->MapRW(pArgs, sizeof(GenericHandleArgs));
-    pArgsRW->dictionaryIndexAndSlot = dictionaryIndexAndSlot;
-    pArgsRW->signature = pLookup->signature;
-    pArgsRW->module = (CORINFO_MODULE_HANDLE)pModule;
-    DoubleMappedAllocator::Instance()->UnmapRW(pArgsRW);
+    ExecutableWriterHolder<GenericHandleArgs> argsHolder(pArgs, sizeof(GenericHandleArgs));
+    argsHolder.GetRW()->dictionaryIndexAndSlot = dictionaryIndexAndSlot;
+    argsHolder.GetRW()->signature = pLookup->signature;
+    argsHolder.GetRW()->module = (CORINFO_MODULE_HANDLE)pModule;
 
     WORD slotOffset = (WORD)(dictionaryIndexAndSlot & 0xFFFF) * sizeof(Dictionary*);
 

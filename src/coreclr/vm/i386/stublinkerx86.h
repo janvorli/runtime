@@ -558,10 +558,8 @@ struct StubPrecode {
         }
         CONTRACTL_END;
 
-        void* rel32RW = DoubleMappedAllocator::Instance()->MapRW(&m_rel32, 4);
-        BOOL result = rel32SetInterlocked(&m_rel32, rel32RW, target, expected, (MethodDesc*)GetMethodDesc());
-        DoubleMappedAllocator::Instance()->UnmapRW(rel32RW);
-        return result;
+        ExecutableWriterHolder<void> rel32Holder(&m_rel32, 4);
+        return rel32SetInterlocked(&m_rel32, rel32Holder.GetRW(), target, expected, (MethodDesc*)GetMethodDesc());
     }
 };
 IN_TARGET_64BIT(static_assert_no_msg(offsetof(StubPrecode, m_movR10) == OFFSETOF_PRECODE_TYPE);)

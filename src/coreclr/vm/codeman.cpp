@@ -1991,13 +1991,14 @@ void CodeFragmentHeap::RealBackoutMem(void *pMem
 
     _ASSERTE(dwSize >= sizeof(FreeBlock));
 
+    {
 #if defined(HOST_OSX) && defined(HOST_ARM64)
-    auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
+        auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
 
-    void *pMemRW = DoubleMappedAllocator::Instance()->MapRW(pMem, dwSize);
-    ZeroMemory((BYTE *)pMemRW, dwSize);
-    DoubleMappedAllocator::Instance()->UnmapRW(pMemRW);
+        ExecutableWriterHolder<BYTE> memHolder((BYTE*)pMem, dwSize);
+        ZeroMemory(memHolder.GetRW(), dwSize);
+    }
 
     //
     // Try to coalesce blocks if possible
@@ -2319,9 +2320,8 @@ HeapList* LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
          ));
 
 #ifdef TARGET_64BIT
-    BYTE* personalityRoutineRW = (BYTE*)DoubleMappedAllocator::Instance()->MapRW(pHp->CLRPersonalityRoutine, 12);
-    emitJump(personalityRoutineRW, (void *)ProcessCLRException);
-    DoubleMappedAllocator::Instance()->UnmapRW(personalityRoutineRW);
+    ExecutableWriterHolder<BYTE> personalityRoutineHolder(pHp->CLRPersonalityRoutine, 12);
+    emitJump(personalityRoutineHolder.GetRW(), (void *)ProcessCLRException);
 #endif // TARGET_64BIT
 
     pCodeHeap.SuppressRelease();
@@ -2716,14 +2716,14 @@ CodeHeader* EEJitManager::allocCode(MethodDesc* pMD, size_t blockSize, size_t re
 
         pCodeHdr = ((CodeHeader *)pCode) - 1;
 
-        CodeHeader* pCodeHdrRW = (CodeHeader*)DoubleMappedAllocator::Instance()->MapRW(pCodeHdr, sizeof(CodeHeader));
+        ExecutableWriterHolder<CodeHeader> codeHdrHolder(pCodeHdr, sizeof(CodeHeader));
 
 #ifdef USE_INDIRECT_CODEHEADER
-        void* pRealCodeHeaderRW = NULL;
+        ExecutableWriterHolder<void> realCodeHeaderHolder;
         if (requestInfo.IsDynamicDomain())
         {
-            pRealCodeHeaderRW = DoubleMappedAllocator::Instance()->MapRW((BYTE*)pCode + ALIGN_UP(blockSize, sizeof(void*)), sizeof(RealCodeHeader));
-            pCodeHdrRW->SetRealCodeHeader((BYTE*)pRealCodeHeaderRW);
+            realCodeHeaderHolder = ExecutableWriterHolder<void>((BYTE*)pCode + ALIGN_UP(blockSize, sizeof(void*)), sizeof(RealCodeHeader));
+            codeHdrHolder.GetRW()->SetRealCodeHeader((BYTE*)realCodeHeaderHolder.GetRW());
         }
         else
         {
@@ -2731,16 +2731,16 @@ CodeHeader* EEJitManager::allocCode(MethodDesc* pMD, size_t blockSize, size_t re
             //
             // allocate the real header in the low frequency heap
             BYTE* pRealHeader = (BYTE*)(void*)pMD->GetLoaderAllocator()->GetLowFrequencyHeap()->AllocMem(S_SIZE_T(realHeaderSize));
-            pCodeHdrRW->SetRealCodeHeader(pRealHeader);
+            codeHdrHolder.GetRW()->SetRealCodeHeader(pRealHeader);
         }
 #endif
 
-        pCodeHdrRW->SetDebugInfo(NULL);
-        pCodeHdrRW->SetEHInfo(NULL);
-        pCodeHdrRW->SetGCInfo(NULL);
-        pCodeHdrRW->SetMethodDesc(pMD);
+        codeHdrHolder.GetRW()->SetDebugInfo(NULL);
+        codeHdrHolder.GetRW()->SetEHInfo(NULL);
+        codeHdrHolder.GetRW()->SetGCInfo(NULL);
+        codeHdrHolder.GetRW()->SetMethodDesc(pMD);
 #ifdef FEATURE_EH_FUNCLETS
-        pCodeHdrRW->SetNumberOfUnwindInfos(nUnwindInfos);
+        codeHdrHolder.GetRW()->SetNumberOfUnwindInfos(nUnwindInfos);
         *pModuleBase = pCodeHeap->GetModuleBase();
 #endif
 
@@ -2750,12 +2750,9 @@ CodeHeader* EEJitManager::allocCode(MethodDesc* pMD, size_t blockSize, size_t re
         // Actually, it would be beneficial to keep the real code header as RW until at least CEEJitInfo::allocUnwindInfo to avoid remapping
         if (requestInfo.IsDynamicDomain())
         {
-            pCodeHdrRW->SetRealCodeHeader((BYTE*)pCode + ALIGN_UP(blockSize, sizeof(void*)));
-            DoubleMappedAllocator::Instance()->UnmapRW(pRealCodeHeaderRW);
+            codeHdrHolder.GetRW()->SetRealCodeHeader((BYTE*)pCode + ALIGN_UP(blockSize, sizeof(void*)));
         }
 #endif
-
-        DoubleMappedAllocator::Instance()->UnmapRW(pCodeHdrRW);
 
         NibbleMapSet(pCodeHeap, (TADDR)pCode, TRUE);
     }
@@ -3044,9 +3041,8 @@ JumpStubBlockHeader * EEJitManager::allocJumpStubBlock(MethodDesc* pMD, DWORD nu
 
         // CodeHeader comes immediately before the block
         CodeHeader * pCodeHdr = (CodeHeader *) (mem - sizeof(CodeHeader));
-        CodeHeader * pCodeHdrRW = (CodeHeader *)DoubleMappedAllocator::Instance()->MapRW(pCodeHdr, sizeof(CodeHeader));
-        pCodeHdrRW->SetStubCodeBlockKind(STUB_CODE_BLOCK_JUMPSTUB);
-        DoubleMappedAllocator::Instance()->UnmapRW(pCodeHdrRW);
+        ExecutableWriterHolder<CodeHeader> codeHdrHolder(pCodeHdr, sizeof(CodeHeader));
+        codeHdrHolder.GetRW()->SetStubCodeBlockKind(STUB_CODE_BLOCK_JUMPSTUB);
 
         NibbleMapSet(pCodeHeap, mem, TRUE);
 
@@ -3099,9 +3095,8 @@ void * EEJitManager::allocCodeFragmentBlock(size_t blockSize, unsigned alignment
 
         // CodeHeader comes immediately before the block
         CodeHeader * pCodeHdr = (CodeHeader *) (mem - sizeof(CodeHeader));
-        CodeHeader * pCodeHdrRW = (CodeHeader *)DoubleMappedAllocator::Instance()->MapRW(pCodeHdr, sizeof(CodeHeader));
-        pCodeHdrRW->SetStubCodeBlockKind(kind);
-        DoubleMappedAllocator::Instance()->UnmapRW(pCodeHdrRW);
+        ExecutableWriterHolder<CodeHeader> codeHdrHolder(pCodeHdr, sizeof(CodeHeader));
+        codeHdrHolder.GetRW()->SetStubCodeBlockKind(kind);
 
         NibbleMapSet(pCodeHeap, mem, TRUE);
 

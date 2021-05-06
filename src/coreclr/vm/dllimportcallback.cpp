@@ -89,9 +89,8 @@ public:
         }
         else
         {
-            UMEntryThunk* pTailThunkRW = (UMEntryThunk*)DoubleMappedAllocator::Instance()->MapRW(m_pTail, sizeof(UMEntryThunk));
-            pTailThunkRW->m_pNextFreeThunk = pThunk;
-            DoubleMappedAllocator::Instance()->UnmapRW(pTailThunkRW);
+            ExecutableWriterHolder<UMEntryThunk> tailThunkHolder(m_pTail, sizeof(UMEntryThunk));
+            tailThunkHolder.GetRW()->m_pNextFreeThunk = pThunk;
             m_pTail = pThunk;
         }
 
@@ -168,7 +167,6 @@ UMEntryThunk *UMEntryThunkCache::GetUMEntryThunk(MethodDesc *pMD)
         auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
         pThunk = UMEntryThunk::CreateUMEntryThunk();
-        UMEntryThunk* pThunkRW = (UMEntryThunk*)DoubleMappedAllocator::Instance()->MapRW(pThunk, sizeof(UMEntryThunk));
 
         Holder<UMEntryThunk *, DoNothing, UMEntryThunk::FreeUMEntryThunk> umHolder;
         umHolder.Assign(pThunk);
@@ -178,8 +176,9 @@ UMEntryThunk *UMEntryThunkCache::GetUMEntryThunk(MethodDesc *pMD)
         miHolder.Assign(pMarshInfo);
 
         pMarshInfo->LoadTimeInit(pMD);
-        pThunkRW->LoadTimeInit(pThunk, NULL, NULL, pMarshInfo, pMD);
-        DoubleMappedAllocator::Instance()->UnmapRW(pThunkRW);
+
+        ExecutableWriterHolder<UMEntryThunk> thunkHolder(pThunk, sizeof(UMEntryThunk));
+        thunkHolder.GetRW()->LoadTimeInit(pThunk, NULL, NULL, pMarshInfo, pMD);
 
         // add it to the cache
         CacheElement element;
@@ -293,9 +292,8 @@ void STDCALL UMEntryThunk::DoRunTimeInit(UMEntryThunk* pUMEntryThunk)
 #if defined(HOST_OSX) && defined(HOST_ARM64)
         auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
-        UMEntryThunk* pUMEntryThunkRW = (UMEntryThunk*)DoubleMappedAllocator::Instance()->MapRW(pUMEntryThunk, sizeof(UMEntryThunk));
-        pUMEntryThunkRW->RunTimeInit(pUMEntryThunk);
-        DoubleMappedAllocator::Instance()->UnmapRW(pUMEntryThunkRW);
+        ExecutableWriterHolder<UMEntryThunk> uMEntryThunkHolder(pUMEntryThunk, sizeof(UMEntryThunk));
+        uMEntryThunkHolder.GetRW()->RunTimeInit(pUMEntryThunk);
     }
 
     UNINSTALL_UNWIND_AND_CONTINUE_HANDLER;
@@ -334,8 +332,8 @@ void UMEntryThunk::Terminate()
     }
     CONTRACTL_END;
 
-    UMEntryThunk* pThunkRW = (UMEntryThunk*)DoubleMappedAllocator::Instance()->MapRW(this, sizeof(UMEntryThunk));
-    pThunkRW->m_code.Poison();
+    ExecutableWriterHolder<UMEntryThunk> thunkHolder(this, sizeof(UMEntryThunk));
+    thunkHolder.GetRW()->m_code.Poison();
 
     if (GetObjectHandle())
     {
@@ -344,10 +342,9 @@ void UMEntryThunk::Terminate()
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
 
         DestroyLongWeakHandle(GetObjectHandle());
-        pThunkRW->m_pObjectHandle = 0;
+        thunkHolder.GetRW()->m_pObjectHandle = 0;
     }
-    s_thunkFreeList.AddToList(this, pThunkRW);
-    DoubleMappedAllocator::Instance()->UnmapRW(pThunkRW);
+    s_thunkFreeList.AddToList(this, thunkHolder.GetRW());
 }
 
 VOID UMEntryThunk::FreeUMEntryThunk(UMEntryThunk* p)

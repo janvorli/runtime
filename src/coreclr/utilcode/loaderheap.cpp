@@ -1280,7 +1280,6 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
 
     m_dwTotalAlloc += dwSizeToCommit;
 
-    LoaderHeapBlock *pNewBlockRW;
     LoaderHeapBlock *pNewBlock;
 
 #if defined(HOST_OSX) && defined(HOST_ARM64)
@@ -1289,22 +1288,18 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
 
     pNewBlock = (LoaderHeapBlock *) pData;
-    pNewBlockRW = pNewBlock;
+
+    ExecutableWriterHolder<LoaderHeapBlock> newBlockHolder(pNewBlock);
 
     if ((m_Options & LHF_EXECUTABLE))
     {
-        pNewBlockRW = (LoaderHeapBlock*)DoubleMappedAllocator::Instance()->MapRW(pNewBlock, sizeof(LoaderHeapBlock));
+        newBlockHolder = ExecutableWriterHolder<LoaderHeapBlock>(pNewBlock, sizeof(LoaderHeapBlock));
     }
 
-    pNewBlockRW->dwVirtualSize    = dwSizeToReserve;
-    pNewBlockRW->pVirtualAddress  = pData;
-    pNewBlockRW->pNext            = NULL;
-    pNewBlockRW->m_fReleaseMemory = fReleaseMemory;
-
-    if ((m_Options & LHF_EXECUTABLE))
-    {
-        DoubleMappedAllocator::Instance()->UnmapRW(pNewBlockRW);
-    }
+    newBlockHolder.GetRW()->dwVirtualSize    = dwSizeToReserve;
+    newBlockHolder.GetRW()->pVirtualAddress  = pData;
+    newBlockHolder.GetRW()->pNext            = NULL;
+    newBlockHolder.GetRW()->m_fReleaseMemory = fReleaseMemory;
 
     LoaderHeapBlock *pCurBlock = m_pCurBlock;
 
@@ -1316,16 +1311,12 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
     if (pCurBlock != NULL)
     {
         // TODO: BUG??? is it really m_pCurBlock and not pCurBlock? I believe it was a bug
-        LoaderHeapBlock *pCurBlockRW = pCurBlock;
+        ExecutableWriterHolder<LoaderHeapBlock> curBlockHolder(pCurBlock);
         if ((m_Options & LHF_EXECUTABLE))
         {
-            pCurBlockRW = (LoaderHeapBlock*)DoubleMappedAllocator::Instance()->MapRW(pCurBlock, sizeof(LoaderHeapBlock));
+            curBlockHolder = ExecutableWriterHolder<LoaderHeapBlock>(pCurBlock, sizeof(LoaderHeapBlock));
         }
-        pCurBlockRW->pNext = pNewBlock;
-        if ((m_Options & LHF_EXECUTABLE))
-        {
-            DoubleMappedAllocator::Instance()->UnmapRW(pCurBlockRW);
-        }
+        curBlockHolder.GetRW()->pNext = pNewBlock;
     }
     else
         m_pFirstBlock = pNewBlock;
@@ -1492,13 +1483,13 @@ again:
         if (pData)
         {
 #ifdef _DEBUG
-            void* pDataRW = pData;
+            ExecutableWriterHolder<void> dataHolder(pData);
             if (m_Options & LHF_EXECUTABLE)
             {
-                pDataRW = DoubleMappedAllocator::Instance()->MapRW(pData, dwSize);
+                dataHolder = ExecutableWriterHolder<void>(pData, dwSize);
             }
 
-            BYTE *pAllocatedBytes = (BYTE *)pDataRW;
+            BYTE *pAllocatedBytes = (BYTE *)dataHolder.GetRW();
 #if LOADER_HEAP_DEBUG_BOUNDARY > 0
             // Don't fill the memory we allocated - it is assumed to be zeroed - fill the memory after it
             memset(pAllocatedBytes + dwRequestedSize, 0xEE, LOADER_HEAP_DEBUG_BOUNDARY);
@@ -1511,16 +1502,11 @@ again:
 
             if (!m_fExplicitControl)
             {
-                LoaderHeapValidationTag *pTag = AllocMem_GetTag(pDataRW, dwRequestedSize);
+                LoaderHeapValidationTag *pTag = AllocMem_GetTag(dataHolder, dwRequestedSize);
                 pTag->m_allocationType  = kAllocMem;
                 pTag->m_dwRequestedSize = dwRequestedSize;
                 pTag->m_szFile          = szFile;
                 pTag->m_lineNum         = lineNum;
-            }
-
-            if (m_Options & LHF_EXECUTABLE)
-            {
-                DoubleMappedAllocator::Instance()->UnmapRW(pDataRW);
             }
 
             if (m_dwDebugFlags & kCallTracing)
@@ -1688,16 +1674,12 @@ void UnlockedLoaderHeap::UnlockedBackoutMem(void *pMem,
         // Cool. This was the last block allocated. We can just undo the allocation instead
         // of going to the freelist.
         // TODO: do this for executable heap only
-        void* pMemRW = pMem;
+        ExecutableWriterHolder<void> memHolder(pMem);
         if (m_Options & LHF_EXECUTABLE)
         {
-            pMemRW = DoubleMappedAllocator::Instance()->MapRW(pMem, dwSize);
+            memHolder = ExecutableWriterHolder<void>(pMem, dwSize);
         }
-        memset(pMemRW, 0x00, dwSize); // Fill freed region with 0
-        if (m_Options & LHF_EXECUTABLE)
-        {
-            DoubleMappedAllocator::Instance()->UnmapRW(pMemRW);
-        }
+        memset(memHolder.GetRW(), 0x00, dwSize); // Fill freed region with 0
         m_pAllocPtr = (BYTE*)pMem;
     }
     else
@@ -1808,13 +1790,13 @@ void *UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSiz
     ((BYTE*&)pResult) += extra;
 
 #ifdef _DEBUG
-    void *pResultRW = pResult;
+    ExecutableWriterHolder<void> resultHolder(pResult);
     if (m_Options & LHF_EXECUTABLE)
     {
-        pResultRW = DoubleMappedAllocator::Instance()->MapRW(pResult, dwSize - extra);
+        resultHolder = ExecutableWriterHolder<void>(pResult, dwSize - extra);
     }
 
-     BYTE *pAllocatedBytes = (BYTE *)pResultRW;
+     BYTE *pAllocatedBytes = (BYTE *)resultHolder.GetRW();
 #if LOADER_HEAP_DEBUG_BOUNDARY > 0
     // Don't fill the entire memory - we assume it is all zeroed -just the memory after our alloc
     memset(pAllocatedBytes + dwRequestedSize, 0xee, LOADER_HEAP_DEBUG_BOUNDARY);
@@ -1844,16 +1826,11 @@ void *UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSiz
 
     if (!m_fExplicitControl)
     {
-        LoaderHeapValidationTag *pTag = AllocMem_GetTag(((BYTE*)pResultRW) - extra, dwRequestedSize + extra);
+        LoaderHeapValidationTag *pTag = AllocMem_GetTag(((BYTE*)resultHolder.GetRW()) - extra, dwRequestedSize + extra);
         pTag->m_allocationType  = kAllocMem;
         pTag->m_dwRequestedSize = dwRequestedSize + extra;
         pTag->m_szFile          = szFile;
         pTag->m_lineNum         = lineNum;
-    }
-
-    if (m_Options & LHF_EXECUTABLE)
-    {
-        DoubleMappedAllocator::Instance()->UnmapRW(pResultRW);
     }
 
 #endif //_DEBUG

@@ -816,16 +816,16 @@ void replaceSafePointInstructionWithGcStressInstr(UINT32 safePointOffset, LPVOID
     // instruction will not be a call instruction.
     //_ASSERTE(instructionIsACallThroughRegister ^ instructionIsACallThroughImmediate);
 
-    PBYTE instrPtrRW = (PBYTE)DoubleMappedAllocator::Instance()->MapRW(instrPtr, sizeof(DWORD));
+    ExecutableWriterHolder<BYTE> instrPtrHolder(instrPtr, sizeof(DWORD));
 
     if(instructionIsACallThroughRegister)
     {
         // If it is call by register then cannot know MethodDesc so replace the call instruction with illegal instruction
         // safe point will be replaced with appropriate illegal instruction at execution time when reg value is known
 #if defined(TARGET_ARM)
-        *((WORD*)instrPtrRW - 1) = INTERRUPT_INSTR_CALL;
+        *((WORD*)instrPtrHolder.GetRW() - 1) = INTERRUPT_INSTR_CALL;
 #elif defined(TARGET_ARM64)
-        *((DWORD*)instrPtrRW - 1) = INTERRUPT_INSTR_CALL;
+        *((DWORD*)instrPtrHolder.GetRW() - 1) = INTERRUPT_INSTR_CALL;
 #endif // _TARGET_XXXX_
     }
     else if(instructionIsACallThroughImmediate)
@@ -873,13 +873,11 @@ void replaceSafePointInstructionWithGcStressInstr(UINT32 safePointOffset, LPVOID
 
                 if (fGcStressOnDirectCalls.val(CLRConfig::INTERNAL_GcStressOnDirectCalls))
                 {
-                    ReplaceInstrAfterCall(instrPtrRW, targetMD);
+                    ReplaceInstrAfterCall(instrPtrHolder.GetRW(), targetMD);
                 }
             }
         }
     }
-
-    DoubleMappedAllocator::Instance()->UnmapRW(instrPtrRW);
 }
 #endif // PARTIALLY_INTERRUPTIBLE_GC_SUPPORTED
 
@@ -1261,19 +1259,17 @@ void RemoveGcCoverageInterrupt(TADDR instrPtr, BYTE * savedInstrPtr, GCCoverageI
 #if defined(HOST_OSX) && defined(HOST_ARM64)
     auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
-    TADDR instrPtrRW = (TADDR)DoubleMappedAllocator::Instance()->MapRW(instrPtr, 4);
+    ExecutableWriterHolder<void> instrPtrHolder(instrPtr, 4));
 #ifdef TARGET_ARM
     if (GetARMInstructionLength(savedInstrPtr) == 2)
-        *(WORD *)instrPtrRW  = *(WORD *)savedInstrPtr;
+        *(WORD *)instrPtrHolder.GetRW()  = *(WORD *)savedInstrPtr;
     else
-        *(DWORD *)instrPtrRW = *(DWORD *)savedInstrPtr;
+        *(DWORD *)instrPtrHolder.GetRW() = *(DWORD *)savedInstrPtr;
 #elif defined(TARGET_ARM64)
-    *(DWORD *)instrPtrRW = *(DWORD *)savedInstrPtr;
+    *(DWORD *)instrPtrHolder.GetRW() = *(DWORD *)savedInstrPtr;
 #else
-    *(BYTE *)instrPtrRW = *savedInstrPtr;
+    *(BYTE *)instrPtrHolder.GetRW() = *savedInstrPtr;
 #endif
-
-    DoubleMappedAllocator::Instance()->UnmapRW(instrPtrRW);
 
 #ifdef TARGET_X86
     // Epilog checking relies on precise control of when instrumentation for the  first prolog 
@@ -1645,7 +1641,7 @@ void DoGcStress (PCONTEXT regs, NativeCodeVersion nativeCodeVersion)
         PBYTE target = getTargetOfCall((BYTE*) instrPtr, regs, (BYTE**)&nextInstr);
         if (target != 0)
         {
-            PBYTE nextInstrRW = (PBYTE)DoubleMappedAllocator::Instance()->MapRW(nextInstr, sizeof(DWORD));
+            ExecutableWriterHolder<BYTE> nextInstrHolder(nextInstr, sizeof(DWORD));
             if (!pThread->PreemptiveGCDisabled())
             {
                 // We are in preemptive mode in JITTed code. This implies that we are into IL stub
@@ -1653,13 +1649,13 @@ void DoGcStress (PCONTEXT regs, NativeCodeVersion nativeCodeVersion)
 #ifdef TARGET_ARM
                 size_t instrLen = GetARMInstructionLength(nextInstr);
                 if (instrLen == 2)
-                    *(WORD*)nextInstrRW  = INTERRUPT_INSTR;
+                    *(WORD*)nextInstrHolder.GetRW()  = INTERRUPT_INSTR;
                 else
-                    *(DWORD*)nextInstrRW = INTERRUPT_INSTR_32;
+                    *(DWORD*)nextInstrHolder.GetRW() = INTERRUPT_INSTR_32;
 #elif defined(TARGET_ARM64)
-                *(DWORD*)nextInstrRW = INTERRUPT_INSTR;
+                *(DWORD*)nextInstrHolder.GetRW() = INTERRUPT_INSTR;
 #else
-                *nextInstrRW = INTERRUPT_INSTR;
+                *nextInstrHolder.GetRW() = INTERRUPT_INSTR;
 #endif
             }
             else
@@ -1672,11 +1668,9 @@ void DoGcStress (PCONTEXT regs, NativeCodeVersion nativeCodeVersion)
                     // It could become a problem if 64bit does partially interrupt work.
                     // OK, we have the MD, mark the instruction after the CALL
                     // appropriately
-                    ReplaceInstrAfterCall(nextInstrRW, targetMD);
+                    ReplaceInstrAfterCall(nextInstrHolder.GetRW(), targetMD);
                 }
             }
-
-            DoubleMappedAllocator::Instance()->UnmapRW(nextInstrRW);
         }
 
         // Must flush instruction cache before returning as instruction has been modified.

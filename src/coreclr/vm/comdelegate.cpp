@@ -1233,7 +1233,6 @@ LPVOID COMDelegate::ConvertToCallback(OBJECTREF pDelegateObj)
             _ASSERTE(pUMThunkMarshInfo == pClass->m_pUMThunkMarshInfo);
 
             pUMEntryThunk = UMEntryThunk::CreateUMEntryThunk();
-            UMEntryThunk* pUMEntryThunkRW = (UMEntryThunk*)DoubleMappedAllocator::Instance()->MapRW(pUMEntryThunk, sizeof(UMEntryThunk));
 
             Holder<UMEntryThunk *, DoNothing, UMEntryThunk::FreeUMEntryThunk> umHolder;
             umHolder.Assign(pUMEntryThunk);
@@ -1245,14 +1244,14 @@ LPVOID COMDelegate::ConvertToCallback(OBJECTREF pDelegateObj)
             // This target should not ever be used. We are storing it in the thunk for better diagnostics of "call on collected delegate" crashes.
             PCODE pManagedTargetForDiagnostics = (pDelegate->GetMethodPtrAux() != NULL) ? pDelegate->GetMethodPtrAux() : pDelegate->GetMethodPtr();
 
+            ExecutableWriterHolder<UMEntryThunk> uMEntryThunkHolder(pUMEntryThunk, sizeof(UMEntryThunk));
+
             // MethodDesc is passed in for profiling to know the method desc of target
-            pUMEntryThunkRW->LoadTimeInit(
+            uMEntryThunkHolder.GetRW()->LoadTimeInit(
                 pUMEntryThunk,
                 pManagedTargetForDiagnostics,
                 objhnd,
                 pUMThunkMarshInfo, pInvokeMeth);
-
-            DoubleMappedAllocator::Instance()->UnmapRW(pUMEntryThunkRW);
 
             if (!pInteropInfo->SetUMEntryThunk(pUMEntryThunk))
             {

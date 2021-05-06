@@ -3701,26 +3701,26 @@ void Thread::CommitGCStressInstructionUpdate()
         auto jitWriteEnableHolder = PAL_JITWriteEnable(true);
 #endif // defined(HOST_OSX) && defined(HOST_ARM64)
 
-        BYTE* pbDestCodeRW = (BYTE*)DoubleMappedAllocator::Instance()->MapRW(pbDestCode, sizeof(DWORD));
+        ExecutableWriterHolder<BYTE> destCodeHolder(pbDestCode, sizeof(DWORD));
 
 #if defined(TARGET_X86) || defined(TARGET_AMD64)
 
-        *pbDestCodeRW = *pbSrcCode;
+        *destCodeHolder.GetRW() = *pbSrcCode;
 
 #elif defined(TARGET_ARM)
 
         if (GetARMInstructionLength(pbDestCode) == 2)
-            *(WORD*)pbDestCodeRW  = *(WORD*)pbSrcCode;
+            *(WORD*)destCodeHolder.GetRW()  = *(WORD*)pbSrcCode;
         else
-            *(DWORD*)pbDestCodeRW = *(DWORD*)pbSrcCode;
+            *(DWORD*)destCodeHolder.GetRW() = *(DWORD*)pbSrcCode;
 
 #elif defined(TARGET_ARM64)
 
-        *(DWORD*)pbDestCodeRW = *(DWORD*)pbSrcCode;
+        *(DWORD*)destCodeHolder.GetRW() = *(DWORD*)pbSrcCode;
 
 #else
 
-        *pbDestCodeRW = *pbSrcCode;
+        *destCodeHolder.GetRW() = *pbSrcCode;
 
 #endif
 

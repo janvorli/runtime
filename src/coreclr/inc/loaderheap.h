@@ -943,6 +943,71 @@ public:
 
 #endif // ENABLE_DOUBLE_MAPPING
 
+template<typename T>
+class ExecutableWriterHolder
+{
+    T *m_addressRX;
+    T *m_addressRW;
+
+    void Move(ExecutableWriterHolder& other)
+    {
+        m_addressRX = other.m_addressRX;
+        m_addressRW = other.m_addressRW;
+        other.m_addressRX = NULL;
+        other.m_addressRW = NULL;
+    }
+
+    void Unmap()
+    {
+        if (m_addressRX != m_addressRW)
+        {
+            DoubleMappedAllocator::Instance()->UnmapRW(m_addressRW);
+        }
+    }
+
+public:
+    ExecutableWriterHolder(const ExecutableWriterHolder& other) = delete;
+    ExecutableWriterHolder& operator=(const ExecutableWriterHolder& other) = delete;
+
+    ExecutableWriterHolder(ExecutableWriterHolder&& other)
+    {
+        Move(other);
+    }
+
+    ExecutableWriterHolder& operator=(ExecutableWriterHolder&& other)
+    {
+        Unmap();
+        Move(other);
+        return *this;
+    }
+
+    ExecutableWriterHolder() : m_addressRX(nullptr), m_addressRW(nullptr)
+    {
+    }
+
+    ExecutableWriterHolder(T* addressRX, size_t size)
+    {
+        m_addressRX = addressRX;
+        m_addressRW = (T *)DoubleMappedAllocator::Instance()->MapRW(addressRX, size);
+    }
+
+    ExecutableWriterHolder(T* addressRW)
+    {
+        m_addressRX = addressRW;
+        m_addressRW = addressRW;
+    }
+
+    ~ExecutableWriterHolder()
+    {
+        Unmap();
+    }
+
+    inline T *GetRW() const
+    {
+        return m_addressRW;
+    }
+};
+
 // # bytes to leave between allocations in debug mode
 // Set to a > 0 boundary to debug problems - I've made this zero, otherwise a 1 byte allocation becomes
 // a (1 + LOADER_HEAP_DEBUG_BOUNDARY) allocation

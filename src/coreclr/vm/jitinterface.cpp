@@ -11403,8 +11403,7 @@ void CEEJitInfo::allocUnwindInfo (
     // Make sure that the RUNTIME_FUNCTION is aligned on a DWORD sized boundary
     _ASSERTE(IS_ALIGNED(pRuntimeFunction, sizeof(DWORD)));
 
-    PT_RUNTIME_FUNCTION pRuntimeFunctionRW = (PT_RUNTIME_FUNCTION)DoubleMappedAllocator::Instance()->MapRW(pRuntimeFunction, sizeof(T_RUNTIME_FUNCTION));
-
+    ExecutableWriterHolder<T_RUNTIME_FUNCTION> runtimeFunctionHolder(pRuntimeFunction, sizeof(T_RUNTIME_FUNCTION));
     UNWIND_INFO * pUnwindInfoRW = (UNWIND_INFO *) &(m_theUnwindBlock.GetRW()[m_usedUnwindSize]);
     UNWIND_INFO * pUnwindInfoRX = (UNWIND_INFO *) &(m_theUnwindBlock.GetRX()[m_usedUnwindSize]);
     m_usedUnwindSize += unwindSize;
@@ -11450,18 +11449,13 @@ void CEEJitInfo::allocUnwindInfo (
 
     unsigned unwindInfoDelta = (unsigned) unwindInfoDeltaT;
 
-    RUNTIME_FUNCTION__SetBeginAddress(pRuntimeFunctionRW, currentCodeOffset + startOffset);
+    RUNTIME_FUNCTION__SetBeginAddress(runtimeFunctionHolder.GetRW(), currentCodeOffset + startOffset);
 
 #ifdef TARGET_AMD64
-    pRuntimeFunctionRW->EndAddress        = currentCodeOffset + endOffset;
+    runtimeFunctionHolder.GetRW()->EndAddress        = currentCodeOffset + endOffset;
 #endif
 
-    RUNTIME_FUNCTION__SetUnwindInfoAddress(pRuntimeFunctionRW, unwindInfoDelta);
-
-    if (pRuntimeFunction != pRuntimeFunctionRW)
-    {
-        DoubleMappedAllocator::Instance()->UnmapRW(pRuntimeFunctionRW);
-    }
+    RUNTIME_FUNCTION__SetUnwindInfoAddress(runtimeFunctionHolder.GetRW(), unwindInfoDelta);
 
 #ifdef _DEBUG
     if (funcKind != CORJIT_FUNC_ROOT)

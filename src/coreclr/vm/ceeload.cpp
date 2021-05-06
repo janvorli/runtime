@@ -6330,19 +6330,16 @@ void Module::FixupVTables()
 
                     TaggedMemAllocPtr umEntryThunk = (GetDllThunkHeap()->AllocAlignedMem(sizeof(UMEntryThunk), CODE_SIZE_ALIGN)); // UMEntryThunk contains code
                     UMEntryThunk *pUMEntryThunk =  (UMEntryThunk*)(void*)umEntryThunk;
-                    UMEntryThunk *pUMEntryThunkRW = (UMEntryThunk*)DoubleMappedAllocator::Instance()->MapRW(pUMEntryThunk, sizeof(UMEntryThunk));
-                    FillMemory(pUMEntryThunkRW, sizeof(*pUMEntryThunkRW), 0);
+                    ExecutableWriterHolder<UMEntryThunk> uMEntryThunkHolder(pUMEntryThunk, sizeof(UMEntryThunk));
+                    FillMemory(uMEntryThunkHolder.GetRW(), sizeof(UMEntryThunk), 0);
 
                     TaggedMemAllocPtr mem = (GetThunkHeap()->AllocAlignedMem(sizeof(UMThunkMarshInfo), CODE_SIZE_ALIGN));
                     UMThunkMarshInfo *pUMThunkMarshInfo = (UMThunkMarshInfo*)(void*)mem;
-                    UMThunkMarshInfo *pUMThunkMarshInfoRW = (UMThunkMarshInfo*)DoubleMappedAllocator::Instance()->MapRW(pUMThunkMarshInfo, sizeof(UMThunkMarshInfo));
-                    FillMemory(pUMThunkMarshInfoRW, sizeof(*pUMThunkMarshInfo), 0);
+                    ExecutableWriterHolder<UMThunkMarshInfo> uMThunkMarshInfoHolder(pUMThunkMarshInfo, sizeof(UMThunkMarshInfo));
+                    FillMemory(uMThunkMarshInfoHolder.GetRW(), sizeof(UMThunkMarshInfo), 0);
 
-                    pUMThunkMarshInfoRW->LoadTimeInit(pMD);
-                    pUMEntryThunkRW->LoadTimeInit(pUMEntryThunk, NULL, NULL, pUMThunkMarshInfo, pMD);
-
-                    DoubleMappedAllocator::Instance()->UnmapRW(pUMThunkMarshInfoRW);
-                    DoubleMappedAllocator::Instance()->UnmapRW(pUMEntryThunkRW);
+                    uMThunkMarshInfoHolder.GetRW()->LoadTimeInit(pMD);
+                    uMEntryThunkHolder.GetRW()->LoadTimeInit(pUMEntryThunk, NULL, NULL, pUMThunkMarshInfo, pMD);
 
                     SetTargetForVTableEntry(hInstThis, (BYTE **)&pPointers[iMethod], (BYTE *)pUMEntryThunk->GetCode());
 
