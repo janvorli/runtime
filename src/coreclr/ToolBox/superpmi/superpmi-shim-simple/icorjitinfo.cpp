@@ -1229,3 +1229,8 @@ uint32_t interceptor_ICJI::getJitFlags(
     return original_ICorJitInfo->getJitFlags(flags, sizeInBytes);
 }
 
+void interceptor_ICJI::doneWritingCode()
+{
+    original_ICorJitInfo->doneWritingCode();
+}
+

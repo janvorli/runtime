@@ -722,6 +722,8 @@ uint32_t getJitFlags(
           CORJIT_FLAGS* flags,
           uint32_t sizeInBytes) override;
 
+void doneWritingCode() override;
+
 /**********************************************************************************/
 // clang-format on
 /**********************************************************************************/
