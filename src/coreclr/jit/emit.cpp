@@ -6077,8 +6077,6 @@ unsigned emitter::emitEndCodeGen(Compiler* comp,
 
     // Ensure that any attempt to write code after this point will fail
     writeableOffset = 0;
-    // Notify the EE that all code was written. It can switch off writeable code memory.
-    emitCmpHandle->doneWritingCode();
 
     /* Return the amount of code we've generated */
 

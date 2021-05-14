@@ -4134,10 +4134,6 @@ bool ZapInfo::pInvokeMarshalingRequired(CORINFO_METHOD_HANDLE method,
     return m_pEEJitInfo->pInvokeMarshalingRequired(method, sig);
 }
 
-void ZapInfo::doneWritingCode()
-{
-}
-
 LPVOID ZapInfo::GetCookieForPInvokeCalliSig(CORINFO_SIG_INFO* szMetaSig,
                                                  void ** ppIndirection)
 {

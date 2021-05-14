@@ -2927,10 +2927,6 @@ namespace Internal.JitInterface
         private byte[] _gcInfo;
         private CORINFO_EH_CLAUSE[] _ehClauses;
 
-        private void doneWritingCode()
-        {
-        }
-
         private void allocMem(uint hotCodeSize, uint coldCodeSize, uint roDataSize, uint xcptnsCount, CorJitAllocMemFlag flag, ref void* hotCodeBlock, ref void* hotCodeBlockRW, ref void* coldCodeBlock, ref void* coldCodeBlockRW, ref void* roDataBlock, ref void* roDataBlockRW)
         {
             hotCodeBlock = (void*)GetPin(_code = new byte[hotCodeSize]);
