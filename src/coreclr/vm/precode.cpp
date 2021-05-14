@@ -592,8 +592,10 @@ TADDR Precode::AllocateTemporaryEntryPoints(MethodDescChunk *  pChunk,
             precodeFixupJumpStubRX = (TADDR)temporaryEntryPoints + count * sizeof(FixupPrecode) + sizeof(PTR_MethodDesc);
             // TODO: how to get the size?
 #ifndef CROSSGEN_COMPILE
-            ExecutableWriterHolder<BYTE> precodeFixupJumpStubHolder((BYTE*)precodeFixupJumpStubRX, 12);
-            emitBackToBackJump(precodeFixupJumpStubHolder.GetRW(), (LPVOID)GetEEFuncEntryPoint(PrecodeFixupThunk));
+            //ExecutableWriterHolder<BYTE> precodeFixupJumpStubHolder((BYTE*)precodeFixupJumpStubRX, 12);
+            //emitBackToBackJump(precodeFixupJumpStubHolder.GetRW(), (LPVOID)GetEEFuncEntryPoint(PrecodeFixupThunk));
+            precodeFixupJumpStubRW = (TADDR)entryPointsHolder.GetRW() + count * sizeof(FixupPrecode) + sizeof(PTR_MethodDesc);
+            emitBackToBackJump((BYTE*)precodeFixupJumpStubRW, (LPVOID)GetEEFuncEntryPoint(PrecodeFixupThunk));
 #endif // !CROSSGEN_COMPILE
         }
 #endif // FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS

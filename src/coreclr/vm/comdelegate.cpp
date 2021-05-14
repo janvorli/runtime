@@ -765,34 +765,34 @@ Stub* COMDelegate::SetupShuffleThunk(MethodTable * pDelMT, MethodDesc *pTargetMe
         pShuffleThunkCache = ((AssemblyLoaderAllocator*)pLoaderAllocator)->GetShuffleThunkCache();
     }
 
-    DoublePtrT<Stub> pShuffleThunk = pShuffleThunkCache->Canonicalize((const BYTE *)&rShuffleEntryArray[0]);
-    if (pShuffleThunk.IsNull())
+    Stub *pShuffleThunk = pShuffleThunkCache->Canonicalize((const BYTE *)&rShuffleEntryArray[0]);
+    if (pShuffleThunk == NULL)
     {
         COMPlusThrowOM();
     }
 
     g_IBCLogger.LogEEClassCOWTableAccess(pDelMT);
 
-    Stub* pResult = pShuffleThunk.GetRX();
+    Stub* pResult = pShuffleThunk;
 
     if (!pTargetMeth->IsStatic() && pTargetMeth->HasRetBuffArg() && IsRetBuffPassedAsFirstArg())
     {
-        if (FastInterlockCompareExchangePointer(&pClass->m_pInstRetBuffCallStub, pShuffleThunk.GetRX(), NULL ) != NULL)
+        if (FastInterlockCompareExchangePointer(&pClass->m_pInstRetBuffCallStub, pShuffleThunk, NULL ) != NULL)
         {
-            pShuffleThunk.GetRW()->DecRef();
+            ExecutableWriterHolder<Stub> shuffleThunkHolder(pShuffleThunk, sizeof(Stub));
+            shuffleThunkHolder.GetRW()->DecRef();
             pResult = pClass->m_pInstRetBuffCallStub;
         }
     }
     else
     {
-        if (FastInterlockCompareExchangePointer(&pClass->m_pStaticCallStub, pShuffleThunk.GetRX(), NULL ) != NULL)
+        if (FastInterlockCompareExchangePointer(&pClass->m_pStaticCallStub, pShuffleThunk, NULL ) != NULL)
         {
-            pShuffleThunk.GetRW()->DecRef();
+            ExecutableWriterHolder<Stub> shuffleThunkHolder(pShuffleThunk, sizeof(Stub));
+            shuffleThunkHolder.GetRW()->DecRef();
             pResult = pClass->m_pStaticCallStub;
         }
     }
-
-    pShuffleThunk.UnmapRW();
 
     return pResult;
 }
@@ -1216,8 +1216,12 @@ LPVOID COMDelegate::ConvertToCallback(OBJECTREF pDelegateObj)
             {
                 GCX_PREEMP();
 
-                pUMThunkMarshInfo = new UMThunkMarshInfo();
-                pUMThunkMarshInfo->LoadTimeInit(pInvokeMeth);
+                //pUMThunkMarshInfo = new UMThunkMarshInfo();
+                TaggedMemAllocPtr m = SystemDomain::GetGlobalLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(sizeof(UMThunkMarshInfo)));
+                pUMThunkMarshInfo = (UMThunkMarshInfo*)(void*)m;
+
+                ExecutableWriterHolder<UMThunkMarshInfo> uMThunkMarshInfoHolder(pUMThunkMarshInfo, sizeof(UMThunkMarshInfo));
+                uMThunkMarshInfoHolder.GetRW()->LoadTimeInit(pInvokeMeth);
 
                 g_IBCLogger.LogEEClassCOWTableAccess(pMT);
                 if (FastInterlockCompareExchangePointer(&(pClass->m_pUMThunkMarshInfo),
@@ -1891,15 +1895,14 @@ PCODE COMDelegate::TheDelegateInvokeStub()
         sl.EmitDelegateInvoke();
         // Process-wide singleton stub that never unloads
 
-        DoublePtrT<Stub> candidate = sl.Link(SystemDomain::GetGlobalLoaderAllocator()->GetStubHeap(), NEWSTUB_FL_MULTICAST);
-        Stub *pCandidate = candidate.GetRX();
+        Stub *pCandidate = sl.Link(SystemDomain::GetGlobalLoaderAllocator()->GetStubHeap(), NEWSTUB_FL_MULTICAST);
 
         if (InterlockedCompareExchangeT<PCODE>(&s_pInvokeStub, pCandidate->GetEntryPoint(), NULL) != NULL)
         {
             // if we are here someone managed to set the stub before us so we release the current
-            candidate.GetRW()->DecRef();
+            ExecutableWriterHolder<Stub> candidateHolder(pCandidate, sizeof(Stub));
+            candidateHolder.GetRW()->DecRef();
         }
-        candidate.UnmapRW();
     }
 
     RETURN s_pInvokeStub;
@@ -2314,12 +2317,12 @@ FCIMPL1(PCODE, COMDelegate::GetMulticastInvoke, Object* refThisIn)
             sl.EmitMulticastInvoke(hash);
 
             // The cache is process-wide, based on signature.  It never unloads
-            DoublePtrT<Stub> candidate = sl.Link(SystemDomain::GetGlobalLoaderAllocator()->GetStubHeap(), NEWSTUB_FL_MULTICAST);
-            Stub *pCandidate = candidate.GetRX();
+            Stub *pCandidate = sl.Link(SystemDomain::GetGlobalLoaderAllocator()->GetStubHeap(), NEWSTUB_FL_MULTICAST);
 
             Stub *pWinner = m_pMulticastStubCache->AttemptToSetStub(hash,pCandidate);
-            candidate.GetRW()->DecRef();
-            candidate.UnmapRW();
+            ExecutableWriterHolder<Stub> candidateHolder(pCandidate, sizeof(Stub));
+            candidateHolder.GetRW()->DecRef();
+
             if (!pWinner)
                 COMPlusThrowOM();
 

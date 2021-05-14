@@ -858,58 +858,6 @@ Stub *StubLinker::LinkInterceptor(LoaderHeap *pHeap, Stub* interceptee, void *pR
     return pStub.Extract();
 }
 
-class StubHolder2
-{
-    DoublePtrT<Stub> m_stub;
-public:
-    
-    StubHolder2& operator=(DoublePtrT<Stub> stub)
-    {
-        m_stub = stub;
-        return *this;
-    }
-
-    StubHolder2() : m_stub(NULL, NULL, NULL)
-    {
-
-    }
-    ~StubHolder2()
-    {
-        if (m_stub.GetRW() != NULL)
-        {
-            // TODO: unmap the RW?
-            m_stub.GetRW()->DecRef();
-        }
-    }
-
-    void SuppressRelease()
-    {
-        // TODO
-    }
-
-    Stub* GetRW()
-    {
-        return m_stub.GetRW();
-    }
-    Stub* GetRX()
-    {
-        return m_stub.GetRX();
-    }
-    DoublePtrT<Stub> Extract()
-    {
-        // TODO: is this correct?
-        // TODO: Release the RW mapping?
-        DoublePtrT<Stub> result = m_stub;
-        m_stub = DoublePtrT<Stub>();
-        return result;
-    } 
-
-    bool IsNull()
-    {
-        return m_stub.IsNull();
-    }   
-};
-
 //---------------------------------------------------------------
 // Generate the actual stub. The returned stub has a refcount of 1.
 // No other methods (other than the destructor) should be called
@@ -917,7 +865,7 @@ public:
 //
 // Throws COM+ exception on failure.
 //---------------------------------------------------------------
-DoublePtrT<Stub> StubLinker::Link(LoaderHeap *pHeap, DWORD flags)
+Stub *StubLinker::Link(LoaderHeap *pHeap, DWORD flags)
 {
     STANDARD_VM_CONTRACT;
 
@@ -928,8 +876,7 @@ DoublePtrT<Stub> StubLinker::Link(LoaderHeap *pHeap, DWORD flags)
     _ASSERTE(!pHeap || pHeap->IsExecutable());
 #endif
 
-    //StubHolder<Stub> pStub;
-    StubHolder2 pStub;
+    StubHolder<Stub> pStub;
 
 #ifdef STUBLINKER_GENERATES_UNWIND_INFO
     StubUnwindInfoSegmentBoundaryReservationList ReservedStubs;
@@ -945,9 +892,11 @@ DoublePtrT<Stub> StubLinker::Link(LoaderHeap *pHeap, DWORD flags)
                 , UnwindInfoSize(globalsize)
 #endif
                 );
-        ASSERT(!pStub.IsNull());
+        ASSERT(pStub != NULL);
 
-        bool fSuccess = EmitStub(pStub.GetRW(), globalsize, pHeap);
+        // TODO: is sizeof(Stub) correct?
+        ExecutableWriterHolder<Stub> stubHolder(pStub, sizeof(Stub));
+        bool fSuccess = EmitStub(stubHolder.GetRW(), globalsize, pHeap);
 
 #ifdef STUBLINKER_GENERATES_UNWIND_INFO
         if (fSuccess)
@@ -956,8 +905,8 @@ DoublePtrT<Stub> StubLinker::Link(LoaderHeap *pHeap, DWORD flags)
         }
         else
         {
-            ReservedStubs.AddStub(pStub.GetRX());
-//            pStub.SuppressRelease();
+            ReservedStubs.AddStub(pStub);
+            pStub.SuppressRelease();
         }
 #else
         CONSISTENCY_CHECK_MSG(fSuccess, ("EmitStub should always return true"));
@@ -2159,7 +2108,7 @@ TADDR Stub::GetAllocationBase()
     return info - cbPrefix;
 }
 
-DoublePtrT<Stub> Stub::NewStub(PTR_VOID pCode, DWORD flags)
+Stub *Stub::NewStub(PTR_VOID pCode, DWORD flags)
 {
     CONTRACTL
     {
@@ -2168,10 +2117,8 @@ DoublePtrT<Stub> Stub::NewStub(PTR_VOID pCode, DWORD flags)
     }
     CONTRACTL_END;
 
-    DoublePtrT<Stub> pStub = NewStub(NULL, 0, flags | NEWSTUB_FL_EXTERNAL);
-    _ASSERTE(pStub.GetRX()->HasExternalEntryPoint());
-
-    *(PTR_VOID *)(pStub.GetRW() + 1) = pCode;
+    Stub *pStub = NewStub(NULL, 0, flags | NEWSTUB_FL_EXTERNAL);
+    *(PTR_VOID *)(pStub + 1) = pCode;
 
     return pStub;
 }
@@ -2179,7 +2126,7 @@ DoublePtrT<Stub> Stub::NewStub(PTR_VOID pCode, DWORD flags)
 //-------------------------------------------------------------------
 // Stub allocation done here.
 //-------------------------------------------------------------------
-/*static*/ DoublePtrT<Stub> Stub::NewStub(
+/*static*/ Stub *Stub::NewStub(
         LoaderHeap *pHeap,
         UINT numCodeBytes,
         DWORD flags
@@ -2194,6 +2141,11 @@ DoublePtrT<Stub> Stub::NewStub(PTR_VOID pCode, DWORD flags)
         GC_NOTRIGGER;
     }
     CONTRACTL_END;
+
+    if (flags & NEWSTUB_FL_EXTERNAL)
+    {
+        _ASSERTE(pHeap == NULL);
+    }
 
 #ifdef STUBLINKER_GENERATES_UNWIND_INFO
     _ASSERTE(!nUnwindInfoSize || !pHeap || pHeap->m_fPermitStubsWithUnwindInfo);
@@ -2231,11 +2183,11 @@ DoublePtrT<Stub> Stub::NewStub(PTR_VOID pCode, DWORD flags)
 
     BYTE *pBlock;
 
+    // TODO: reorder stuff so that we don't need this check twice
     if (pHeap == NULL)
     {
-        // TODO: It seems this is a case when there is no code in the stub itself, thus no stub RW release would be needed.
-        // Maybe store the allocator in the DoublePtr and have it NULL for this case.
 #ifndef TARGET_UNIX
+        // TODO: would it make sense to make it closer to the code?
         pBlock = new BYTE[totalSize]; //new (executable) BYTE[totalSize];
 #else
         pBlock = new BYTE[totalSize];
@@ -2253,8 +2205,18 @@ DoublePtrT<Stub> Stub::NewStub(PTR_VOID pCode, DWORD flags)
 
     // Make sure that the payload of the stub is aligned
     Stub* pStubRX = (Stub*)(pBlock + stubPayloadOffset);
-    Stub* pStubRW = (Stub*)DoubleMappedAllocator::Instance()->MapRW(pStubRX, sizeof(Stub));
+    Stub* pStubRW;
+    ExecutableWriterHolder<Stub> stubHolder;
 
+    if (pHeap == NULL)
+    {
+        pStubRW = pStubRX;
+    }
+    else
+    {
+        stubHolder = ExecutableWriterHolder<Stub>(pStubRX, sizeof(Stub));
+        pStubRW = stubHolder.GetRW();
+    }
     pStubRW->SetupStub(
             numCodeBytes,
             flags
@@ -2265,7 +2227,7 @@ DoublePtrT<Stub> Stub::NewStub(PTR_VOID pCode, DWORD flags)
 
     _ASSERTE((BYTE *)pStubRX->GetAllocationBase() == pBlock);
 
-    return DoublePtrT<Stub>(pStubRX, pStubRW, pHeap);
+    return pStubRX;
 }
 
 void Stub::SetupStub(int numCodeBytes, DWORD flags
@@ -2345,17 +2307,16 @@ void Stub::SetupStub(int numCodeBytes, DWORD flags
     }
     CONTRACTL_END;
 
-    DoublePtrT<Stub> pStub = NewStub(pCode, NEWSTUB_FL_INTERCEPT);
-    InterceptStub *pStubRW = (InterceptStub *)pStub.GetRW();
+    Stub *pStub = NewStub(pCode, NEWSTUB_FL_INTERCEPT);
 
-    *pStubRW->GetInterceptedStub() = interceptee;
-    *pStubRW->GetRealAddr() = (TADDR)pRealAddr;
+    ExecutableWriterHolder<InterceptStub> stubHolder((InterceptStub*)pStub, sizeof(InterceptStub));
+    *stubHolder.GetRW()->GetInterceptedStub() = interceptee;
+    *stubHolder.GetRW()->GetRealAddr() = (TADDR)pRealAddr;
 
     LOG((LF_CORDB, LL_INFO10000, "For Stub 0x%x, set intercepted stub to 0x%x\n",
-        pStub.GetRX(), interceptee));
+        pStub, interceptee));
 
-    // TODO: return the double ptr
-    return pStub.GetRX();
+    return pStub;
 }
 
 //-------------------------------------------------------------------
@@ -2377,7 +2338,7 @@ void Stub::SetupStub(int numCodeBytes, DWORD flags
     }
     CONTRACTL_END;
 
-    DoublePtrT<Stub> pStub = NewStub(
+    Stub *pStub = NewStub(
             pHeap,
             numCodeBytes,
             NEWSTUB_FL_INTERCEPT
@@ -2386,16 +2347,14 @@ void Stub::SetupStub(int numCodeBytes, DWORD flags
 #endif
             );
 
-    InterceptStub *pStubRW = (InterceptStub *)pStub.GetRW();
-
-    *pStubRW->GetInterceptedStub() = interceptee;
-    *pStubRW->GetRealAddr() = (TADDR)pRealAddr;
+    ExecutableWriterHolder<InterceptStub> stubHolder((InterceptStub*)pStub, sizeof(InterceptStub));
+    *stubHolder.GetRW()->GetInterceptedStub() = interceptee;
+    *stubHolder.GetRW()->GetRealAddr() = (TADDR)pRealAddr;
 
     LOG((LF_CORDB, LL_INFO10000, "For Stub 0x%x, set intercepted stub to 0x%x\n",
-        pStub.GetRX(), interceptee));
+        pStub, interceptee));
 
-    // TODO: return the double ptr
-    return pStub.GetRX();
+    return pStub;
 }
 
 //-------------------------------------------------------------------
@@ -2413,6 +2372,8 @@ void InterceptStub::ReleaseInterceptedStub()
     Stub** intercepted = GetInterceptedStub();
     // If we own the stub then decrement it. It can be null if the
     // linked stub is actually a jitted stub.
+
+    // TODO: it seems we need to mapRW the intercepted one
     if(*intercepted)
         (*intercepted)->DecRef();
 }

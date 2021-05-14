@@ -64,67 +64,6 @@ StubCacheBase::~StubCacheBase()
     }
 }
 
-
-
-class StubHolder3
-{
-    DoublePtrT<Stub> m_stub;
-public:
-    
-    StubHolder3& operator=(DoublePtrT<Stub> stub)
-    {
-        m_stub.GetRW()->DecRef();
-        m_stub.UnmapRW();
-        m_stub = stub;
-        return *this;
-    }
-
-    StubHolder3() : m_stub(NULL, NULL, NULL)
-    {
-
-    }
-
-    StubHolder3(DoublePtrT<Stub> stub) : m_stub(stub)
-    {
-
-    }
-
-    ~StubHolder3()
-    {
-        if (m_stub.GetRW() != NULL)
-        {
-            m_stub.GetRW()->DecRef();
-            m_stub.UnmapRW();
-        }
-    }
-
-    void SuppressRelease()
-    {
-        // TODO
-    }
-
-    Stub* GetRW()
-    {
-        return m_stub.GetRW();
-    }
-    Stub* GetRX()
-    {
-        return m_stub.GetRX();
-    }
-    DoublePtrT<Stub> Extract()
-    {
-        DoublePtrT<Stub> result = m_stub;
-        m_stub = DoublePtrT<Stub>();
-        return result;
-    } 
-
-    bool IsNull()
-    {
-        return m_stub.IsNull();
-    }   
-};
-
-
 //---------------------------------------------------------
 // Returns the equivalent hashed Stub, creating a new hash
 // entry if necessary. If the latter, will call out to CompileStub.
@@ -133,17 +72,16 @@ public:
 //    The caller is responsible for DecRef'ing the returned stub in
 //    order to avoid leaks.
 //---------------------------------------------------------
-DoublePtrT<Stub> StubCacheBase::Canonicalize(const BYTE * pRawStub)
+Stub *StubCacheBase::Canonicalize(const BYTE * pRawStub)
 {
-    CONTRACT (DoublePtrT<Stub>)
+    CONTRACT (Stub *)
     {
         STANDARD_VM_CHECK;
-        POSTCONDITION(CheckPointer(RETVAL.GetRX(), NULL_OK));
+        POSTCONDITION(CheckPointer(RETVAL, NULL_OK));
     }
     CONTRACT_END;
 
     STUBHASHENTRY *phe = NULL;
-    Stub* pstubRW = NULL;
     
     {
         CrstHolder ch(&m_crst);
@@ -154,12 +92,11 @@ DoublePtrT<Stub> StubCacheBase::Canonicalize(const BYTE * pRawStub)
         {
             Stub* pstub = phe->m_pStub;
 
-            pstubRW = (Stub*)DoubleMappedAllocator::Instance()->MapRW(pstub, sizeof(Stub));
-
+            ExecutableWriterHolder<Stub> stubHolder(pstub, sizeof(Stub));
             // IncRef as we're returning a reference to our caller.
-            pstubRW->IncRef();
+            stubHolder.GetRW()->IncRef();
 
-            RETURN DoublePtrT<Stub>(pstub, pstubRW, NULL);
+            RETURN pstub;
         }
     }
 
@@ -172,7 +109,7 @@ DoublePtrT<Stub> StubCacheBase::Canonicalize(const BYTE * pRawStub)
     // and link up the stub.
     CodeLabel *plabel = psl->EmitNewCodeLabel();
     psl->EmitBytes(pRawStub, Length(pRawStub));
-    StubHolder3 pstub = sl.Link(m_heap);
+    StubHolder<Stub> pstub = sl.Link(m_heap);
 
     UINT32 offset = psl->GetLabelOffset(plabel);
 
@@ -188,10 +125,10 @@ DoublePtrT<Stub> StubCacheBase::Canonicalize(const BYTE * pRawStub)
         {
             if (bNew)
             {
-                phe->m_pStub = pstub.GetRX();
+                phe->m_pStub = pstub;
                 phe->m_offsetOfRawStub = (UINT16)offset;
 
-                AddStub(pRawStub, pstub.GetRX());
+                AddStub(pRawStub, pstub);
             }
             else
             {
@@ -208,11 +145,11 @@ DoublePtrT<Stub> StubCacheBase::Canonicalize(const BYTE * pRawStub)
                 // This will DecRef the new stub for us.
                 // TODO: Free the pstub!
 
-                pstubRW = (Stub*)DoubleMappedAllocator::Instance()->MapRW(phe->m_pStub, sizeof(Stub));
-                pstub = DoublePtrT<Stub>(phe->m_pStub, pstubRW, NULL);
+                pstub = phe->m_pStub;
             }
             // IncRef so that caller has firm ownership of stub.
-            pstub.GetRW()->IncRef();
+            ExecutableWriterHolder<Stub> stubHolder(pstub, sizeof(Stub));
+            stubHolder.GetRW()->IncRef();
         }
     }
 
@@ -225,7 +162,8 @@ DoublePtrT<Stub> StubCacheBase::Canonicalize(const BYTE * pRawStub)
         COMPlusThrowOM();
     }
 
-    RETURN pstub.Extract();
+    pstub.SuppressRelease();
+    RETURN pstub;
 }
 
 

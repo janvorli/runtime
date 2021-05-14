@@ -303,13 +303,15 @@ public:
     }
     void SetEHInfo(PTR_EE_ILEXCEPTION pEH)
     {
-        ExecutableWriterHolder<RealCodeHeader> realCodeHeaderHolder(pRealCodeHeader, sizeof(RealCodeHeader));
-        realCodeHeaderHolder.GetRW()->phdrJitEHInfo = pEH;
+        // ExecutableWriterHolder<RealCodeHeader> realCodeHeaderHolder(pRealCodeHeader, sizeof(RealCodeHeader));
+        // realCodeHeaderHolder.GetRW()->phdrJitEHInfo = pEH;
+        pRealCodeHeader->phdrJitEHInfo = pEH;
     }
     void SetGCInfo(PTR_BYTE pGC)
     {
-        ExecutableWriterHolder<RealCodeHeader> realCodeHeaderHolder(pRealCodeHeader, sizeof(RealCodeHeader));
-        realCodeHeaderHolder.GetRW()->phdrJitGCInfo = pGC;
+        // ExecutableWriterHolder<RealCodeHeader> realCodeHeaderHolder(pRealCodeHeader, sizeof(RealCodeHeader));
+        // realCodeHeaderHolder.GetRW()->phdrJitGCInfo = pGC;
+        pRealCodeHeader->phdrJitGCInfo = pGC;
     }
     void SetMethodDesc(PTR_MethodDesc pMD)
     {

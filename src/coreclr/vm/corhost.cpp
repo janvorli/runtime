@@ -292,6 +292,11 @@ void SetCommandLineArgs(LPCWSTR pwzAssemblyPath, int argc, LPCWSTR* argv)
     GCPROTECT_END();
 }
 
+void PrintReport()
+{
+    DoubleMappedAllocator::Instance()->ReportState();
+}
+
 HRESULT CorHost2::ExecuteAssembly(DWORD dwAppDomainId,
                                       LPCWSTR pwzAssemblyPath,
                                       int argc,
@@ -341,6 +346,8 @@ HRESULT CorHost2::ExecuteAssembly(DWORD dwAppDomainId,
             goto ErrExit;
         }
     }
+
+    atexit(PrintReport);
 
     INSTALL_UNHANDLED_MANAGED_EXCEPTION_TRAP;
     INSTALL_UNWIND_AND_CONTINUE_HANDLER;
@@ -395,8 +402,6 @@ HRESULT CorHost2::ExecuteAssembly(DWORD dwAppDomainId,
     UNINSTALL_UNHANDLED_MANAGED_EXCEPTION_TRAP;
 
 ErrExit:
-
-    DoubleMappedAllocator::Instance()->ReportState();
 
     return hr;
 }

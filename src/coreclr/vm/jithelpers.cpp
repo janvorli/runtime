@@ -5802,9 +5802,7 @@ void InitJitHelperLogging()
 #endif // TARGET_AMD64
 
                     pSl->EmitJITHelperLoggingThunk(GetEEFuncEntryPoint(hlpFunc->pfnHelper), (LPVOID)hlpFuncCount);
-                    DoublePtrT<Stub> stub = pSl->Link(pHeap);
-                    Stub* pStub = stub.GetRX();
-                    stub.UnmapRW();
+                    Stub *pStub = pSl->Link(pHeap);
                     hlpFunc->pfnHelper = (void*)pStub->GetEntryPoint();
                 }
                 else
@@ -5861,9 +5859,7 @@ void InitJitHelperLogging()
 #endif // TARGET_AMD64
 
                     pSl->EmitJITHelperLoggingThunk(GetEEFuncEntryPoint(dynamicHlpFunc->pfnHelper), (LPVOID)hlpFuncCount);
-                    DoublePtrT<Stub> stub = pSl->Link(pHeap);
-                    Stub* pStub = stub.GetRX();
-                    stub.UnmapRW();
+                    Stub* pStub = pSl->Link(pHeap);
                     dynamicHlpFunc->pfnHelper = (void*)pStub->GetEntryPoint();
                 }
             }

@@ -40,6 +40,8 @@ void MagicInit();
 void DoubleMappedAllocator::ReportState()
 {
 #ifdef ENABLE_DOUBLE_MAPPING
+#ifndef CROSSGEN_COMPILE
+#ifndef DACCESS_COMPILE
     printf("Alloc calls: %zd\n", g_allocCalls);
     printf("Reserve calls: %zd\n", g_reserveCalls);
     printf("Reserve-at calls: %zd\n", g_reserveAtCalls);
@@ -61,9 +63,11 @@ void DoubleMappedAllocator::ReportState()
     {
         SYM_INFO psi;
         FillSymbolInfo(&psi, (DWORD_PTR)user->user);
-        printf(" %p - count = %zd: %s\n", user->user, user->count, psi.achSymbol);
+        printf(" %p - count %zd reuseCount %zd  %s\n", user->user, user->count, user->reuseCount, psi.achSymbol);
     }
-#endif    
+#endif
+#endif
+#endif
 }
 
 #ifdef RANDOMIZE_ALLOC
@@ -1502,7 +1506,7 @@ again:
 
             if (!m_fExplicitControl)
             {
-                LoaderHeapValidationTag *pTag = AllocMem_GetTag(dataHolder, dwRequestedSize);
+                LoaderHeapValidationTag *pTag = AllocMem_GetTag(dataHolder.GetRW(), dwRequestedSize);
                 pTag->m_allocationType  = kAllocMem;
                 pTag->m_dwRequestedSize = dwRequestedSize;
                 pTag->m_szFile          = szFile;

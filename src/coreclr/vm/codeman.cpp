@@ -2722,8 +2722,14 @@ CodeHeader* EEJitManager::allocCode(MethodDesc* pMD, size_t blockSize, size_t re
         ExecutableWriterHolder<void> realCodeHeaderHolder;
         if (requestInfo.IsDynamicDomain())
         {
-            realCodeHeaderHolder = ExecutableWriterHolder<void>((BYTE*)pCode + ALIGN_UP(blockSize, sizeof(void*)), sizeof(RealCodeHeader));
-            codeHdrHolder.GetRW()->SetRealCodeHeader((BYTE*)realCodeHeaderHolder.GetRW());
+            // TODO: unify these two cases, but ensure that the header is destroyed when the code is pitched - how?
+            // realCodeHeaderHolder = ExecutableWriterHolder<void>((BYTE*)pCode + ALIGN_UP(blockSize, sizeof(void*)), sizeof(RealCodeHeader));
+            // codeHdrHolder.GetRW()->SetRealCodeHeader((BYTE*)realCodeHeaderHolder.GetRW());
+            //BYTE* pRealHeader = (BYTE*)pCode + ALIGN_UP(blockSize, sizeof(void*));
+
+            // TODO: this leaks memory, need to use regular alloc or find some way to free the memory
+            BYTE* pRealHeader = (BYTE*)(void*)pMD->GetLoaderAllocator()->GetLowFrequencyHeap()->AllocMem(S_SIZE_T(realHeaderSize));
+            codeHdrHolder.GetRW()->SetRealCodeHeader(pRealHeader);
         }
         else
         {
@@ -2750,7 +2756,7 @@ CodeHeader* EEJitManager::allocCode(MethodDesc* pMD, size_t blockSize, size_t re
         // Actually, it would be beneficial to keep the real code header as RW until at least CEEJitInfo::allocUnwindInfo to avoid remapping
         if (requestInfo.IsDynamicDomain())
         {
-            codeHdrHolder.GetRW()->SetRealCodeHeader((BYTE*)pCode + ALIGN_UP(blockSize, sizeof(void*)));
+//            codeHdrHolder.GetRW()->SetRealCodeHeader((BYTE*)pCode + ALIGN_UP(blockSize, sizeof(void*)));
         }
 #endif
 

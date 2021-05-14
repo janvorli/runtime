@@ -11130,9 +11130,9 @@ void CEEJitInfo::BackoutJitData(EEJitManager * jitMgr)
         GC_TRIGGERS;
     } CONTRACTL_END;
 
-    DoublePtrT<CodeHeader> pCodeHeader = GetCodeHeader();
-    if (!pCodeHeader.IsNull())
-        jitMgr->RemoveJitData(pCodeHeader.GetRX(), m_GCinfo_len, m_EHinfo_len);
+    CodeHeader *pCodeHeader = m_CodeHeader;
+    if (pCodeHeader != NULL)
+        jitMgr->RemoveJitData(pCodeHeader, m_GCinfo_len, m_EHinfo_len);
 }
 
 /*********************************************************************/
@@ -11253,7 +11253,7 @@ void CEEJitInfo::CompressDebugInfo()
             NULL,
             m_pMethodBeingCompiled->GetLoaderAllocator()->GetLowFrequencyHeap());
 
-        GetCodeHeader().GetRW()->SetDebugInfo(pDebugInfo);
+        m_CodeHeader->SetDebugInfo(pDebugInfo);
     }
     EX_CATCH
     {
@@ -11315,7 +11315,7 @@ void CEEJitInfo::reserveUnwindInfo(bool isFunclet, bool isColdCode, uint32_t unw
     JIT_TO_EE_TRANSITION_LEAF();
 
     CONSISTENCY_CHECK_MSG(!isColdCode, "Hot/Cold splitting is not supported in jitted code");
-    _ASSERTE_MSG(m_theUnwindBlock.IsNull(),
+    _ASSERTE_MSG(m_theUnwindBlock == NULL,
         "reserveUnwindInfo() can only be called before allocMem(), but allocMem() has already been called. "
         "This may indicate the JIT has hit a NO_WAY assert after calling allocMem(), and is re-JITting. "
         "Set COMPlus_JitBreakOnBadCode=1 and rerun to get the real error.");
@@ -11370,7 +11370,7 @@ void CEEJitInfo::allocUnwindInfo (
         THROWS;
         GC_TRIGGERS;
         MODE_PREEMPTIVE;
-        PRECONDITION(!m_theUnwindBlock.IsNull());
+        PRECONDITION(m_theUnwindBlock != NULL);
         PRECONDITION(m_usedUnwindSize < m_totalUnwindSize);
         PRECONDITION(m_usedUnwindInfos < m_totalUnwindInfos);
         PRECONDITION(endOffset <= m_codeSize);
@@ -11397,15 +11397,15 @@ void CEEJitInfo::allocUnwindInfo (
         _ASSERTE(m_usedUnwindInfos > 0);
     }
 
-    PT_RUNTIME_FUNCTION pRuntimeFunction = m_CodeHeader.GetRX()->GetUnwindInfo(m_usedUnwindInfos);
+    PT_RUNTIME_FUNCTION pRuntimeFunction = m_CodeHeader->GetUnwindInfo(m_usedUnwindInfos);
     m_usedUnwindInfos++;
 
     // Make sure that the RUNTIME_FUNCTION is aligned on a DWORD sized boundary
     _ASSERTE(IS_ALIGNED(pRuntimeFunction, sizeof(DWORD)));
 
-    ExecutableWriterHolder<T_RUNTIME_FUNCTION> runtimeFunctionHolder(pRuntimeFunction, sizeof(T_RUNTIME_FUNCTION));
-    UNWIND_INFO * pUnwindInfoRW = (UNWIND_INFO *) &(m_theUnwindBlock.GetRW()[m_usedUnwindSize]);
-    UNWIND_INFO * pUnwindInfoRX = (UNWIND_INFO *) &(m_theUnwindBlock.GetRX()[m_usedUnwindSize]);
+    //ExecutableWriterHolder<T_RUNTIME_FUNCTION> runtimeFunctionHolder(pRuntimeFunction, sizeof(T_RUNTIME_FUNCTION));
+    UNWIND_INFO * pUnwindInfoRX = (UNWIND_INFO *) &(m_theUnwindBlock[m_usedUnwindSize]);
+    ExecutableWriterHolder<UNWIND_INFO> unwindInfoHolder(pUnwindInfoRX, unwindSize);
     m_usedUnwindSize += unwindSize;
 
     reservePersonalityRoutineSpace(m_usedUnwindSize);
@@ -11413,7 +11413,7 @@ void CEEJitInfo::allocUnwindInfo (
     _ASSERTE(m_usedUnwindSize <= m_totalUnwindSize);
 
     // Make sure that the UnwindInfo is aligned
-    _ASSERTE(IS_ALIGNED(pUnwindInfoRW, sizeof(ULONG)));
+    _ASSERTE(IS_ALIGNED(unwindInfoHolder.GetRW(), sizeof(ULONG)));
 
     /* Calculate Image Relative offset to add to the jit generated unwind offsets */
 
@@ -11449,13 +11449,13 @@ void CEEJitInfo::allocUnwindInfo (
 
     unsigned unwindInfoDelta = (unsigned) unwindInfoDeltaT;
 
-    RUNTIME_FUNCTION__SetBeginAddress(runtimeFunctionHolder.GetRW(), currentCodeOffset + startOffset);
+    RUNTIME_FUNCTION__SetBeginAddress(pRuntimeFunction, currentCodeOffset + startOffset);
 
 #ifdef TARGET_AMD64
-    runtimeFunctionHolder.GetRW()->EndAddress        = currentCodeOffset + endOffset;
+    pRuntimeFunction->EndAddress        = currentCodeOffset + endOffset;
 #endif
 
-    RUNTIME_FUNCTION__SetUnwindInfoAddress(runtimeFunctionHolder.GetRW(), unwindInfoDelta);
+    RUNTIME_FUNCTION__SetUnwindInfoAddress(pRuntimeFunction, unwindInfoDelta);
 
 #ifdef _DEBUG
     if (funcKind != CORJIT_FUNC_ROOT)
@@ -11464,7 +11464,7 @@ void CEEJitInfo::allocUnwindInfo (
 
         for (ULONG iUnwindInfo = 0; iUnwindInfo < m_usedUnwindInfos - 1; iUnwindInfo++)
         {
-            PT_RUNTIME_FUNCTION pOtherFunction = m_CodeHeader.GetRX()->GetUnwindInfo(iUnwindInfo);
+            PT_RUNTIME_FUNCTION pOtherFunction = m_CodeHeader->GetUnwindInfo(iUnwindInfo);
             _ASSERTE((   RUNTIME_FUNCTION__BeginAddress(pOtherFunction) >= RUNTIME_FUNCTION__EndAddress(pRuntimeFunction, baseAddress)
                      || RUNTIME_FUNCTION__EndAddress(pOtherFunction, baseAddress) <= RUNTIME_FUNCTION__BeginAddress(pRuntimeFunction)));
         }
@@ -11472,7 +11472,7 @@ void CEEJitInfo::allocUnwindInfo (
 #endif // _DEBUG
 
     /* Copy the UnwindBlock */
-    memcpy(pUnwindInfoRW, pUnwindBlock, unwindSize);
+    memcpy(unwindInfoHolder.GetRW(), pUnwindBlock, unwindSize);
 
 #if defined(TARGET_X86)
 
@@ -11480,23 +11480,23 @@ void CEEJitInfo::allocUnwindInfo (
 
 #elif defined(TARGET_AMD64)
 
-    pUnwindInfoRW->Flags = UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER;
+    unwindInfoHolder.GetRW()->Flags = UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER;
 
-    ULONG * pPersonalityRoutine = (ULONG*)ALIGN_UP(&(pUnwindInfoRW->UnwindCode[pUnwindInfoRX->CountOfUnwindCodes]), sizeof(ULONG));
+    ULONG * pPersonalityRoutine = (ULONG*)ALIGN_UP(&(unwindInfoHolder.GetRW()->UnwindCode[pUnwindInfoRX->CountOfUnwindCodes]), sizeof(ULONG));
     *pPersonalityRoutine = ExecutionManager::GetCLRPersonalityRoutineValue();
 
 #elif defined(TARGET_ARM64)
 
-    *(LONG *)pUnwindInfoRW |= (1 << 20); // X bit
+    *(LONG *)unwindInfoHolder.GetRW() |= (1 << 20); // X bit
 
-    ULONG * pPersonalityRoutine = (ULONG*)((BYTE *)pUnwindInfoRW + ALIGN_UP(unwindSize, sizeof(ULONG)));
+    ULONG * pPersonalityRoutine = (ULONG*)((BYTE *)unwindInfoHolder.GetRW() + ALIGN_UP(unwindSize, sizeof(ULONG)));
     *pPersonalityRoutine = ExecutionManager::GetCLRPersonalityRoutineValue();
 
 #elif defined(TARGET_ARM)
 
-    *(LONG *)pUnwindInfoRW |= (1 << 20); // X bit
+    *(LONG *)unwindInfoHolder.GetRW() |= (1 << 20); // X bit
 
-    ULONG * pPersonalityRoutine = (ULONG*)((BYTE *)pUnwindInfoRW + ALIGN_UP(unwindSize, sizeof(ULONG)));
+    ULONG * pPersonalityRoutine = (ULONG*)((BYTE *)unwindInfoHolder.GetRW() + ALIGN_UP(unwindSize, sizeof(ULONG)));
     *pPersonalityRoutine = (TADDR)ProcessCLRException - baseAddress;
 
 #endif
@@ -11504,7 +11504,7 @@ void CEEJitInfo::allocUnwindInfo (
 #if defined(TARGET_AMD64)
     // Publish the new unwind information in a way that the ETW stack crawler can find
     if (m_usedUnwindInfos == m_totalUnwindInfos)
-        UnwindInfoTable::PublishUnwindInfoForMethod(baseAddress, m_CodeHeader.GetRW()->GetUnwindInfo(0), m_totalUnwindInfos);
+        UnwindInfoTable::PublishUnwindInfoForMethod(baseAddress, m_CodeHeader->GetUnwindInfo(0), m_totalUnwindInfos);
 #endif // defined(TARGET_AMD64)
 
     EE_TO_JIT_TRANSITION();
@@ -12243,7 +12243,7 @@ void CEEJitInfo::allocMem (
     totalSize += m_totalUnwindSize;
 #endif
 
-    _ASSERTE(m_CodeHeader.IsNull() &&
+    _ASSERTE((m_CodeHeader == NULL) &&
             // The jit-compiler sometimes tries to compile a method a second time
             // if it failed the first time. In such a situation, m_CodeHeader may
             // have already been assigned. Its OK to ignore this assert in such a
@@ -12282,14 +12282,11 @@ void CEEJitInfo::allocMem (
 
     // TODO: is the totalSize.Value the correct one?
     CodeHeader* pCodeHeaderRW = (CodeHeader*)DoubleMappedAllocator::Instance()->MapRW(pCodeHeader, totalSize.Value() + sizeof(CodeHeader));
-    m_CodeHeader = DoublePtrT<CodeHeader>(pCodeHeader, pCodeHeaderRW, NULL);
+    m_CodeHeader = pCodeHeader;
+    m_CodeHeaderRW = pCodeHeaderRW;
 
-    // TODO: store the m_CodeHeader as double pointer and release the memory all at once after the JIT writes the code?
-    // Seems we will need that unless the other stuff allocated from this memory like the GC info is accessed out of the 
-    // method that calls the allocMem.
-    // TODO: the current method will ned to return both RX and RW addresses for the blocks
-    BYTE* current = (BYTE *)m_CodeHeader.GetRX()->GetCodeStartAddress();
-    BYTE* currentRW = (BYTE *)m_CodeHeader.GetRW()->GetCodeStartAddress();
+    BYTE* current = (BYTE *)m_CodeHeader->GetCodeStartAddress();
+    BYTE* currentRW = (BYTE *)m_CodeHeaderRW->GetCodeStartAddress();
 
     _ASSERTE(current != currentRW);
 
@@ -12317,13 +12314,13 @@ void CEEJitInfo::allocMem (
     current = (BYTE *)ALIGN_UP(current, sizeof(DWORD));
     currentRW = (BYTE *)ALIGN_UP(currentRW, sizeof(DWORD));
 
-    m_theUnwindBlock = DoublePtrT<BYTE>(current, currentRW, NULL);
+    m_theUnwindBlock = current;
     current += m_totalUnwindSize;
     currentRW += m_totalUnwindSize;
 #endif
 
-    _ASSERTE((SIZE_T)(current - (BYTE *)m_CodeHeader.GetRX()->GetCodeStartAddress()) <= totalSize.Value());
-    _ASSERTE((SIZE_T)(currentRW - (BYTE *)m_CodeHeader.GetRW()->GetCodeStartAddress()) <= totalSize.Value());
+    _ASSERTE((SIZE_T)(current - (BYTE *)m_CodeHeader->GetCodeStartAddress()) <= totalSize.Value());
+    _ASSERTE((SIZE_T)(currentRW - (BYTE *)m_CodeHeaderRW->GetCodeStartAddress()) <= totalSize.Value());
 
 #ifdef _DEBUG
     m_codeSize = codeSize;
@@ -12345,8 +12342,8 @@ void * CEEJitInfo::allocGCInfo (size_t size)
 
     JIT_TO_EE_TRANSITION();
 
-    _ASSERTE(!m_CodeHeader.IsNull());
-    _ASSERTE(m_CodeHeader.GetRW()->GetGCInfo() == 0);
+    _ASSERTE(m_CodeHeader != NULL);
+    _ASSERTE(m_CodeHeader->GetGCInfo() == 0);
 
 #ifdef HOST_64BIT
     if (size & 0xFFFFFFFF80000000LL)
@@ -12355,13 +12352,13 @@ void * CEEJitInfo::allocGCInfo (size_t size)
     }
 #endif // HOST_64BIT
 
-    block = m_jitManager->allocGCInfo(m_CodeHeader.GetRW(),(DWORD)size, &m_GCinfo_len);
+    block = m_jitManager->allocGCInfo(m_CodeHeader, (DWORD)size, &m_GCinfo_len);
     if (!block)
     {
         COMPlusThrowHR(CORJIT_OUTOFMEM);
     }
 
-    _ASSERTE(m_CodeHeader.GetRW()->GetGCInfo() != 0 && block == m_CodeHeader.GetRW()->GetGCInfo());
+    _ASSERTE(m_CodeHeader->GetGCInfo() != 0 && block == m_CodeHeader->GetGCInfo());
 
     EE_TO_JIT_TRANSITION();
 
@@ -12381,14 +12378,14 @@ void CEEJitInfo::setEHcount (
     JIT_TO_EE_TRANSITION();
 
     _ASSERTE(cEH != 0);
-    _ASSERTE(!m_CodeHeader.IsNull());
-    _ASSERTE(m_CodeHeader.GetRW()->GetEHInfo() == 0);
+    _ASSERTE(m_CodeHeader != NULL);
+    _ASSERTE(m_CodeHeader->GetEHInfo() == 0);
 
     EE_ILEXCEPTION* ret;
-    ret = m_jitManager->allocEHInfo(m_CodeHeader.GetRW(),cEH, &m_EHinfo_len);
+    ret = m_jitManager->allocEHInfo(m_CodeHeader,cEH, &m_EHinfo_len);
     _ASSERTE(ret);      // allocEHInfo throws if there's not enough memory
 
-    _ASSERTE(m_CodeHeader.GetRW()->GetEHInfo() != 0 && m_CodeHeader.GetRW()->GetEHInfo()->EHCount() == cEH);
+    _ASSERTE(m_CodeHeader->GetEHInfo() != 0 && m_CodeHeader->GetEHInfo()->EHCount() == cEH);
 
     EE_TO_JIT_TRANSITION();
 }
@@ -12407,9 +12404,9 @@ void CEEJitInfo::setEHinfo (
     JIT_TO_EE_TRANSITION();
 
     // <REVISIT_TODO> Fix make the Code Manager EH clauses EH_INFO+</REVISIT_TODO>
-    _ASSERTE(m_CodeHeader.GetRW()->GetEHInfo() != 0 && EHnumber < m_CodeHeader.GetRW()->GetEHInfo()->EHCount());
+    _ASSERTE(m_CodeHeader->GetEHInfo() != 0 && EHnumber < m_CodeHeader->GetEHInfo()->EHCount());
 
-    EE_ILEXCEPTION_CLAUSE* pEHClause = m_CodeHeader.GetRW()->GetEHInfo()->EHClause(EHnumber);
+    EE_ILEXCEPTION_CLAUSE* pEHClause = m_CodeHeader->GetEHInfo()->EHClause(EHnumber);
 
     pEHClause->TryStartPC     = clause->TryOffset;
     pEHClause->TryEndPC       = clause->TryLength;
@@ -12467,6 +12464,8 @@ void CEEJitInfo::getEHinfo(
 
     EE_TO_JIT_TRANSITION();
 }
+
+
 #endif // CROSSGEN_COMPILE
 
 #if defined(CROSSGEN_COMPILE)

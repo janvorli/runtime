@@ -1737,9 +1737,7 @@ Stub * MakeUnboxingStubWorker(MethodDesc *pMD)
 
         sl.EmitComputedInstantiatingMethodStub(pUnboxedMD, &portableShuffle[0], NULL);
 
-        DoublePtrT<Stub> stub = sl.Link(pMD->GetLoaderAllocator()->GetStubHeap());
-        pstub = stub.GetRX();
-        stub.UnmapRW();
+        pstub = sl.Link(pMD->GetLoaderAllocator()->GetStubHeap());
     }
     else
 #endif
@@ -1760,9 +1758,7 @@ Stub * MakeUnboxingStubWorker(MethodDesc *pMD)
         {
             CPUSTUBLINKER sl;
             sl.EmitUnboxMethodStub(pUnboxedMD);
-            DoublePtrT<Stub> stub = sl.Link(pMD->GetLoaderAllocator()->GetStubHeap());
-            pstub = stub.GetRX();
-            stub.UnmapRW();
+            pstub = sl.Link(pMD->GetLoaderAllocator()->GetStubHeap());
         }
 #endif // !FEATURE_PORTABLE_SHUFFLE_THUNKS
     }
@@ -1814,9 +1810,7 @@ Stub * MakeInstantiatingStubWorker(MethodDesc *pMD)
         _ASSERTE(pSharedMD != NULL && pSharedMD != pMD);
         sl.EmitComputedInstantiatingMethodStub(pSharedMD, &portableShuffle[0], extraArg);
 
-        DoublePtrT<Stub> stub = sl.Link(pMD->GetLoaderAllocator()->GetStubHeap());
-        pstub = stub.GetRX();
-        stub.UnmapRW();
+        pstub = sl.Link(pMD->GetLoaderAllocator()->GetStubHeap());
     }
     else
 #endif
@@ -1828,9 +1822,7 @@ Stub * MakeInstantiatingStubWorker(MethodDesc *pMD)
         _ASSERTE(pSharedMD != NULL && pSharedMD != pMD);
         sl.EmitInstantiatingMethodStub(pSharedMD, extraArg);
 
-        DoublePtrT<Stub> stub = sl.Link(pMD->GetLoaderAllocator()->GetStubHeap());
-        pstub = stub.GetRX();
-        stub.UnmapRW();
+        pstub = sl.Link(pMD->GetLoaderAllocator()->GetStubHeap());
 #endif
     }
 
@@ -2325,8 +2317,9 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT, CallerGCMode callerGCMo
         {
             // If the Stub wraps code that is outside of the Stub allocation, then we
             // need to free the Stub allocation now.
-            ExecutableWriterHolder<Stub> stubHolder(pStub, sizeof(Stub));
-            stubHolder.GetRW()->DecRef();
+            pStub->DecRef();
+            // ExecutableWriterHolder<Stub> stubHolder(pStub, sizeof(Stub));
+            // stubHolder.GetRW()->DecRef();
         }
     }
 

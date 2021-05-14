@@ -716,18 +716,6 @@ public:
 
     uint32_t getExpectedTargetArchitecture() override final;
 
-    DoublePtrT<CodeHeader> GetCodeHeader()
-    {
-        LIMITED_METHOD_CONTRACT;
-        return m_CodeHeader;
-    }
-
-    void SetCodeHeader(DoublePtrT<CodeHeader> pValue)
-    {
-        LIMITED_METHOD_CONTRACT;
-        m_CodeHeader = pValue;
-    }
-
     void ResetForJitRetry()
     {
         CONTRACTL {
@@ -735,7 +723,8 @@ public:
             GC_NOTRIGGER;
         } CONTRACTL_END;
 
-        m_CodeHeader = DoublePtrT<CodeHeader>();
+        m_CodeHeader = NULL;
+        m_CodeHeaderRW = NULL;
 
         if (m_pOffsetMapping != NULL)
             delete [] ((BYTE*) m_pOffsetMapping);
@@ -761,7 +750,7 @@ public:
         m_moduleBase = NULL;
         m_totalUnwindSize = 0;
         m_usedUnwindSize = 0;
-        m_theUnwindBlock = DoublePtr::Null();
+        m_theUnwindBlock = NULL;
         m_totalUnwindInfos = 0;
         m_usedUnwindInfos = 0;
 #endif // FEATURE_EH_FUNCLETS
@@ -834,13 +823,14 @@ public:
                EEJitManager* jm, bool fVerifyOnly, bool allowInlining = true)
         : CEEInfo(fd, fVerifyOnly, allowInlining),
           m_jitManager(jm),
-          //m_CodeHeader(NULL),
+          m_CodeHeader(NULL),
+          m_CodeHeaderRW(NULL),
           m_ILHeader(header),
 #ifdef FEATURE_EH_FUNCLETS
           m_moduleBase(NULL),
           m_totalUnwindSize(0),
           m_usedUnwindSize(0),
-          m_theUnwindBlock(DoublePtr::Null()),
+          m_theUnwindBlock(NULL),
           m_totalUnwindInfos(0),
           m_usedUnwindInfos(0),
 #endif
@@ -883,10 +873,9 @@ public:
             MODE_ANY;
         } CONTRACTL_END;
 
-        // TODO: this is a hack, it needs to be mapped / unmapped around the code generation only
-        if (!GetCodeHeader().IsNull())
+        if (m_CodeHeaderRW != NULL && m_CodeHeaderRW != m_CodeHeader)
         {
-            GetCodeHeader().UnmapRW();
+            DoubleMappedAllocator::Instance()->UnmapRW(m_CodeHeaderRW);
         }
 
         if (m_pOffsetMapping != NULL)
@@ -970,13 +959,14 @@ protected :
 
 
     EEJitManager*           m_jitManager;   // responsible for allocating memory
-    DoublePtrT<CodeHeader>  m_CodeHeader;   // descriptor for JITTED code
+    CodeHeader*             m_CodeHeader;   // descriptor for JITTED code - read/execute address
+    CodeHeader*             m_CodeHeaderRW; // descriptor for JITTED code - writeable address
     COR_ILMETHOD_DECODER *  m_ILHeader;     // the code header as exist in the file
 #ifdef FEATURE_EH_FUNCLETS
     TADDR                   m_moduleBase;       // Base for unwind Infos
     ULONG                   m_totalUnwindSize;  // Total reserved unwind space
     uint32_t                m_usedUnwindSize;   // used space in m_theUnwindBlock
-    DoublePtrT<BYTE>        m_theUnwindBlock;   // start of the unwind memory block
+    BYTE*                   m_theUnwindBlock;   // start of the unwind memory block
     ULONG                   m_totalUnwindInfos; // Number of RUNTIME_FUNCTION needed
     ULONG                   m_usedUnwindInfos;
 #endif

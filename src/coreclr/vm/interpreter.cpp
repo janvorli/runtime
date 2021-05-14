@@ -1492,9 +1492,7 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
 #else
 #error unsupported platform
 #endif
-        DoublePtrT<Stub> s = sl.Link(SystemDomain::GetGlobalLoaderAllocator()->GetStubHeap());
-        stub = s.GetRX();
-        s.UnmapRW();
+        stub = sl.Link(SystemDomain::GetGlobalLoaderAllocator()->GetStubHeap());
 
         *nativeSizeOfCode = static_cast<ULONG>(stub->GetNumCodeBytes());
         // TODO: manage reference count of interpreter stubs.  Look for examples...

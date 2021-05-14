@@ -938,7 +938,10 @@ template <typename TYPE>
 FORCEINLINE void StubRelease(TYPE* value)
 {
     if (value)
-        value->DecRef();
+    {
+        ExecutableWriterHolder<TYPE> stubHolder(value, sizeof(TYPE));
+        stubHolder.GetRW()->DecRef();
+    }
 }
 
 template<typename _TYPE>

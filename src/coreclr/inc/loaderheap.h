@@ -22,92 +22,6 @@ class UnlockedLoaderHeap;
 
 #define ENABLE_DOUBLE_MAPPING
 
-template<typename T>
-class DoublePtrT
-{
-    T* m_pRW;
-    T* m_pRX;
-    size_t m_headerSize;
-    // TODO: this will rather be a handle or a lower lever allocator
-    UnlockedLoaderHeap* m_pHeap;
-
-public:
-    DoublePtrT() : m_pRW(NULL), m_pRX(NULL), m_headerSize(0), m_pHeap(NULL)
-    {
-    }
-
-    DoublePtrT(const DoublePtrT<void>& voidDoublePtr) : m_pRW((T*)voidDoublePtr.GetRW()), m_pRX((T*)voidDoublePtr.GetRX()), m_headerSize(voidDoublePtr.GetHeaderSize()), m_pHeap(voidDoublePtr.Heap())
-    {
-    }
-
-    DoublePtrT(T* pRX, T* pRW, UnlockedLoaderHeap* pHeap) : m_pRW(pRW), m_pRX(pRX), m_headerSize(0), m_pHeap(pHeap)
-    {
-    }
-
-    DoublePtrT(T* pRX, T* pRW, size_t headerSize, UnlockedLoaderHeap* pHeap) : m_pRW(pRW), m_pRX(pRX), m_headerSize(headerSize), m_pHeap(pHeap)
-    {
-    }
-
-    static DoublePtrT Null()
-    {
-        return DoublePtrT();
-    }
-
-    DoublePtrT& operator=(const DoublePtrT& other)
-    {
-        m_pRW = other.m_pRW;
-        m_pRX = other.m_pRX;
-        m_headerSize = other.m_headerSize;
-
-        return *this;
-    }
-
-    T* GetRX() const
-    {
-        return m_pRX;
-    }
-
-    T* GetRW() const
-    {
-        //_ASSERTE((m_pRX == NULL) || (m_pRW != NULL));
-        if (!((m_pRX == NULL) || (m_pRW != NULL)))
-        {
-            __debugbreak();
-        }
-        return m_pRW;
-    }
-
-    size_t GetHeaderSize() const
-    {
-        return m_headerSize;
-    }
-
-    UnlockedLoaderHeap* Heap() const
-    {
-        return m_pHeap;
-    }
-
-    bool IsNull() const
-    {
-        return m_pRX == NULL;
-    }
-
-    void UnmapRW()
-    {
-#if !defined(CROSSGEN_COMPILE) && defined(ENABLE_DOUBLE_MAPPING)
-        //_ASSERTE(m_pRW != m_pRX);
-        if (m_pRW == m_pRX)
-        {
-            __debugbreak();
-        }
-        DoubleMappedAllocator::Instance()->UnmapRW((BYTE*)m_pRW - m_headerSize);
-#endif        
-        m_pRW = NULL;
-    }
-};
-
-typedef DoublePtrT<void> DoublePtr;
-
 //==============================================================================
 // Interface used to back out loader heap allocations.
 //==============================================================================
@@ -214,6 +128,7 @@ class DoubleMappedAllocator
     {
         UsersListEntry* next;
         size_t count;
+        size_t reuseCount;
         void *user;
     };
 
@@ -481,7 +396,7 @@ public:
         BYTE *   tryAddr            = (BYTE *)ALIGN_UP((BYTE *)pMinAddr, Granularity());
         bool     virtualQueryFailed = false;
 #ifdef DEBUG        
-        bool     faultInjected      = false;
+        //bool     faultInjected      = false;
 #endif        
         unsigned virtualQueryCount  = 0;
 
@@ -521,12 +436,12 @@ public:
                 }
 
     #ifdef _DEBUG
-                if (ShouldInjectFaultInRange())
-                {
-                    // return nullptr (failure)
-                    faultInjected = true;
-                    break;
-                }
+                // if (ShouldInjectFaultInRange())
+                // {
+                //     // return nullptr (failure)
+                //     faultInjected = true;
+                //     break;
+                // }
     #endif // _DEBUG
 
                 // On UNIX we can also fail if our request size 'dwSize' is larger than 64K and
@@ -776,25 +691,41 @@ public:
 #endif
     }
 
-    void RecordUser(void* callAddress)
+    void RecordUser(void* callAddress, bool reused)
     {
         for (UsersListEntry* user = m_mapUsers; user != NULL; user = user->next)
         {
             if (user->user == callAddress)
             {
-                user->count++;
+                if (reused)
+                {
+                    user->reuseCount++;
+                }
+                else
+                {
+                    user->count++;
+                }
                 return;
             }
         }
 
-        UsersListEntry* newEntry = new (nothrow) UsersListEntry();
-        newEntry->count = 1;
+        UsersListEntry* newEntry = (UsersListEntry*)malloc(sizeof(UsersListEntry));
+        if (reused)
+        {
+            newEntry->reuseCount = 1;
+            newEntry->count = 0;
+        }
+        else
+        {
+            newEntry->reuseCount = 0;
+            newEntry->count = 1;
+        }
         newEntry->user = callAddress;
         newEntry->next = m_mapUsers;
         m_mapUsers = newEntry;
     }
 
-    void* MapRW(void* pRX, size_t size)
+    void* MapRW(void* pRX, size_t size, void* returnAddress)
     {
         CRITSEC_Holder csh(m_CriticalSection);
 
@@ -802,15 +733,25 @@ public:
         if (result != NULL)
         {
             InterlockedIncrement(&g_reusedRwMaps);
+            RecordUser(returnAddress, true);
             return result;
         }
 
-        RecordUser((void*)_ReturnAddress());
+        RecordUser(returnAddress, false);
 
         for (Block* b = m_firstBlock; b != NULL; b = b->next)
         {
             if (pRX >= b->baseRX && ((size_t)pRX + size) <= ((size_t)b->baseRX + b->size))
             {
+                MEMORY_BASIC_INFORMATION mbi2;
+                ClrVirtualQuery(pRX, &mbi2, sizeof(mbi2));
+                
+                if (mbi2.Protect & PAGE_READWRITE)
+                {
+                    __debugbreak();
+                    return pRX;
+                }
+
                 // Offset of the RX address in the originally allocated block
                 size_t offset = (size_t)pRX - (size_t)b->baseRX;
                 // Offset of the RX address that will start the newly mapped block
@@ -859,9 +800,15 @@ public:
         }
 #endif        
 //        return NULL;
+        __debugbreak();
         // TODO: this is a hack for the preallocated pages that are part of the coreclr module
         InterlockedIncrement(&g_failedRwMaps);
         return pRX;
+    }
+
+    void* MapRW(void* pRX, size_t size)
+    {
+        return MapRW(pRX, size, (void*)_ReturnAddress());
     }
 };
 
@@ -988,7 +935,7 @@ public:
     ExecutableWriterHolder(T* addressRX, size_t size)
     {
         m_addressRX = addressRX;
-        m_addressRW = (T *)DoubleMappedAllocator::Instance()->MapRW(addressRX, size);
+        m_addressRW = (T *)DoubleMappedAllocator::Instance()->MapRW(addressRX, size, (void *)_ReturnAddress());
     }
 
     ExecutableWriterHolder(T* addressRW)
