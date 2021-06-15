@@ -597,6 +597,7 @@ struct StubPrecode {
         return m_pTarget;
     }
 
+#ifndef DACCESS_COMPILE
     void ResetTargetInterlocked()
     {
         CONTRACTL
@@ -623,6 +624,7 @@ struct StubPrecode {
         return (TADDR)InterlockedCompareExchange64(
             (LONGLONG*)&precodeWriterHolder.GetRW()->m_pTarget, (TADDR)target, (TADDR)expected) == expected;
     }
+#endif // !DACCESS_COMPILE
 
 #ifdef FEATURE_PREJIT
     void Fixup(DataImage *image);
@@ -723,6 +725,7 @@ struct FixupPrecode {
         return m_pTarget;
     }
 
+#ifndef DACCESS_COMPILE
     void ResetTargetInterlocked()
     {
         CONTRACTL
@@ -749,6 +752,7 @@ struct FixupPrecode {
         return (TADDR)InterlockedCompareExchange64(
             (LONGLONG*)&precodeWriterHolder.GetRW()->m_pTarget, (TADDR)target, (TADDR)expected) == expected;
     }
+#endif // !DACCESS_COMPILE
 
     static BOOL IsFixupPrecodeByASM(PCODE addr)
     {
@@ -797,6 +801,7 @@ struct ThisPtrRetBufPrecode {
         return m_pTarget;
     }
 
+#ifndef DACCESS_COMPILE
     BOOL SetTargetInterlocked(TADDR target, TADDR expected)
     {
         CONTRACTL
@@ -810,6 +815,7 @@ struct ThisPtrRetBufPrecode {
         return (TADDR)InterlockedCompareExchange64(
             (LONGLONG*)&precodeWriterHolder.GetRW()->m_pTarget, (TADDR)target, (TADDR)expected) == expected;
     }
+#endif // !DACCESS_COMPILE
 };
 typedef DPTR(ThisPtrRetBufPrecode) PTR_ThisPtrRetBufPrecode;
 

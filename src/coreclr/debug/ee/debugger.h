@@ -1193,6 +1193,8 @@ private:
     #define USE_INTEROPSAFE_HEAP
 #endif
 
+class DebuggerHeapExecutableMemoryAllocator;
+
 class DebuggerHeap
 {
 public:

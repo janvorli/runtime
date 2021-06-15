@@ -16413,10 +16413,12 @@ void DebuggerHeap::Destroy()
     }
 #endif
 #ifndef HOST_WINDOWS
+#ifndef DACCESS_COMPILE
     if (m_execMemAllocator != NULL)
     {
         delete m_execMemAllocator;
     }
+#endif    
 #endif
 }
 
@@ -16438,6 +16440,8 @@ HRESULT DebuggerHeap::Init(BOOL fExecutable)
         GC_NOTRIGGER;
     }
     CONTRACTL_END;
+
+#ifndef DACCESS_COMPILE
 
     // Have knob catch if we don't want to lazy init the debugger.
     _ASSERTE(!g_DbgShouldntUseDebugger);
@@ -16468,7 +16472,9 @@ HRESULT DebuggerHeap::Init(BOOL fExecutable)
     {
         return E_OUTOFMEMORY;
     }
-#endif
+#endif    
+
+#endif // !DACCESS_COMPILE
 
     return S_OK;
 }
@@ -16545,7 +16551,10 @@ void *DebuggerHeap::Alloc(DWORD size)
     size += sizeof(InteropHeapCanary);
 #endif
 
-    void *ret;
+    void *ret = NULL;
+
+#ifndef DACCESS_COMPILE
+
 #ifdef USE_INTEROPSAFE_HEAP
     _ASSERTE(m_hHeap != NULL);
     ret = ::HeapAlloc(m_hHeap, HEAP_ZERO_MEMORY, size);
@@ -16581,7 +16590,7 @@ void *DebuggerHeap::Alloc(DWORD size)
     InteropHeapCanary * pCanary = InteropHeapCanary::GetFromRawAddr(ret);
     ret = pCanary->GetUserAddr();
 #endif
-
+#endif // !DACCESS_COMPILE
     return ret;
 }
 
@@ -16634,6 +16643,8 @@ void DebuggerHeap::Free(void *pMem)
     }
     CONTRACTL_END;
 
+#ifndef DACCESS_COMPILE
+
 #ifdef USE_INTEROPSAFE_CANARY
     // Check for canary
 
@@ -16669,6 +16680,7 @@ void DebuggerHeap::Free(void *pMem)
 #endif // HOST_WINDOWS
     }
 #endif
+#endif // !DACCESS_COMPILE
 }
 
 #ifndef DACCESS_COMPILE
