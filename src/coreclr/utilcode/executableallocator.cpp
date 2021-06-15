@@ -223,7 +223,7 @@ void* DoubleMappedAllocator::FindRWBlock(void* baseRX, size_t size)
         if (b->baseRX <= baseRX && ((size_t)baseRX + size) <= ((size_t)b->baseRX + b->size))
         {
             b->refCount++;
-            if (b->refCount > g_maxReusedRwMapsRefcount)
+            if ((LONG)b->refCount > g_maxReusedRwMapsRefcount)
             {
                 g_maxReusedRwMapsRefcount = (LONG)b->refCount;
             }
@@ -657,7 +657,7 @@ void* DoubleMappedAllocator::MapRW(void* pRX, size_t size, void* returnAddress)
                 return pRX;
             }
 #endif
-            if (searchLength > g_maxRXSearchLength)
+            if ((LONG)searchLength > g_maxRXSearchLength)
             {
                 g_maxRXSearchLength = (LONG)searchLength;
             }

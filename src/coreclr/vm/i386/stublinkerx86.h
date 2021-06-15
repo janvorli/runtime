@@ -562,7 +562,7 @@ struct StubPrecode {
         ExecutableWriterHolder<void> rel32Holder(&m_rel32, 4);
         return rel32SetInterlocked(&m_rel32, rel32Holder.GetRW(), target, expected, (MethodDesc*)GetMethodDesc());
     }
-#endif // DACCESS_COMPILE
+#endif // !DACCESS_COMPILE
 };
 
 IN_TARGET_64BIT(static_assert_no_msg(offsetof(StubPrecode, m_movR10) == OFFSETOF_PRECODE_TYPE);)
