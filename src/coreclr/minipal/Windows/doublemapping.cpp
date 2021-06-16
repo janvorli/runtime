@@ -221,6 +221,9 @@ void *VMToOSInterface::CommitDoubleMappedMemory(void* pStart, size_t size, bool 
 
 bool VMToOSInterface::ReleaseDoubleMappedMemory(void* pStart, size_t size)
 {
+    // Zero the memory before the unmapping
+    VirtualAlloc(pStart, size, MEM_COMMIT, PAGE_READWRITE);
+    memset(pStart, 0, size);
     return UnmapViewOfFile(pStart);
 }
 
@@ -231,4 +234,9 @@ void* VMToOSInterface::GetRWMapping(void *mapperHandle, void* pStart, size_t off
                     HIDWORD((int64_t)offset),
                     LODWORD((int64_t)offset),
                     size);
+}
+
+bool VMToOSInterface::ReleaseRWMapping(void* pStart, size_t size)
+{
+    return UnmapViewOfFile(pStart);
 }

@@ -14,4 +14,5 @@ public:
     static void* CommitDoubleMappedMemory(void* pStart, size_t size, bool isExecutable);
     static bool ReleaseDoubleMappedMemory(void* pStart, size_t size);
     static void* GetRWMapping(void *mapperHandle, void* pStart, size_t offset, size_t size);
+    static bool ReleaseRWMapping(void* pStart, size_t size);
 };

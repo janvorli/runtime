@@ -11,7 +11,6 @@
 #include "utilcode.h"
 #include "ex.h"
 
-#include <intrin.h>
 #include "minipal.h"
 
 #ifndef DACCESS_COMPILE
@@ -36,21 +35,14 @@ class ExecutableAllocator
         size_t refCount;
     };
 
-    struct UsersListEntry
-    {
-        UsersListEntry* next;
-        size_t count;
-        size_t reuseCount;
-        void *user;
-    };
-
     BlockRX* m_pFirstBlockRX = NULL;
+    BlockRX* m_pFirstFreeBlockRX = NULL;
+
     BlockRW* m_pFirstBlockRW = NULL;
 
     void *m_doubleMemoryMapperHandle = NULL;
     uint64_t maxSize = 2048ULL*1024*1024;
     size_t m_freeOffset = 0;
-    UsersListEntry *m_mapUsers = NULL;
 
     CRITSEC_COOKIE m_CriticalSection;
 
@@ -58,21 +50,6 @@ class ExecutableAllocator
     static BYTE * s_CodeMaxAddr;
     static BYTE * s_CodeAllocStart;
     static BYTE * s_CodeAllocHint;      // Next address to try to allocate for code in the preferred region.
-
-    static LONG g_reserveCalls;
-    static LONG g_reserveAtCalls;
-    static LONG g_rwMaps;
-    static LONG g_reusedRwMaps;
-    static LONG g_maxReusedRwMapsRefcount;
-    static LONG g_rwUnmaps;
-    static LONG g_failedRwUnmaps;
-    static LONG g_failedRwMaps;
-    static LONG g_mapReusePossibility;
-    static LONG g_RWMappingCount;
-    static LONG g_maxRWMappingCount;
-    static LONG g_maxRXSearchLength;
-    static LONG g_rxSearchLengthSum;
-    static LONG g_rxSearchLengthCount;
 
     BlockRW* m_cachedMapping = NULL;
 
@@ -84,6 +61,8 @@ class ExecutableAllocator
 
     bool RemoveRWBlock(void* pRW, void** pUnmapAddress, size_t* pUnmapSize);
 
+    BlockRX* FindBestFreeBlock(size_t size);
+
     size_t Granularity()
     {
         return 64 * 1024;
@@ -91,7 +70,6 @@ class ExecutableAllocator
 
     bool AllocateOffset(size_t *pOffset, size_t size);
     void AddBlockToList(BlockRX *pBlock);
-    void RecordUser(void* callAddress, bool reused);
 
     //
     // Return true if double mapping is enabled
@@ -130,8 +108,6 @@ public:
 
     ~ExecutableAllocator();
 
-    void ReportState();
-
     // Reserve the specified amount of virtual address space for executable mapping.
     void* Reserve(size_t size);
 
@@ -148,7 +124,6 @@ public:
 
     void Release(void* pRX);
 
-    void* MapRW(void* pRX, size_t size, void* returnAddress);
     void* MapRW(void* pRX, size_t size);
     void UnmapRW(void* pRW);
 };
@@ -209,7 +184,7 @@ public:
         m_addressRW = addressRX;
         PAL_JitWriteProtect(true);
 #else
-        m_addressRW = (T *)ExecutableAllocator::Instance()->MapRW((void*)addressRX, size, (void *)_ReturnAddress());
+        m_addressRW = (T *)ExecutableAllocator::Instance()->MapRW((void*)addressRX, size);
 #endif
     }
 
@@ -225,4 +200,4 @@ public:
     }
 };
 
-#endif // DACCESS_COMPILE
+#endif // !DACCESS_COMPILE

@@ -56,7 +56,7 @@ void VMToOSInterface::DestroyDoubleMemoryMapper(void *mapperHandle)
 #endif
 }
 
-void PAL_VirtualReserveFromExecutableMemoryAllocatorWithinRange(
+extern "C" void PAL_VirtualReserveFromExecutableMemoryAllocatorWithinRange(
     const void* lpBeginAddress,
     const void* lpEndAddress,
     size_t dwSize);
@@ -131,4 +131,9 @@ void* VMToOSInterface::GetRWMapping(void *mapperHandle, void* pStart, size_t off
     return NULL;
 #endif // TARGET_AMD64
 #endif // TARGET_OSX
+}
+
+bool VMToOSInterface::ReleaseRWMapping(void* pStart, size_t size)
+{
+    return munmap(pStart, size) != -1;
 }

@@ -7,7 +7,6 @@
 #include "pedecoder.h"
 #define DONOT_DEFINE_ETW_CALLBACK
 #include "eventtracebase.h"
-#include "stacktrace.h"
 
 #define LHF_EXECUTABLE  0x1
 
@@ -945,15 +944,6 @@ UnlockedLoaderHeap::UnlockedLoaderHeap(DWORD dwReserveBlockSize,
 
     if (dwReservedRegionAddress != NULL && dwReservedRegionSize > 0)
     {
-#ifdef _DEBUG        
-#ifndef TARGET_UNIX
-        MEMORY_BASIC_INFORMATION mbi;
-        if (ClrVirtualQuery((void *)dwReservedRegionAddress, &mbi, sizeof(mbi)))
-        {
-            _ASSERTE((mbi.Protect & PAGE_EXECUTE_READWRITE) == 0);
-        }
-#endif
-#endif
         m_reservedBlock.Init((void *)dwReservedRegionAddress, dwReservedRegionSize, FALSE);
     }
 }
@@ -988,16 +978,6 @@ UnlockedLoaderHeap::~UnlockedLoaderHeap()
         if (fReleaseMemory)
         {
             ExecutableAllocator::Instance()->Release(pVirtualAddress);
-            // if (m_Options & LHF_EXECUTABLE)
-            // {
-            //     // TODO: how do we release the executable memory?
-            // }
-            // else
-            // {
-            //     BOOL fSuccess;
-            //     fSuccess = ClrVirtualFree(pVirtualAddress, 0, MEM_RELEASE);
-            //     _ASSERTE(fSuccess);
-            // }
         }
 
         delete pSearch;
@@ -1006,16 +986,6 @@ UnlockedLoaderHeap::~UnlockedLoaderHeap()
     if (m_reservedBlock.m_fReleaseMemory)
     {
         ExecutableAllocator::Instance()->Release(m_reservedBlock.pVirtualAddress);
-        // if (m_Options & LHF_EXECUTABLE)
-        // {
-        //     // TODO: how do we release the executable memory?
-        // }
-        // else
-        // {
-        //     BOOL fSuccess;
-        //     fSuccess = ClrVirtualFree(m_reservedBlock.pVirtualAddress, 0, MEM_RELEASE);
-        //     _ASSERTE(fSuccess);
-        // }
     }
 
     INDEBUG(s_dwNumInstancesOfLoaderHeaps --;)
@@ -1025,15 +995,6 @@ void UnlockedLoaderHeap::UnlockedSetReservedRegion(BYTE* dwReservedRegionAddress
 {
     WRAPPER_NO_CONTRACT;
     _ASSERTE(m_reservedBlock.pVirtualAddress == NULL);
-#ifdef _DEBUG        
-#ifndef TARGET_UNIX
-        MEMORY_BASIC_INFORMATION mbi;
-        if (ClrVirtualQuery((void *)dwReservedRegionAddress, &mbi, sizeof(mbi)))
-        {
-            _ASSERTE((mbi.Protect & PAGE_EXECUTE_READWRITE) == 0);
-        }
-#endif
-#endif
     m_reservedBlock.Init((void *)dwReservedRegionAddress, dwReservedRegionSize, fReleaseMemory);
 }
 
@@ -1126,8 +1087,6 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
         dwSizeToReserve = m_reservedBlock.dwVirtualSize;
         fReleaseMemory = m_reservedBlock.m_fReleaseMemory;
 
-        //printf("&&& Heap using reserved block at %p, size %x\n", m_reservedBlock.pVirtualAddress, m_reservedBlock.dwVirtualSize);
-
         // Zero the block so this memory doesn't get used again.
         m_reservedBlock.Init(NULL, 0, FALSE);
     }
@@ -1136,7 +1095,6 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
     {
         if (m_fExplicitControl)
         {
-            __debugbreak();
             return FALSE;
         }
 
@@ -1152,22 +1110,12 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
         // Reserve pages
         //
 
+        // Reserve the memory for even non-executable stuff close to the executable code, as it has profound effect
+        // on e.g. a static variable access performance.
+        pData = (BYTE *)ExecutableAllocator::Instance()->Reserve(dwSizeToReserve);
+        if (pData == NULL)
         {
-            // Reserve the memory for even non-executable stuff close to the executable code, as it has profound effect
-            // on e.g. a static variable access performance.
-            // TODO: we really don't need to get the memory from the ExecutableAllocator. We need to reserve the VM range.
-            // So it would be better to have a separate method out of the ExecutableAllocator that would call into the ReserveAt or 
-            // ClrVirtualAlloc based on the executability. Call it e.g. ReserveExecutableMemoryRange(size, bool isExec)
-            // or "ReserveCloseToExecutableMemory"
-            pData = (BYTE *)ExecutableAllocator::Instance()->Reserve(dwSizeToReserve);
-            if (pData == NULL)
-            {
-                __debugbreak();
-                return FALSE;
-            }
-
-            // TODO: is this correct? Do we actually need two state flag - uncommit and release? Uncommit for the double mapped allocation
-            //fReleaseMemory = FALSE;
+            return FALSE;
         }
     }
 
@@ -1181,7 +1129,6 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
     if (pData == NULL)
     {
         //_ASSERTE(!"Unable to ClrVirtualAlloc reserve in a loaderheap");
-        __debugbreak();
         return FALSE;
     }
 
@@ -1191,7 +1138,6 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
     }
 
     // Commit first set of pages, since it will contain the LoaderHeapBlock
-    void *pPrevPData = pData;
     void *pTemp = ExecutableAllocator::Instance()->Commit(pData, dwSizeToCommit, (m_Options & LHF_EXECUTABLE));
     if (pTemp == NULL)
     {
@@ -1267,10 +1213,7 @@ BOOL UnlockedLoaderHeap::GetMoreCommittedPages(size_t dwMinSize)
         // Yes, so commit the desired number of reserved pages
         void *pData = ExecutableAllocator::Instance()->Commit(m_pPtrToEndOfCommittedRegion, dwSizeToCommit, (m_Options & LHF_EXECUTABLE));
         if (pData == NULL)
-        {
-            __debugbreak();
             return FALSE;
-        }
 
         m_dwTotalAlloc += dwSizeToCommit;
 
@@ -1438,7 +1381,6 @@ again:
     if (GetMoreCommittedPages(dwSize))
         goto again;
 
-    __debugbreak();
     // We could not satisfy this allocation request
     RETURN NULL;
 }

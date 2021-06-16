@@ -10,63 +10,6 @@ BYTE * ExecutableAllocator::s_CodeAllocStart;
 BYTE * ExecutableAllocator::s_CodeAllocHint;      // Next address to try to allocate for code in the preferred region.
 
 volatile ExecutableAllocator* ExecutableAllocator::g_instance = NULL;
-LONG ExecutableAllocator::g_rwMaps = 0;
-LONG ExecutableAllocator::g_reusedRwMaps = 0;
-LONG ExecutableAllocator::g_rwUnmaps = 0;
-LONG ExecutableAllocator::g_failedRwUnmaps = 0;
-LONG ExecutableAllocator::g_failedRwMaps = 0;
-LONG ExecutableAllocator::g_reserveCalls = 0;
-LONG ExecutableAllocator::g_reserveAtCalls = 0;
-LONG ExecutableAllocator::g_mapReusePossibility = 0;
-LONG ExecutableAllocator::g_maxRWMappingCount = 0;
-LONG ExecutableAllocator::g_RWMappingCount = 0;
-LONG ExecutableAllocator::g_maxReusedRwMapsRefcount = 0;
-LONG ExecutableAllocator::g_maxRXSearchLength = 0;
-LONG ExecutableAllocator::g_rxSearchLengthSum = 0;
-LONG ExecutableAllocator::g_rxSearchLengthCount = 0;
-
-void FillSymbolInfo
-(
-SYM_INFO *psi,
-DWORD_PTR dwAddr
-);
-
-void MagicInit();
-
-void ExecutableAllocator::ReportState()
-{
-// #ifndef CROSSGEN_COMPILE
-// #ifndef DACCESS_COMPILE
-// #ifdef TARGET_WINDOWS
-//     printf("Reserve calls: %zd\n", g_reserveCalls);
-//     printf("Reserve-at calls: %zd\n", g_reserveAtCalls);
-//     printf("RW Maps: %zd\n", g_rwMaps);
-//     printf("Reused RW Maps: %zd\n", g_reusedRwMaps);
-//     printf("Max reused RW Maps refcount: %zd\n", g_maxReusedRwMapsRefcount);
-//     printf("RW Unmaps: %zd\n", g_rwUnmaps);
-//     printf("Failed RW Maps: %zd\n", g_failedRwMaps);
-//     printf("Failed RW Unmaps: %zd\n", g_failedRwUnmaps);
-//     printf("Map reuse possibility: %zd\n", g_mapReusePossibility);
-//     printf("RW mappings count: %zd\n", g_RWMappingCount);
-//     printf("Max RW mappings count: %zd\n", g_maxRWMappingCount);
-//     printf("Max RX search length: %zd\n", g_maxRXSearchLength);
-//     printf("Average RX search length: %zd\n", g_rxSearchLengthSum / g_rxSearchLengthCount);
-
-//     printf("\n");
-//     printf("MapRW users:\n");
-
-//     MagicInit();
-//     for (UsersListEntry* user = m_mapUsers; user != NULL; user = user->next)
-//     {
-//         SYM_INFO psi;
-//         FillSymbolInfo(&psi, (DWORD_PTR)user->user);
-//         printf(" %p - count %zd reuseCount %zd  %s\n", user->user, user->count, user->reuseCount, psi.achSymbol);
-//     }
-// #endif
-// #endif
-// #endif
-}
-
 bool ExecutableAllocator::IsDoubleMappingEnabled()
 {
 #if defined(HOST_OSX) && defined(HOST_ARM64)
@@ -206,7 +149,7 @@ bool ExecutableAllocator::Initialize()
     {
         m_doubleMemoryMapperHandle = VMToOSInterface::CreateDoubleMemoryMapper();
 
-        m_CriticalSection = ClrCreateCriticalSection(CrstListLock,CrstFlags(CRST_UNSAFE_ANYMODE | CRST_DEBUGGER_THREAD));
+        m_CriticalSection = ClrCreateCriticalSection(CrstExecutableAllocatorLock,CrstFlags(CRST_UNSAFE_ANYMODE | CRST_DEBUGGER_THREAD));
 
         return m_doubleMemoryMapperHandle != NULL;
     }
@@ -249,10 +192,6 @@ void* ExecutableAllocator::FindRWBlock(void* baseRX, size_t size)
         if (b->baseRX <= baseRX && ((size_t)baseRX + size) <= ((size_t)b->baseRX + b->size))
         {
             b->refCount++;
-            if ((LONG)b->refCount > g_maxReusedRwMapsRefcount)
-            {
-                g_maxReusedRwMapsRefcount = (LONG)b->refCount;
-            }
             UpdateCachedMapping(b);
 
             return (BYTE*)b->baseRW + ((size_t)baseRX - (size_t)b->baseRX);
@@ -268,7 +207,6 @@ bool ExecutableAllocator::AddRWBlock(void* baseRW, void* baseRX, size_t size)
     {
         if (b->baseRX <= baseRX && ((size_t)baseRX + size) <= ((size_t)b->baseRX + b->size))
         {
-            InterlockedIncrement(&g_mapReusePossibility);
             break;
         }
     }
@@ -287,8 +225,6 @@ bool ExecutableAllocator::AddRWBlock(void* baseRW, void* baseRX, size_t size)
     m_pFirstBlockRW = pBlockRW;
 
     UpdateCachedMapping(pBlockRW);
-
-    InterlockedIncrement(&g_RWMappingCount);
 
     return true;
 }
@@ -315,12 +251,6 @@ bool ExecutableAllocator::RemoveRWBlock(void* pRW, void** pUnmapAddress, size_t*
             else
             {
                 pPrevBlockRW->next = pBlockRW->next;
-            }
-
-            InterlockedDecrement(&g_RWMappingCount);
-            if (g_RWMappingCount > g_maxRWMappingCount)
-            {
-                g_maxRWMappingCount = g_RWMappingCount;
             }
 
             *pUnmapAddress = pBlockRW->baseRW;
@@ -377,33 +307,35 @@ void ExecutableAllocator::Release(void* pRX)
 {
     if (IsDoubleMappingEnabled())
     {
-        BlockRX* b = NULL;
+        CRITSEC_Holder csh(m_CriticalSection);
 
+        BlockRX* b;
+        BlockRX* pPrevBlockRX = NULL;
+
+        for (b = m_pFirstBlockRX; b != NULL; b = b->next)
         {
-            CRITSEC_Holder csh(m_CriticalSection);
-            BlockRX* pPrevBlockRX = NULL;
-            for (b = m_pFirstBlockRX; b != NULL; b = b->next)
+            if (pRX == b->baseRX)
             {
-                if (pRX == b->baseRX)
+                if (pPrevBlockRX == NULL)
                 {
-                    if (pPrevBlockRX == NULL)
-                    {
-                        m_pFirstBlockRX = b->next;
-                    }
-                    else
-                    {
-                        pPrevBlockRX->next = b->next;
-                    }
-
-                    break;
+                    m_pFirstBlockRX = b->next;
                 }
-                pPrevBlockRX = b;
+                else
+                {
+                    pPrevBlockRX->next = b->next;
+                }
+
+                break;
             }
+            pPrevBlockRX = b;
         }
 
         if (b != NULL)
         {
             VMToOSInterface::ReleaseDoubleMappedMemory(pRX, b->size);
+            b->baseRX = NULL;
+            b->next = m_pFirstFreeBlockRX;
+            m_pFirstFreeBlockRX = b;
         }
         else
         {
@@ -416,6 +348,55 @@ void ExecutableAllocator::Release(void* pRX)
     }
 }
 
+ExecutableAllocator::BlockRX* ExecutableAllocator::FindBestFreeBlock(size_t size)
+{
+    BlockRX* pPrevBlockRX = NULL;
+    BlockRX* pPrevBestBlockRX = NULL;
+    BlockRX* pBestBlockRX = NULL;
+    BlockRX* bBlockRX = m_pFirstFreeBlockRX;
+    int count = 0;
+    while (bBlockRX != NULL)
+    {
+        count++;
+        if (bBlockRX->size >= size)
+        {
+            if (pBestBlockRX != NULL)
+            {
+                if (bBlockRX->size < pBestBlockRX->size)
+                {
+                    pPrevBestBlockRX = pPrevBlockRX;
+                    pBestBlockRX = bBlockRX;
+                }
+            }
+            else
+            {
+                pPrevBestBlockRX = pPrevBlockRX;
+                pBestBlockRX = bBlockRX;
+            }
+        }
+        pPrevBlockRX = bBlockRX;
+        bBlockRX = bBlockRX->next;
+    }
+
+    if (pBestBlockRX != NULL)
+    {
+        if (pPrevBestBlockRX != NULL)
+        {
+            pPrevBestBlockRX->next = pBestBlockRX->next;
+        }
+        else
+        {
+            m_pFirstFreeBlockRX = pBestBlockRX->next;
+        }
+
+        pBestBlockRX->next = NULL;
+
+        printf("@@@ Found best free block in %d blocks - requested size 0x%zx, found size 0x%zx\n", count, size, pBestBlockRX->size);
+    }
+
+    return pBestBlockRX;
+}
+
 void* ExecutableAllocator::ReserveWithinRange(size_t size, const void* loAddress, const void* hiAddress)
 {
     _ASSERTE((size & (Granularity() - 1)) == 0);
@@ -423,19 +404,28 @@ void* ExecutableAllocator::ReserveWithinRange(size_t size, const void* loAddress
     {
         CRITSEC_Holder csh(m_CriticalSection);
 
-        InterlockedIncrement(&g_reserveCalls);
-
         size_t offset;
-        if (!AllocateOffset(&offset, size))
-        {
-            __debugbreak();
-            return NULL;
-        }
+        BlockRX* block = FindBestFreeBlock(size);
+        bool foundFreeBlock = block != NULL;
 
-        BlockRX* block = new (nothrow) BlockRX();
         if (block == NULL)
         {
-            return NULL;
+            if (!AllocateOffset(&offset, size))
+            {
+                __debugbreak();
+                m_freeOffset -= size;
+                return NULL;
+            }
+
+            block = new (nothrow) BlockRX();
+            if (block == NULL)
+            {
+                return NULL;
+            }
+        }
+        else
+        {
+            offset = block->offset;
         }
 
         void *result = VMToOSInterface::ReserveDoubleMappedMemory(m_doubleMemoryMapperHandle, offset, size, loAddress, hiAddress);
@@ -447,10 +437,18 @@ void* ExecutableAllocator::ReserveWithinRange(size_t size, const void* loAddress
             block->size = size;
             AddBlockToList(block);
         }
-        else
+        else 
         {
-            m_freeOffset -= size;
-            delete block;
+            if (!foundFreeBlock)
+            {
+                m_freeOffset -= size;
+                delete block;
+            }
+            else
+            {
+                block->next = m_pFirstFreeBlockRX;
+                m_pFirstFreeBlockRX = block;
+            }
         }
 
         return result;
@@ -464,7 +462,6 @@ void* ExecutableAllocator::ReserveWithinRange(size_t size, const void* loAddress
 void* ExecutableAllocator::Reserve(size_t size)
 {
     _ASSERTE((size & (Granularity() - 1)) == 0);
-    InterlockedIncrement(&g_reserveCalls);
 
     BYTE *result = NULL;
 
@@ -512,16 +509,27 @@ void* ExecutableAllocator::Reserve(size_t size)
             CRITSEC_Holder csh(m_CriticalSection);
 
             size_t offset;
-            if (!AllocateOffset(&offset, size))
-            {
-                __debugbreak();
-                return NULL;
-            }
+            BlockRX* block = FindBestFreeBlock(size);
+            bool foundFreeBlock = block != NULL;
 
-            BlockRX* block = new (nothrow) BlockRX();
             if (block == NULL)
             {
-                return NULL;
+                if (!AllocateOffset(&offset, size))
+                {
+                    __debugbreak();
+                    m_freeOffset -= size;
+                    return NULL;
+                }
+
+                block = new (nothrow) BlockRX();
+                if (block == NULL)
+                {
+                    return NULL;
+                }
+            }
+            else
+            {
+                offset = block->offset;
             }
 
             result = (BYTE*)VMToOSInterface::ReserveDoubleMappedMemory(m_doubleMemoryMapperHandle, offset, size, 0, 0);
@@ -533,10 +541,18 @@ void* ExecutableAllocator::Reserve(size_t size)
                 block->size = size;
                 AddBlockToList(block);
             }
-            else
+            else 
             {
-                m_freeOffset -= size;
-                delete block;
+                if (!foundFreeBlock)
+                {
+                    m_freeOffset -= size;
+                    delete block;
+                }
+                else
+                {
+                    block->next = m_pFirstFreeBlockRX;
+                    m_pFirstFreeBlockRX = block;
+                }
             }
         }
         else
@@ -550,37 +566,58 @@ void* ExecutableAllocator::Reserve(size_t size)
 
 void* ExecutableAllocator::ReserveAt(void* baseAddressRX, size_t size)
 {
+    _ASSERTE((size & (Granularity() - 1)) == 0);
+
     if (IsDoubleMappingEnabled())
     {
         CRITSEC_Holder csh(m_CriticalSection);
-        _ASSERTE((size & (Granularity() - 1)) == 0);
-
-        InterlockedIncrement(&g_reserveAtCalls);
 
         size_t offset;
-        if (!AllocateOffset(&offset, size))
-        {
-            __debugbreak();
-            return NULL;
-        }
+        BlockRX* block = FindBestFreeBlock(size);
+        bool foundFreeBlock = block != NULL;
 
-        BlockRX* block = new (nothrow) BlockRX();
         if (block == NULL)
         {
-            return NULL;
+            if (!AllocateOffset(&offset, size))
+            {
+                __debugbreak();
+                m_freeOffset -= size;
+                return NULL;
+            }
+
+            block = new (nothrow) BlockRX();
+            if (block == NULL)
+            {
+                return NULL;
+            }
+        }
+        else
+        {
+            offset = block->offset;
         }
 
         void* result = VMToOSInterface::ReserveDoubleMappedMemory(m_doubleMemoryMapperHandle, offset, size, baseAddressRX, baseAddressRX);
 
-        if (result == NULL)
+        if (result != NULL)
         {
-            return NULL;
+            block->baseRX = result;
+            block->offset = offset;
+            block->size = size;
+            AddBlockToList(block);
         }
-
-        block->baseRX = result;
-        block->offset = offset;
-        block->size = size;
-        AddBlockToList(block);
+        else 
+        {
+            if (!foundFreeBlock)
+            {
+                m_freeOffset -= size;
+                delete block;
+            }
+            else
+            {
+                block->next = m_pFirstFreeBlockRX;
+                m_pFirstFreeBlockRX = block;
+            }
+        }
 
         return result;
     }
@@ -589,8 +626,6 @@ void* ExecutableAllocator::ReserveAt(void* baseAddressRX, size_t size)
         return VirtualAlloc(baseAddressRX, size, MEM_RESERVE, PAGE_NOACCESS);
     }
 }
-
-#pragma intrinsic(_ReturnAddress)
 
 void ExecutableAllocator::UnmapRW(void* pRW)
 {
@@ -603,20 +638,6 @@ void ExecutableAllocator::UnmapRW(void* pRW)
     CRITSEC_Holder csh(m_CriticalSection);
     _ASSERTE(pRW != NULL);
 
-#ifdef _DEBUG
-#ifndef TARGET_UNIX
-    MEMORY_BASIC_INFORMATION mbi;
-    SIZE_T cbBytes = ClrVirtualQuery(pRW, &mbi, sizeof(mbi));
-    _ASSERTE(cbBytes);
-    if (cbBytes == 0)
-    {
-        __debugbreak();
-    }
-#endif
-#endif
-    // TODO: Linux will need the full range. So we may need to store all the RW mappings in a separate list (per RX mapping)
-    InterlockedIncrement(&g_rwUnmaps);
-
     void* unmapAddress = NULL;
     size_t unmapSize;
     
@@ -625,49 +646,14 @@ void ExecutableAllocator::UnmapRW(void* pRW)
         __debugbreak();            
     }
 
-    if (unmapAddress && !VMToOSInterface::ReleaseDoubleMappedMemory(unmapAddress, unmapSize))
+    if (unmapAddress && !VMToOSInterface::ReleaseRWMapping(unmapAddress, unmapSize))
     {
-        InterlockedIncrement(&g_failedRwUnmaps);
         __debugbreak();
     }
 #endif // CROSSGEN_COMPILE
 }
 
-void ExecutableAllocator::RecordUser(void* callAddress, bool reused)
-{
-    for (UsersListEntry* user = m_mapUsers; user != NULL; user = user->next)
-    {
-        if (user->user == callAddress)
-        {
-            if (reused)
-            {
-                user->reuseCount++;
-            }
-            else
-            {
-                user->count++;
-            }
-            return;
-        }
-    }
-
-    UsersListEntry* newEntry = (UsersListEntry*)malloc(sizeof(UsersListEntry));
-    if (reused)
-    {
-        newEntry->reuseCount = 1;
-        newEntry->count = 0;
-    }
-    else
-    {
-        newEntry->reuseCount = 0;
-        newEntry->count = 1;
-    }
-    newEntry->user = callAddress;
-    newEntry->next = m_mapUsers;
-    m_mapUsers = newEntry;
-}
-
-void* ExecutableAllocator::MapRW(void* pRX, size_t size, void* returnAddress)
+void* ExecutableAllocator::MapRW(void* pRX, size_t size)
 {
     if (!IsDoubleMappingEnabled())
     {
@@ -682,36 +668,15 @@ void* ExecutableAllocator::MapRW(void* pRX, size_t size, void* returnAddress)
     void* result = FindRWBlock(pRX, size);
     if (result != NULL)
     {
-        InterlockedIncrement(&g_reusedRwMaps);
-        RecordUser(returnAddress, true);
         return result;
     }
 #endif
-    RecordUser(returnAddress, false);
 
     size_t searchLength = 0;
     for (BlockRX* b = m_pFirstBlockRX; b != NULL; b = b->next)
     {
         if (pRX >= b->baseRX && ((size_t)pRX + size) <= ((size_t)b->baseRX + b->size))
         {
-#ifndef TARGET_UNIX
-            MEMORY_BASIC_INFORMATION mbi2;
-            ClrVirtualQuery(pRX, &mbi2, sizeof(mbi2));
-            
-            if (mbi2.Protect & PAGE_READWRITE)
-            {
-                __debugbreak();
-                return pRX;
-            }
-#endif
-            if ((LONG)searchLength > g_maxRXSearchLength)
-            {
-                g_maxRXSearchLength = (LONG)searchLength;
-            }
-
-            g_rxSearchLengthSum += (LONG)searchLength;
-            g_rxSearchLengthCount++;
-
             // Offset of the RX address in the originally allocated block
             size_t offset = (size_t)pRX - (size_t)b->baseRX;
             // Offset of the RX address that will start the newly mapped block
@@ -725,8 +690,6 @@ void* ExecutableAllocator::MapRW(void* pRX, size_t size, void* returnAddress)
                 __debugbreak();
                 return NULL;
             }
-
-            InterlockedIncrement(&g_rwMaps);
 
             AddRWBlock(pRW, (BYTE*)b->baseRX + mapOffset, mapSize);
 
@@ -744,29 +707,11 @@ void* ExecutableAllocator::MapRW(void* pRX, size_t size, void* returnAddress)
         }
         searchLength++;
     }
-#ifdef _DEBUG
-#ifndef TARGET_UNIX
-    MEMORY_BASIC_INFORMATION mbi;
-    SIZE_T cbBytes = ClrVirtualQuery(pRX, &mbi, sizeof(mbi));
-    _ASSERTE(cbBytes);
-
-    if ((mbi.Protect & PAGE_EXECUTE_READ) || (mbi.Protect & PAGE_EXECUTE_READWRITE))
-    {
-        __debugbreak();
-    }
-#endif
-#endif
 //        return NULL;
     __debugbreak();
     // TODO: this is a hack for the preallocated pages that are part of the coreclr module
-    InterlockedIncrement(&g_failedRwMaps);
 #endif // !CROSSGEN_COMPILE        
     return pRX;
-}
-
-void* ExecutableAllocator::MapRW(void* pRX, size_t size)
-{
-    return MapRW(pRX, size, (void*)_ReturnAddress());
 }
 
 #endif
