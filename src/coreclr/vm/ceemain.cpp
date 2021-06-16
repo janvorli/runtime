@@ -824,7 +824,7 @@ void EEStartupHelper()
 
             g_runtimeLoadedBaseAddress = (SIZE_T)pe.GetBase();
             g_runtimeVirtualSize = (SIZE_T)pe.GetVirtualSize();
-            DoubleMappedAllocator::InitCodeAllocHint(g_runtimeLoadedBaseAddress, g_runtimeVirtualSize, GetRandomInt(64));
+            ExecutableAllocator::InitCodeAllocHint(g_runtimeLoadedBaseAddress, g_runtimeVirtualSize, GetRandomInt(64));
         }
 #endif // !TARGET_UNIX
 

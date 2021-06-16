@@ -101,7 +101,6 @@ void* VMToOSInterface::ReserveDoubleMappedMemory(void *mapperHandle, size_t offs
 #ifdef DACCESS_COMPILE            
         return (BYTE*) VirtualAlloc(nullptr, size, MEM_RESERVE, PAGE_NOACCESS);
 #else            
-//        return (BYTE*)DoubleMappedAllocator::Instance()->Reserve(dwSize);
         return (BYTE*)MapViewOfFile((HANDLE)mapperHandle,
                         FILE_MAP_EXECUTE | FILE_MAP_READ | FILE_MAP_WRITE,
                         HIDWORD((int64_t)offset),

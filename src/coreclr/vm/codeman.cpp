@@ -2139,7 +2139,7 @@ VOID EEJitManager::EnsureJumpStubReserve(BYTE * pImageBase, SIZE_T imageSize, SI
                 return; // Unable to allocate the reserve - give up
             }
 
-            pNewReserve->m_ptr = (BYTE*)DoubleMappedAllocator::Instance()->ReserveWithinRange(allocChunk, loAddrCurrent, hiAddrCurrent);
+            pNewReserve->m_ptr = (BYTE*)ExecutableAllocator::Instance()->ReserveWithinRange(allocChunk, loAddrCurrent, hiAddrCurrent);
 
             if (pNewReserve->m_ptr != NULL)
                 break;
@@ -2231,7 +2231,7 @@ HeapList* LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
             if (!pInfo->getThrowOnOutOfMemoryWithinRange() && PEDecoder::GetForceRelocs())
                 RETURN NULL;
 #endif
-            pBaseAddr = (BYTE*)DoubleMappedAllocator::Instance()->ReserveWithinRange(reserveSize, loAddr, hiAddr);
+            pBaseAddr = (BYTE*)ExecutableAllocator::Instance()->ReserveWithinRange(reserveSize, loAddr, hiAddr);
 
             if (!pBaseAddr)
             {
@@ -2251,7 +2251,7 @@ HeapList* LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
         }
         else
         {
-            pBaseAddr = (BYTE*)DoubleMappedAllocator::Instance()->Reserve(reserveSize);
+            pBaseAddr = (BYTE*)ExecutableAllocator::Instance()->Reserve(reserveSize);
             if (!pBaseAddr)
                 ThrowOutOfMemory();
         }
@@ -2686,15 +2686,14 @@ void EEJitManager::allocCode(MethodDesc* pMD, size_t blockSize, size_t reserveFo
 
         *pAllocatedSize = sizeof(CodeHeader) + totalSize;
 
-#if defined(HOST_OSX) && defined(HOST_ARM64)
-#define FEATURE_WXORX
-#endif
-
-#ifdef FEATURE_WXORX
-        pCodeHdrRW = (CodeHeader *)new BYTE[*pAllocatedSize];
-#else
-        pCodeHdrRW = pCodeHdr;
-#endif
+        if (ExecutableAllocator::IsWXORXEnabled())
+        {
+            pCodeHdrRW = (CodeHeader *)new BYTE[*pAllocatedSize];
+        }
+        else
+        {
+            pCodeHdrRW = pCodeHdr;
+        }
 
 #ifdef USE_INDIRECT_CODEHEADER
         if (requestInfo.IsDynamicDomain())
@@ -3347,7 +3346,7 @@ void EEJitManager::Unload(LoaderAllocator *pAllocator)
         }
     }
 
-    DoubleMappedAllocator::ResetCodeAllocHint();
+    ExecutableAllocator::ResetCodeAllocHint();
 }
 
 EEJitManager::DomainCodeHeapList::DomainCodeHeapList()

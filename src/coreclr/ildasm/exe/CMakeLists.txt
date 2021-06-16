@@ -73,7 +73,6 @@ set(ILDASM_LINK_LIBRARIES
     mdstaticapi
     ${END_LIBRARY_GROUP} # End group of libraries that have circular references
     corguids
-    coreclr_minipal
 )
 
 if(CLR_CMAKE_HOST_WIN32)

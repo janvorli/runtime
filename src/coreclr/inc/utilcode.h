@@ -1015,6 +1015,16 @@ void    SplitPath(__in SString const &path,
 #define CLRGetTickCount64() GetTickCount64()
 
 //
+// Allocate free memory within the range [pMinAddr..pMaxAddr] using
+// ClrVirtualQuery to find free memory and ClrVirtualAlloc to allocate it.
+//
+BYTE * ClrVirtualAllocWithinRange(const BYTE *pMinAddr,
+                                   const BYTE *pMaxAddr,
+                                   SIZE_T dwSize,
+                                   DWORD flAllocationType,
+                                   DWORD flProtect);
+
+//
 // Allocate free memory with specific alignment
 //
 LPVOID ClrVirtualAllocAligned(LPVOID lpAddress, SIZE_T dwSize, DWORD flAllocationType, DWORD flProtect, SIZE_T alignment);

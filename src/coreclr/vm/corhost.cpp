@@ -298,7 +298,7 @@ __cdecl
 #endif
 PrintReport()
 {
-    DoubleMappedAllocator::Instance()->ReportState();
+    ExecutableAllocator::Instance()->ReportState();
 }
 
 HRESULT CorHost2::ExecuteAssembly(DWORD dwAppDomainId,

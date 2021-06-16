@@ -14,7 +14,6 @@ add_library_clr(CoreShim
 
 target_link_libraries(CoreShim
     utilcodestaticnohost
-    coreclr_minipal
     advapi32.lib
     oleaut32.lib
     uuid.lib
