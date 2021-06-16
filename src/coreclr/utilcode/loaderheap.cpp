@@ -987,7 +987,7 @@ UnlockedLoaderHeap::~UnlockedLoaderHeap()
 
         if (fReleaseMemory)
         {
-            DoubleMappedAllocator::Instance()->Release(pVirtualAddress);
+            ExecutableAllocator::Instance()->Release(pVirtualAddress);
             // if (m_Options & LHF_EXECUTABLE)
             // {
             //     // TODO: how do we release the executable memory?
@@ -1005,7 +1005,7 @@ UnlockedLoaderHeap::~UnlockedLoaderHeap()
 
     if (m_reservedBlock.m_fReleaseMemory)
     {
-        DoubleMappedAllocator::Instance()->Release(m_reservedBlock.pVirtualAddress);
+        ExecutableAllocator::Instance()->Release(m_reservedBlock.pVirtualAddress);
         // if (m_Options & LHF_EXECUTABLE)
         // {
         //     // TODO: how do we release the executable memory?
@@ -1093,7 +1093,7 @@ void ReleaseReservedMemory(BYTE* value)
 {
     if (value)
     {
-        DoubleMappedAllocator::Instance()->Release(value);
+        ExecutableAllocator::Instance()->Release(value);
     }
 }
 
@@ -1155,11 +1155,11 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
         {
             // Reserve the memory for even non-executable stuff close to the executable code, as it has profound effect
             // on e.g. a static variable access performance.
-            // TODO: we really don't need to get the memory from the DoubleMappedAllocator. We need to reserve the VM range.
-            // So it would be better to have a separate method out of the DoubleMappedAllocator that would call into the ReserveAt or 
+            // TODO: we really don't need to get the memory from the ExecutableAllocator. We need to reserve the VM range.
+            // So it would be better to have a separate method out of the ExecutableAllocator that would call into the ReserveAt or 
             // ClrVirtualAlloc based on the executability. Call it e.g. ReserveExecutableMemoryRange(size, bool isExec)
             // or "ReserveCloseToExecutableMemory"
-            pData = (BYTE *)DoubleMappedAllocator::Instance()->Reserve(dwSizeToReserve);
+            pData = (BYTE *)ExecutableAllocator::Instance()->Reserve(dwSizeToReserve);
             if (pData == NULL)
             {
                 __debugbreak();
@@ -1192,7 +1192,7 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
 
     // Commit first set of pages, since it will contain the LoaderHeapBlock
     void *pPrevPData = pData;
-    void *pTemp = DoubleMappedAllocator::Instance()->Commit(pData, dwSizeToCommit, (m_Options & LHF_EXECUTABLE));
+    void *pTemp = ExecutableAllocator::Instance()->Commit(pData, dwSizeToCommit, (m_Options & LHF_EXECUTABLE));
     if (pTemp == NULL)
     {
         //_ASSERTE(!"Unable to ClrVirtualAlloc commit in a loaderheap");
@@ -1265,12 +1265,7 @@ BOOL UnlockedLoaderHeap::GetMoreCommittedPages(size_t dwMinSize)
         dwSizeToCommit = ALIGN_UP(dwSizeToCommit, GetOsPageSize());
 
         // Yes, so commit the desired number of reserved pages
-#ifdef ENABLE_DOUBLE_MAPPING
-        //void *pData = ClrVirtualAlloc(m_pPtrToEndOfCommittedRegion, dwSizeToCommit, MEM_COMMIT, (m_Options & LHF_EXECUTABLE) ? PAGE_EXECUTE_READ : PAGE_READWRITE);
-        void *pData = DoubleMappedAllocator::Instance()->Commit(m_pPtrToEndOfCommittedRegion, dwSizeToCommit, (m_Options & LHF_EXECUTABLE));
-#else
-        void *pData = ClrVirtualAlloc(m_pPtrToEndOfCommittedRegion, dwSizeToCommit, MEM_COMMIT, (m_Options & LHF_EXECUTABLE) ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE);
-#endif
+        void *pData = ExecutableAllocator::Instance()->Commit(m_pPtrToEndOfCommittedRegion, dwSizeToCommit, (m_Options & LHF_EXECUTABLE));
         if (pData == NULL)
         {
             __debugbreak();

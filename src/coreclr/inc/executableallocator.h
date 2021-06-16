@@ -14,13 +14,10 @@
 #include <intrin.h>
 #include "minipal.h"
 
-#define ENABLE_DOUBLE_MAPPING
-
-#ifdef ENABLE_DOUBLE_MAPPING
-
-class DoubleMappedAllocator
+#ifndef DACCESS_COMPILE
+class ExecutableAllocator
 {
-    static volatile DoubleMappedAllocator* g_instance;
+    static volatile ExecutableAllocator* g_instance;
 
     struct BlockRX
     {
@@ -95,10 +92,20 @@ class DoubleMappedAllocator
     bool AllocateOffset(size_t *pOffset, size_t size);
     void AddBlockToList(BlockRX *pBlock);
     void RecordUser(void* callAddress, bool reused);
-    
+
+    //
+    // Return true if double mapping is enabled
+    //
+    static bool IsDoubleMappingEnabled();
+
 public:
 
-    static DoubleMappedAllocator* Instance();
+    static ExecutableAllocator* Instance();
+
+    //
+    // Return true if W^X is enabled
+    //
+    static bool IsWXORXEnabled();
 
     //
     // Use this function to initialize the s_CodeAllocHint
@@ -121,7 +128,7 @@ public:
 
     bool Initialize();
 
-    ~DoubleMappedAllocator();
+    ~ExecutableAllocator();
 
     void ReportState();
 
@@ -145,95 +152,6 @@ public:
     void* MapRW(void* pRX, size_t size);
     void UnmapRW(void* pRW);
 };
-
-#else // ENABLE_DOUBLE_MAPPING
-
-class DoubleMappedAllocator
-{
-    static volatile DoubleMappedAllocator* g_instance;
-
-    CRITSEC_COOKIE m_CriticalSection;
-
-    size_t Granularity()
-    {
-        return 64 * 1024;
-    }
-public:
-
-    static DoubleMappedAllocator* Instance()
-    {
-        if (g_instance == NULL)
-        {
-            DoubleMappedAllocator *instance = new (nothrow) DoubleMappedAllocator();
-            instance->Initialize();
-
-            if (InterlockedCompareExchangeT(const_cast<DoubleMappedAllocator**>(&g_instance), instance, NULL) != NULL)
-            {
-                delete instance;
-            }
-        }
-
-        return const_cast<DoubleMappedAllocator*>(g_instance);
-    }
-
-    ~DoubleMappedAllocator()
-    {
-    }
-
-    bool Initialize()
-    {
-        return true;
-    }
-
-    void* Commit(void* pStart, size_t size, bool isExecutable)
-    {
-        return ClrVirtualAlloc(pStart, size, MEM_COMMIT, isExecutable ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE);
-    }
-
-    void Release(void* pStart)
-    {
-        ClrVirtualFree(pStart, 0, MEM_RELEASE);
-    }
-
-    void* Reserve(size_t size)
-    {
-        return ClrVirtualAllocExecutable(size, MEM_RESERVE, PAGE_NOACCESS);
-    }
-
-    void* ReserveAt(void* baseAddressRX, size_t size)
-    {
-        return VirtualAlloc(baseAddressRX, size, MEM_RESERVE, PAGE_NOACCESS);
-    }
-
-    #pragma intrinsic(_ReturnAddress)
-
-    static size_t g_reserveCalls;
-    static size_t g_reserveAtCalls;
-    static size_t g_rwMaps;
-    static size_t g_reusedRwMaps;
-    static size_t g_maxReusedRwMapsRefcount;
-    static size_t g_rwUnmaps;
-    static size_t g_failedRwUnmaps;
-    static size_t g_failedRwMaps;
-    static size_t g_mapReusePossibility;
-    static size_t g_RWMappingCount;
-    static size_t g_maxRWMappingCount;
-
-    void ReportState();
-
-    void UnmapRW(void* pRW)
-    {
-    }
-
-    void* MapRW(void* pRX, size_t size)
-    {
-        return pRX;
-    }
-};
-
-#endif // ENABLE_DOUBLE_MAPPING
-
-#ifndef DACCESS_COMPILE
 
 // Holder class to map read-execute memory as read-write so that it can be modified without using read-write-execute mapping.
 // At the moment the implementation is dummy, returning the same addresses for both cases and expecting them to be read-write-execute.
@@ -259,7 +177,7 @@ class ExecutableWriterHolder
 #else
         if (m_addressRX != m_addressRW)
         {
-            DoubleMappedAllocator::Instance()->UnmapRW((void*)m_addressRW);
+            ExecutableAllocator::Instance()->UnmapRW((void*)m_addressRW);
         }
 #endif
     }
@@ -291,7 +209,7 @@ public:
         m_addressRW = addressRX;
         PAL_JitWriteProtect(true);
 #else
-        m_addressRW = (T *)DoubleMappedAllocator::Instance()->MapRW((void*)addressRX, size, (void *)_ReturnAddress());
+        m_addressRW = (T *)ExecutableAllocator::Instance()->MapRW((void*)addressRX, size, (void *)_ReturnAddress());
 #endif
     }
 
