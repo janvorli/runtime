@@ -56,13 +56,23 @@ void VMToOSInterface::DestroyDoubleMemoryMapper(void *mapperHandle)
 #endif
 }
 
+void PAL_VirtualReserveFromExecutableMemoryAllocatorWithinRange(
+    const void* lpBeginAddress,
+    const void* lpEndAddress,
+    size_t dwSize);
+
 void* VMToOSInterface::ReserveDoubleMappedMemory(void *mapperHandle, size_t offset, size_t size, const void *rangeStart, const void* rangeEnd)
 {
     int fd = (int)(size_t)mapperHandle;
 
     if (rangeStart != NULL || rangeEnd != NULL)
     {
-        return NULL;
+        void* result = PAL_VirtualReserveFromExecutableMemoryAllocatorWithinRange(rangeStart, rangeEnd, size);
+#ifndef TARGET_OSX
+        // Create double mappable mapping over the range reserved from the executable memory allocator.
+        result = mmap(result, size, PROT_NONE, MAP_SHARED | MAP_FIXED, fd, offset);
+#endif // TARGET_OSX
+        return result;
     }
 
 #ifndef TARGET_OSX

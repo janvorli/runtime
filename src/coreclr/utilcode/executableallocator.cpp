@@ -373,8 +373,6 @@ void* ExecutableAllocator::Commit(void* pStart, size_t size, bool isExecutable)
     }
 }
 
-//#define DISABLE_UNMAPS
-
 void ExecutableAllocator::Release(void* pRX)
 {
     if (IsDoubleMappingEnabled())
@@ -401,38 +399,6 @@ void ExecutableAllocator::Release(void* pRX)
                 }
                 pPrevBlockRX = b;
             }
-    #ifdef DISABLE_UNMAPS
-            // This is likely not correct, but disable unmaps is experimental only, so this prevents reusing mappings that were released
-            if (b != NULL)
-            {
-                BlockRW* pPrevBlockRW = NULL;
-                BlockRW* mb = NULL;
-                BlockRW* mbNext = NULL;
-                for (mb = m_pFirstBlockRW; mb != NULL; mb = mbNext)
-                {
-                    if (mb->baseRX >= b->baseRX && (BYTE*)mb->baseRX < ((BYTE*)b->baseRX + b->size))
-                    {
-                        if (pPrevBlockRW == NULL)
-                        {
-                            m_pFirstBlockRW = mb->next;
-                        }
-                        else
-                        {
-                            pPrevBlockRW->next = mb->next;
-                        }
-                        mbNext = mb->next;
-                        free(mb);
-
-                        // pPrevBlockRW stays untouched
-                    }
-                    else
-                    {
-                        pPrevBlockRW = mb;
-                        mbNext = mb->next;
-                    }
-                }
-            }
-    #endif
         }
 
         if (b != NULL)
@@ -633,7 +599,6 @@ void ExecutableAllocator::UnmapRW(void* pRW)
         return;
     }
 
-#ifndef DISABLE_UNMAPS
 #ifndef CROSSGEN_COMPILE
     CRITSEC_Holder csh(m_CriticalSection);
     _ASSERTE(pRW != NULL);
@@ -666,7 +631,6 @@ void ExecutableAllocator::UnmapRW(void* pRW)
         __debugbreak();
     }
 #endif // CROSSGEN_COMPILE
-#endif // DISABLE_UNMAPS
 }
 
 void ExecutableAllocator::RecordUser(void* callAddress, bool reused)
