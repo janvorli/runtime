@@ -18,7 +18,7 @@ HINSTANCE LoadDbgHelp();
 
 #define cchMaxAssertModuleLen 60
 #define cchMaxAssertSymbolLen 257
-#define cfrMaxAssertStackLevels 30
+#define cfrMaxAssertStackLevels 20
 #define cchMaxAssertExprLen 257
 
 #ifdef HOST_64BIT
@@ -38,13 +38,6 @@ HINSTANCE LoadDbgHelp();
     // 0x<address>: <module>! <symbol> + 0x<offset>\n
 
 #endif
-
-struct SYM_INFO
-{
-    DWORD_PTR   dwOffset;
-    char        achModule[cchMaxAssertModuleLen];
-    char        achSymbol[cchMaxAssertSymbolLen];
-};
 
 //
 //--- Prototypes --------------------------------------------------------------

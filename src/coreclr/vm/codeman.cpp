@@ -2219,7 +2219,6 @@ HeapList* LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
     pBaseAddr = (BYTE *)pInfo->m_pAllocator->GetCodeHeapInitialBlock(loAddr, hiAddr, (DWORD)initialRequestSize, &dwSizeAcquiredFromInitialBlock);
     if (pBaseAddr != NULL)
     {
-        //printf("*** Allocated reserved block at %p using GetCodeHeapInitialBlock\n", pBaseAddr);
         pCodeHeap->m_LoaderHeap.SetReservedRegion(pBaseAddr, dwSizeAcquiredFromInitialBlock, FALSE);
     }
     else
@@ -2240,7 +2239,6 @@ HeapList* LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
                     RETURN NULL;
 #ifdef TARGET_AMD64
                 pBaseAddr = ExecutionManager::GetEEJitManager()->AllocateFromEmergencyJumpStubReserve(loAddr, hiAddr, &reserveSize);
-                //printf("*** Allocated reserved block at %p using AllocateFromEmergencyJumpStubReserve\n", pBaseAddr);
                 if (!pBaseAddr)
                     ThrowOutOfMemoryWithinRange();
                 fAllocatedFromEmergencyJumpStubReserve = true;

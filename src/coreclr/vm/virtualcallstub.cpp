@@ -642,7 +642,7 @@ void VirtualCallStubManager::Init(BaseDomain *pDomain, LoaderAllocator *pLoaderA
         }
 
         initReservedMem = (BYTE*)ExecutableAllocator::Instance()->Reserve(dwTotalReserveMemSize);
-        
+
         m_initialReservedMemForHeaps = (BYTE *) initReservedMem;
 
         if (initReservedMem == NULL)

@@ -721,9 +721,7 @@ HostCodeHeap::TrackAllocation* HostCodeHeap::AllocMemory_NoThrow(size_t header, 
     // Skip walking the free list if the cached size of the largest block is not enough
     size_t totalRequiredSize = ALIGN_UP(sizeof(TrackAllocation) + header + size + (alignment - 1) + reserveForJumpStubs, sizeof(void*));
     if (totalRequiredSize > m_ApproximateLargestBlock)
-    {
         return NULL;
-    }
 
     LOG((LF_BCL, LL_INFO100, "Level2 - CodeHeap [0x%p] - Allocation requested 0x%X\n", this, size));
 

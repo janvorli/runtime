@@ -109,6 +109,13 @@ PVOID UserContext
 // Types and Constants --------------------------------------------------------
 //
 
+struct SYM_INFO
+{
+    DWORD_PTR   dwOffset;
+    char        achModule[cchMaxAssertModuleLen];
+    char        achSymbol[cchMaxAssertSymbolLen];
+};
+
 //--- Function Pointers to APIs in IMAGEHLP.DLL. Loaded dynamically. ---------
 
 typedef LPAPI_VERSION (__stdcall *pfnImgHlp_ImagehlpApiVersionEx)(

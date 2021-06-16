@@ -564,7 +564,6 @@ struct StubPrecode {
     }
 #endif // !DACCESS_COMPILE
 };
-
 IN_TARGET_64BIT(static_assert_no_msg(offsetof(StubPrecode, m_movR10) == OFFSETOF_PRECODE_TYPE);)
 IN_TARGET_64BIT(static_assert_no_msg(offsetof(StubPrecode, m_type) == OFFSETOF_PRECODE_TYPE_MOV_R10);)
 IN_TARGET_32BIT(static_assert_no_msg(offsetof(StubPrecode, m_mov_rm_r) == OFFSETOF_PRECODE_TYPE);)
