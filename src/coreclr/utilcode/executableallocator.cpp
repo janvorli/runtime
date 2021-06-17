@@ -397,6 +397,47 @@ ExecutableAllocator::BlockRX* ExecutableAllocator::FindBestFreeBlock(size_t size
     return pBestBlockRX;
 }
 
+ExecutableAllocator::BlockRX* ExecutableAllocator::AllocateBlock(size_t size, bool* pIsFreeBlock)
+{
+    size_t offset;
+    BlockRX* block = FindBestFreeBlock(size);
+    *pIsFreeBlock = (block != NULL);
+
+    if (block == NULL)
+    {
+        if (!AllocateOffset(&offset, size))
+        {
+            __debugbreak();
+            return NULL;
+        }
+
+        block = new (nothrow) BlockRX();
+        if (block == NULL)
+        {
+            return NULL;
+        }
+
+        block->offset = offset;
+        block->size = size;
+    }
+
+    return block;
+}
+
+void ExecutableAllocator::BackoutBlock(BlockRX* pBlock, bool isFreeBlock)
+{
+    if (!isFreeBlock)
+    {
+        m_freeOffset -= pBlock->size;
+        delete pBlock;
+    }
+    else
+    {
+        pBlock->next = m_pFirstFreeBlockRX;
+        m_pFirstFreeBlockRX = pBlock;
+    }
+}
+
 void* ExecutableAllocator::ReserveWithinRange(size_t size, const void* loAddress, const void* hiAddress)
 {
     _ASSERTE((size & (Granularity() - 1)) == 0);
@@ -404,51 +445,23 @@ void* ExecutableAllocator::ReserveWithinRange(size_t size, const void* loAddress
     {
         CRITSEC_Holder csh(m_CriticalSection);
 
-        size_t offset;
-        BlockRX* block = FindBestFreeBlock(size);
-        bool foundFreeBlock = block != NULL;
-
+        bool isFreeBlock;
+        BlockRX* block = AllocateBlock(size, &isFreeBlock);
         if (block == NULL)
         {
-            if (!AllocateOffset(&offset, size))
-            {
-                __debugbreak();
-                m_freeOffset -= size;
-                return NULL;
-            }
-
-            block = new (nothrow) BlockRX();
-            if (block == NULL)
-            {
-                return NULL;
-            }
-        }
-        else
-        {
-            offset = block->offset;
+            return NULL;
         }
 
-        void *result = VMToOSInterface::ReserveDoubleMappedMemory(m_doubleMemoryMapperHandle, offset, size, loAddress, hiAddress);
+        void *result = VMToOSInterface::ReserveDoubleMappedMemory(m_doubleMemoryMapperHandle, block->offset, size, loAddress, hiAddress);
 
         if (result != NULL)
         {
             block->baseRX = result;
-            block->offset = offset;
-            block->size = size;
             AddBlockToList(block);
         }
         else 
         {
-            if (!foundFreeBlock)
-            {
-                m_freeOffset -= size;
-                delete block;
-            }
-            else
-            {
-                block->next = m_pFirstFreeBlockRX;
-                m_pFirstFreeBlockRX = block;
-            }
+            BackoutBlock(block, isFreeBlock);
         }
 
         return result;
@@ -508,51 +521,23 @@ void* ExecutableAllocator::Reserve(size_t size)
         {
             CRITSEC_Holder csh(m_CriticalSection);
 
-            size_t offset;
-            BlockRX* block = FindBestFreeBlock(size);
-            bool foundFreeBlock = block != NULL;
-
+            bool isFreeBlock;
+            BlockRX* block = AllocateBlock(size, &isFreeBlock);
             if (block == NULL)
             {
-                if (!AllocateOffset(&offset, size))
-                {
-                    __debugbreak();
-                    m_freeOffset -= size;
-                    return NULL;
-                }
-
-                block = new (nothrow) BlockRX();
-                if (block == NULL)
-                {
-                    return NULL;
-                }
-            }
-            else
-            {
-                offset = block->offset;
+                return NULL;
             }
 
-            result = (BYTE*)VMToOSInterface::ReserveDoubleMappedMemory(m_doubleMemoryMapperHandle, offset, size, 0, 0);
+            result = (BYTE*)VMToOSInterface::ReserveDoubleMappedMemory(m_doubleMemoryMapperHandle, block->offset, size, 0, 0);
 
             if (result != NULL)
             {
                 block->baseRX = result;
-                block->offset = offset;
-                block->size = size;
                 AddBlockToList(block);
             }
             else 
             {
-                if (!foundFreeBlock)
-                {
-                    m_freeOffset -= size;
-                    delete block;
-                }
-                else
-                {
-                    block->next = m_pFirstFreeBlockRX;
-                    m_pFirstFreeBlockRX = block;
-                }
+                BackoutBlock(block, isFreeBlock);
             }
         }
         else
@@ -572,51 +557,23 @@ void* ExecutableAllocator::ReserveAt(void* baseAddressRX, size_t size)
     {
         CRITSEC_Holder csh(m_CriticalSection);
 
-        size_t offset;
-        BlockRX* block = FindBestFreeBlock(size);
-        bool foundFreeBlock = block != NULL;
-
+        bool isFreeBlock;
+        BlockRX* block = AllocateBlock(size, &isFreeBlock);
         if (block == NULL)
         {
-            if (!AllocateOffset(&offset, size))
-            {
-                __debugbreak();
-                m_freeOffset -= size;
-                return NULL;
-            }
-
-            block = new (nothrow) BlockRX();
-            if (block == NULL)
-            {
-                return NULL;
-            }
-        }
-        else
-        {
-            offset = block->offset;
+            return NULL;
         }
 
-        void* result = VMToOSInterface::ReserveDoubleMappedMemory(m_doubleMemoryMapperHandle, offset, size, baseAddressRX, baseAddressRX);
+        void* result = VMToOSInterface::ReserveDoubleMappedMemory(m_doubleMemoryMapperHandle, block->offset, size, baseAddressRX, baseAddressRX);
 
         if (result != NULL)
         {
             block->baseRX = result;
-            block->offset = offset;
-            block->size = size;
             AddBlockToList(block);
         }
         else 
         {
-            if (!foundFreeBlock)
-            {
-                m_freeOffset -= size;
-                delete block;
-            }
-            else
-            {
-                block->next = m_pFirstFreeBlockRX;
-                m_pFirstFreeBlockRX = block;
-            }
+            BackoutBlock(block, isFreeBlock);
         }
 
         return result;
