@@ -1139,10 +1139,11 @@ void InitThreadManager()
     _ASSERTE_ALL_BUILDS("clr/src/VM/threads.cpp", (BYTE*)JIT_PatchedCodeLast - (BYTE*)JIT_PatchedCodeStart < (ptrdiff_t)GetOsPageSize());
 
 #ifdef FEATURE_WRITEBARRIER_COPY
-    s_barrierCopy = ClrVirtualAlloc(NULL, g_SystemInfo.dwAllocationGranularity, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+    s_barrierCopy = ExecutableAllocator::Instance()->Reserve(g_SystemInfo.dwAllocationGranularity);
+    ExecutableAllocator::Instance()->Commit(s_barrierCopy, g_SystemInfo.dwAllocationGranularity, true);
     if (s_barrierCopy == NULL)
     {
-        _ASSERTE(!"ClrVirtualAlloc of GC barrier code page failed");
+        _ASSERTE(!"Allocation of GC barrier code page failed");
         COMPlusThrowWin32();
     }
 
