@@ -56,7 +56,7 @@ void VMToOSInterface::DestroyDoubleMemoryMapper(void *mapperHandle)
 #endif
 }
 
-extern "C" void PAL_VirtualReserveFromExecutableMemoryAllocatorWithinRange(
+extern "C" void* PAL_VirtualReserveFromExecutableMemoryAllocatorWithinRange(
     const void* lpBeginAddress,
     const void* lpEndAddress,
     size_t dwSize);
