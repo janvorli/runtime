@@ -16,7 +16,7 @@
 #ifndef DACCESS_COMPILE
 class ExecutableAllocator
 {
-    static volatile ExecutableAllocator* g_instance;
+    static ExecutableAllocator* g_instance;
 
     struct BlockRX
     {
@@ -84,6 +84,7 @@ class ExecutableAllocator
 public:
 
     static ExecutableAllocator* Instance();
+    static void StaticInitialize();
 
     //
     // Return true if W^X is enabled
@@ -153,7 +154,10 @@ class ExecutableWriterHolder
     void Unmap()
     {
 #if defined(HOST_OSX) && defined(HOST_ARM64) && !defined(DACCESS_COMPILE)
-        PAL_JitWriteProtect(false);
+        if (m_addressRX != NULL)
+        {
+            PAL_JitWriteProtect(false);
+        }
 #else
         if (m_addressRX != m_addressRW)
         {

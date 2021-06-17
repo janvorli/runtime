@@ -1672,17 +1672,24 @@ void AssemblyLoaderAllocator::SetCollectible()
 {
     CONTRACTL
     {
-        THROWS;
+        NOTHROW;
     }
     CONTRACTL_END;
 
     m_IsCollectible = true;
-#ifndef DACCESS_COMPILE
-    m_pShuffleThunkCache = new ShuffleThunkCache(m_pStubHeap);
-#endif
 }
 
 #ifndef DACCESS_COMPILE
+
+void AssemblyLoaderAllocator::Init(AppDomain* pAppDomain)
+{
+    m_Id.Init();
+    LoaderAllocator::Init((BaseDomain *)pAppDomain);
+    if (IsCollectible())
+    {
+        m_pShuffleThunkCache = new ShuffleThunkCache(m_pStubHeap);
+    }
+}
 
 #ifndef CROSSGEN_COMPILE
 

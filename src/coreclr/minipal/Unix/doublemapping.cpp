@@ -10,6 +10,7 @@
 #include <sys/types.h>
 #include <inttypes.h>
 #include <stdio.h>
+#include <string.h>
 #include <assert.h>
 #include "minipal.h"
 
@@ -95,8 +96,11 @@ void *VMToOSInterface::CommitDoubleMappedMemory(void* pStart, size_t size, bool 
     return pStart;
 }
 
-bool VMToOSInterface::ReleaseDoubleMappedMemory(void* pStart, size_t size)
+bool VMToOSInterface::ReleaseDoubleMappedMemory(void *mapperHandle, void* pStart, size_t offset, size_t size)
 {
+    int fd = (int)(size_t)mapperHandle;
+    mmap(pStart, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, offset);
+    memset(pStart, 0, size);
     return munmap(pStart, size) != -1;
 }
 

@@ -219,7 +219,7 @@ void *VMToOSInterface::CommitDoubleMappedMemory(void* pStart, size_t size, bool 
     return VirtualAlloc(pStart, size, MEM_COMMIT, isExecutable ? PAGE_EXECUTE_READ : PAGE_READWRITE);
 }
 
-bool VMToOSInterface::ReleaseDoubleMappedMemory(void* pStart, size_t size)
+bool VMToOSInterface::ReleaseDoubleMappedMemory(void *mapperHandle, void* pStart, size_t offset, size_t size)
 {
     // Zero the memory before the unmapping
     VirtualAlloc(pStart, size, MEM_COMMIT, PAGE_READWRITE);
