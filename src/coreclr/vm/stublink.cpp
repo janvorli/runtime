@@ -2118,7 +2118,6 @@ Stub* Stub::NewStub(PTR_VOID pCode, DWORD flags)
     size_t totalSize = size.Value();
 
     BYTE *pBlock;
-
     if (pHeap == NULL)
     {
         pBlock = new BYTE[totalSize];
