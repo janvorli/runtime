@@ -12,7 +12,7 @@ BYTE * ExecutableAllocator::s_CodeAllocStart;
 BYTE * ExecutableAllocator::s_CodeAllocHint;      // Next address to try to allocate for code in the preferred region.
 #endif // USE_UPPER_ADDRESS
 
-volatile ExecutableAllocator* ExecutableAllocator::g_instance = NULL;
+ExecutableAllocator* ExecutableAllocator::g_instance = NULL;
 bool ExecutableAllocator::IsDoubleMappingEnabled()
 {
 #if defined(HOST_OSX) && defined(HOST_ARM64)
@@ -124,18 +124,7 @@ bool ExecutableAllocator::IsPreferredExecutableRange(void * p)
 
 ExecutableAllocator* ExecutableAllocator::Instance()
 {
-    if (g_instance == NULL)
-    {
-        ExecutableAllocator *instance = new (nothrow) ExecutableAllocator();
-        instance->Initialize();
-
-        if (InterlockedCompareExchangeT(const_cast<ExecutableAllocator**>(&g_instance), instance, NULL) != NULL)
-        {
-            delete instance;
-        }
-    }
-
-    return const_cast<ExecutableAllocator*>(g_instance);    
+    return g_instance;
 }
 
 ExecutableAllocator::~ExecutableAllocator()
@@ -144,6 +133,12 @@ ExecutableAllocator::~ExecutableAllocator()
     {
         VMToOSInterface::DestroyDoubleMemoryMapper(m_doubleMemoryMapperHandle);
     }
+}
+
+void ExecutableAllocator::StaticInitialize()
+{
+    g_instance = new (nothrow) ExecutableAllocator();
+    g_instance->Initialize();
 }
 
 bool ExecutableAllocator::Initialize()
@@ -335,7 +330,7 @@ void ExecutableAllocator::Release(void* pRX)
 
         if (b != NULL)
         {
-            VMToOSInterface::ReleaseDoubleMappedMemory(pRX, b->size);
+            VMToOSInterface::ReleaseDoubleMappedMemory(m_doubleMemoryMapperHandle, pRX, b->offset, b->size);
             b->baseRX = NULL;
             b->next = m_pFirstFreeBlockRX;
             m_pFirstFreeBlockRX = b;
@@ -394,7 +389,7 @@ ExecutableAllocator::BlockRX* ExecutableAllocator::FindBestFreeBlock(size_t size
 
         pBestBlockRX->next = NULL;
 
-        printf("@@@ Found best free block in %d blocks - requested size 0x%zx, found size 0x%zx\n", count, size, pBestBlockRX->size);
+        printf("@@@ Found best free block in %d blocks - requested size 0x%llx, found size 0x%llx\n", count, (uint64_t)size, (uint64_t)pBestBlockRX->size);
     }
 
     return pBestBlockRX;
@@ -545,7 +540,11 @@ void* ExecutableAllocator::Reserve(size_t size)
         }
         else
         {
-            result = (BYTE*)ClrVirtualAlloc(NULL, size, MEM_RESERVE, PAGE_NOACCESS);
+            DWORD allocationType = MEM_RESERVE;
+#ifdef TARGET_UNIX
+            allocationType |= MEM_RESERVE_EXECUTABLE;
+#endif
+            result = (BYTE*)ClrVirtualAlloc(NULL, size, allocationType, PAGE_NOACCESS);
         }
     }
 

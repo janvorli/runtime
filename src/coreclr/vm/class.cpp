@@ -153,7 +153,9 @@ void EEClass::Destruct(MethodTable * pOwningMT)
 
         if (pDelegateEEClass->m_pStaticCallStub)
         {
-            BOOL fStubDeleted = pDelegateEEClass->m_pStaticCallStub->DecRef();
+            ExecutableWriterHolder<Stub> stubWriterHolder(pDelegateEEClass->m_pStaticCallStub, sizeof(Stub));
+            BOOL fStubDeleted = stubWriterHolder.GetRW()->DecRef();
+
             if (fStubDeleted)
             {
                 DelegateInvokeStubManager::g_pManager->RemoveStub(pDelegateEEClass->m_pStaticCallStub);
