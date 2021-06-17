@@ -4,10 +4,13 @@
 #include "pedecoder.h"
 #include "executableallocator.h"
 #ifndef DACCESS_COMPILE
+
+#if USE_UPPER_ADDRESS
 BYTE * ExecutableAllocator::s_CodeMinAddr;        // Preferred region to allocate the code in.
 BYTE * ExecutableAllocator::s_CodeMaxAddr;
 BYTE * ExecutableAllocator::s_CodeAllocStart;
 BYTE * ExecutableAllocator::s_CodeAllocHint;      // Next address to try to allocate for code in the preferred region.
+#endif // USE_UPPER_ADDRESS
 
 volatile ExecutableAllocator* ExecutableAllocator::g_instance = NULL;
 bool ExecutableAllocator::IsDoubleMappingEnabled()
