@@ -68,6 +68,9 @@ class ExecutableAllocator
         return 64 * 1024;
     }
 
+    BlockRX* AllocateBlock(size_t size, bool* pIsFreeBlock);
+    void BackoutBlock(BlockRX* pBlock, bool isFreeBlock);
+
     bool AllocateOffset(size_t *pOffset, size_t size);
     void AddBlockToList(BlockRX *pBlock);
 

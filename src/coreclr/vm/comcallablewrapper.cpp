@@ -4495,8 +4495,7 @@ ComMethodTable* ComCallWrapperTemplate::CreateComMethodTableForClass(MethodTable
     if (cbToAlloc.IsOverflow())
         ThrowHR(COR_E_OVERFLOW);
 
-//    NewExecutableHolder<ComMethodTable> pComMT = (ComMethodTable*) new (executable) BYTE[cbToAlloc.Value()];
-    ComMethodTable *pComMT = (ComMethodTable*)(void*) GetAppDomain()->GetLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(cbToAlloc.Value()));
+    AllocMemHolder<ComMethodTable> pComMT(GetAppDomain()->GetLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(cbToAlloc.Value())));
 
     _ASSERTE(!cbNewSlots.IsOverflow() && !cbTotalSlots.IsOverflow() && !cbVtable.IsOverflow());
 
@@ -4531,7 +4530,7 @@ ComMethodTable* ComCallWrapperTemplate::CreateComMethodTableForClass(MethodTable
 
     LOG((LF_INTEROP, LL_INFO1000, "---------- end of CreateComMethodTableForClass %s -----------\n", pClassMT->GetClass()->GetDebugClassName()));
 
-//    pComMT.SuppressRelease();
+    pComMT.SuppressRelease();
     RETURN pComMT;
 }
 
@@ -4573,8 +4572,7 @@ ComMethodTable* ComCallWrapperTemplate::CreateComMethodTableForInterface(MethodT
     if (cbToAlloc.IsOverflow())
         ThrowHR(COR_E_OVERFLOW);
 
-    //NewExecutableHolder<ComMethodTable> pComMT = (ComMethodTable*) new (executable) BYTE[cbToAlloc.Value()];
-    ComMethodTable *pComMT = (ComMethodTable*)(void*) GetAppDomain()->GetLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(cbToAlloc.Value()));
+    AllocMemHolder<ComMethodTable> pComMT(GetAppDomain()->GetLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(cbToAlloc.Value())));
 
     _ASSERTE(!cbVtable.IsOverflow() && !cbMethDescs.IsOverflow());
 
@@ -4616,7 +4614,7 @@ ComMethodTable* ComCallWrapperTemplate::CreateComMethodTableForInterface(MethodT
 
     LOG((LF_INTEROP, LL_INFO1000, "---------- end of CreateComMethodTableForInterface %s -----------\n", pItfClass->GetDebugClassName()));
 
-    //pComMT.SuppressRelease();
+    pComMT.SuppressRelease();
     RETURN pComMT;
 }
 
@@ -4640,7 +4638,7 @@ ComMethodTable* ComCallWrapperTemplate::CreateComMethodTableForBasic(MethodTable
     unsigned cbVtable    = cbExtraSlots * sizeof(SLOT);
     unsigned cbToAlloc   = sizeof(ComMethodTable) + cbVtable;
 
-    ComMethodTable *pComMT = (ComMethodTable*)(void*) GetAppDomain()->GetLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(cbToAlloc));
+    AllocMemHolder<ComMethodTable> pComMT(GetAppDomain()->GetLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(cbToAlloc)));
 
     ExecutableWriterHolder<ComMethodTable> comMTWriterHolder(pComMT, cbToAlloc);
     ComMethodTable* pComMTRW = comMTWriterHolder.GetRW();
@@ -4681,7 +4679,7 @@ ComMethodTable* ComCallWrapperTemplate::CreateComMethodTableForBasic(MethodTable
 
     LOG((LF_INTEROP, LL_INFO1000, "---------- end of CreateComMethodTableForBasic %s -----------\n", pMT->GetDebugClassName()));
 
-    //pComMT.SuppressRelease();
+    pComMT.SuppressRelease();
     RETURN pComMT;
 }
 
