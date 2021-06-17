@@ -401,8 +401,15 @@ LEAF_END_MARKED JIT_ByRefWriteBarrier, _TEXT
 #ifdef FEATURE_WRITEBARRIER_COPY
         // When JIT_WriteBarrier is copied into an allocated page,
         // helpers use this global variable to jump to it. This variable is set in InitThreadManager.
-        .global _JIT_WriteBarrier_Loc
-        .zerofill __DATA,__common,_JIT_WriteBarrier_Loc,8,3
+        .global C_FUNC(JIT_WriteBarrier_Loc)
+#ifdef TARGET_OSX
+        .zerofill __DATA,__common,C_FUNC(JIT_WriteBarrier_Loc),8,3
+#else
+        .data
+    C_FUNC(JIT_WriteBarrier_Loc):
+        .quad 0
+        .text
+#endif
 
 // ------------------------------------------------------------------
 // __declspec(naked) void F_CALL_CONV JIT_WriteBarrier_Callable(Object **dst, Object* val)
