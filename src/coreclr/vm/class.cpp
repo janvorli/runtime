@@ -167,7 +167,7 @@ void EEClass::Destruct(MethodTable * pOwningMT)
         // it is owned by the m_pMulticastStubCache, not by the class
         // - it is shared across classes. So we don't decrement
         // its ref count here
-        delete pDelegateEEClass->m_pUMThunkMarshInfo;
+        //delete pDelegateEEClass->m_pUMThunkMarshInfo;
     }
 
 #ifdef FEATURE_COMINTEROP

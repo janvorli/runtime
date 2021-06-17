@@ -3318,7 +3318,7 @@ void ComMethodTable::LayOutClassMethodTable()
         cbAlloc = cbMethodDescs;
         if (cbAlloc > 0)
         {
-            pMDMemoryPtr = m_pMT->GetLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(cbAlloc + sizeof(UINT_PTR)));
+            pMDMemoryPtr = m_pMT->GetLoaderAllocator()->GetStubHeap()->AllocMem(S_SIZE_T(cbAlloc + sizeof(UINT_PTR)));
             pMethodDescMemory = pMDMemoryPtr;
 
             methodDescMemoryWriteableHolder = ExecutableWriterHolder<BYTE>(pMethodDescMemory, cbAlloc + sizeof(UINT_PTR));
@@ -4491,7 +4491,7 @@ ComMethodTable* ComCallWrapperTemplate::CreateComMethodTableForClass(MethodTable
     if (cbToAlloc.IsOverflow())
         ThrowHR(COR_E_OVERFLOW);
 
-    AllocMemHolder<ComMethodTable> pComMT(pClassMT->GetLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(cbToAlloc.Value())));
+    AllocMemHolder<ComMethodTable> pComMT(pClassMT->GetLoaderAllocator()->GetStubHeap()->AllocMem(S_SIZE_T(cbToAlloc.Value())));
 
     _ASSERTE(!cbNewSlots.IsOverflow() && !cbTotalSlots.IsOverflow() && !cbVtable.IsOverflow());
 
@@ -4568,7 +4568,7 @@ ComMethodTable* ComCallWrapperTemplate::CreateComMethodTableForInterface(MethodT
     if (cbToAlloc.IsOverflow())
         ThrowHR(COR_E_OVERFLOW);
 
-    AllocMemHolder<ComMethodTable> pComMT(pInterfaceMT->GetLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(cbToAlloc.Value())));
+    AllocMemHolder<ComMethodTable> pComMT(pInterfaceMT->GetLoaderAllocator()->GetStubHeap()->AllocMem(S_SIZE_T(cbToAlloc.Value())));
 
     _ASSERTE(!cbVtable.IsOverflow() && !cbMethDescs.IsOverflow());
 
@@ -4634,7 +4634,7 @@ ComMethodTable* ComCallWrapperTemplate::CreateComMethodTableForBasic(MethodTable
     unsigned cbVtable    = cbExtraSlots * sizeof(SLOT);
     unsigned cbToAlloc   = sizeof(ComMethodTable) + cbVtable;
 
-    AllocMemHolder<ComMethodTable> pComMT(pMT->GetLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(cbToAlloc)));
+    AllocMemHolder<ComMethodTable> pComMT(pMT->GetLoaderAllocator()->GetStubHeap()->AllocMem(S_SIZE_T(cbToAlloc)));
 
     ExecutableWriterHolder<ComMethodTable> comMTWriterHolder(pComMT, cbToAlloc);
     ComMethodTable* pComMTRW = comMTWriterHolder.GetRW();

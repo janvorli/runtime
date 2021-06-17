@@ -1253,7 +1253,8 @@ LPVOID COMDelegate::ConvertToCallback(OBJECTREF pDelegateObj)
             {
                 GCX_PREEMP();
 
-                pUMThunkMarshInfo = (UMThunkMarshInfo*)(void*)SystemDomain::GetGlobalLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(sizeof(UMThunkMarshInfo)));
+                //pUMThunkMarshInfo = (UMThunkMarshInfo*)(void*)SystemDomain::GetGlobalLoaderAllocator()->GetExecutableHeap()->AllocMem(S_SIZE_T(sizeof(UMThunkMarshInfo)));
+                pUMThunkMarshInfo = (UMThunkMarshInfo*)(void*)pMT->GetLoaderAllocator()->GetStubHeap()->AllocMem(S_SIZE_T(sizeof(UMThunkMarshInfo)));
 
                 ExecutableWriterHolder<UMThunkMarshInfo> uMThunkMarshInfoWriterHolder(pUMThunkMarshInfo, sizeof(UMThunkMarshInfo));
                 uMThunkMarshInfoWriterHolder.GetRW()->LoadTimeInit(pInvokeMeth);
