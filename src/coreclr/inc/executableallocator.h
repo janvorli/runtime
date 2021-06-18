@@ -55,6 +55,8 @@ class ExecutableAllocator
 
     BlockRW* m_cachedMapping = NULL;
 
+    static bool g_isWXorXEnabled;
+
     void UpdateCachedMapping(BlockRW *b);
 
     void* FindRWBlock(void* baseRX, size_t size);
