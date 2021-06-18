@@ -12,13 +12,15 @@ BYTE * ExecutableAllocator::s_CodeAllocStart;
 BYTE * ExecutableAllocator::s_CodeAllocHint;      // Next address to try to allocate for code in the preferred region.
 #endif // USE_UPPER_ADDRESS
 
+bool ExecutableAllocator::g_isWXorXEnabled = false;
+
 ExecutableAllocator* ExecutableAllocator::g_instance = NULL;
 bool ExecutableAllocator::IsDoubleMappingEnabled()
 {
 #if defined(HOST_OSX) && defined(HOST_ARM64)
     return false;
 #else
-    return CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_EnableWXORX) != 0;
+    return g_isWXorXEnabled;
 #endif
 }
 
@@ -27,7 +29,7 @@ bool ExecutableAllocator::IsWXORXEnabled()
 #if defined(HOST_OSX) && defined(HOST_ARM64)
     return true;
 #else
-    return IsDoubleMappingEnabled();
+    return g_isWXorXEnabled;
 #endif
 }
 
@@ -137,6 +139,7 @@ ExecutableAllocator::~ExecutableAllocator()
 
 void ExecutableAllocator::StaticInitialize()
 {
+    g_isWXorXEnabled = CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_EnableWXORX) != 0;
     g_instance = new (nothrow) ExecutableAllocator();
     g_instance->Initialize();
 }
