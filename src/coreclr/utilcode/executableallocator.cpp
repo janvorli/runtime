@@ -541,7 +541,10 @@ void* ExecutableAllocator::Reserve(size_t size)
         else
         {
             DWORD allocationType = MEM_RESERVE;
-#ifdef TARGET_UNIX
+#ifdef HOST_UNIX
+            // Tell PAL to use the executable memory allocator to satisfy this request for virtual memory.
+            // This will allow us to place JIT'ed code close to the coreclr library
+            // and thus improve performance by avoiding jump stubs in managed code.
             allocationType |= MEM_RESERVE_EXECUTABLE;
 #endif
             result = (BYTE*)ClrVirtualAlloc(NULL, size, allocationType, PAGE_NOACCESS);
