@@ -717,6 +717,13 @@ struct FixupPrecode {
         return dac_cast<TADDR>(this) + (m_PrecodeChunkIndex + 1) * sizeof(FixupPrecode);
     }
 
+    size_t GetSizeRW()
+    {
+        LIMITED_METHOD_CONTRACT;
+
+        return GetBase() + sizeof(void*) - dac_cast<TADDR>(this);
+    }
+
     TADDR GetMethodDesc();
 
     PCODE GetTarget()
