@@ -109,7 +109,7 @@ set(CORECLR_LIBRARIES
     v3binder
     System.Globalization.Native-Static
     interop
-    coreclr_minipal
+    coreclrminipal
 )
 
 if(CLR_CMAKE_TARGET_WIN32)

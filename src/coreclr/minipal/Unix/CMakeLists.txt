@@ -1,4 +1,4 @@
-add_library(coreclr_minipal
+add_library(coreclrminipal
     STATIC
     doublemapping.cpp
 )
