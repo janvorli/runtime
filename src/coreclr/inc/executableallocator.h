@@ -41,7 +41,7 @@ class ExecutableAllocator
     BlockRW* m_pFirstBlockRW = NULL;
 
     void *m_doubleMemoryMapperHandle = NULL;
-    uint64_t maxSize = 2048ULL*1024*1024;
+    size_t m_maxExecutableCodeSize;
     size_t m_freeOffset = 0;
 
     CRITSEC_COOKIE m_CriticalSection;
@@ -67,10 +67,7 @@ class ExecutableAllocator
 
     BlockRX* FindBestFreeBlock(size_t size);
 
-    size_t Granularity()
-    {
-        return 64 * 1024;
-    }
+    static size_t Granularity();
 
     BlockRX* AllocateBlock(size_t size, bool* pIsFreeBlock);
     void BackoutBlock(BlockRX* pBlock, bool isFreeBlock);
@@ -86,7 +83,7 @@ class ExecutableAllocator
 public:
 
     static ExecutableAllocator* Instance();
-    static void StaticInitialize();
+    static HRESULT StaticInitialize();
 
     //
     // Return true if W^X is enabled

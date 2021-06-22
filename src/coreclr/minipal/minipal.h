@@ -8,7 +8,7 @@ class VMToOSInterface
 private:
     ~VMToOSInterface() {}
 public:
-    static void* CreateDoubleMemoryMapper();
+    static bool CreateDoubleMemoryMapper(void **pHandle, size_t *pMaxExecutableCodeSize);
     static void DestroyDoubleMemoryMapper(void *mapperHandle);
     static void* ReserveDoubleMappedMemory(void *mapperHandle, size_t offset, size_t size, const void *rangeStart, const void* rangeEnd);
     static void* CommitDoubleMappedMemory(void* pStart, size_t size, bool isExecutable);

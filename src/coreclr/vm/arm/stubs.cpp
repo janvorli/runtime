@@ -339,8 +339,12 @@ void CopyWriteBarrier(PCODE dstCode, PCODE srcCode, PCODE endCode)
     TADDR end = PCODEToPINSTR(endCode);
 
     size_t size = (PBYTE)end - (PBYTE)src;
+#ifdef FEATURE_WRITEBARRIER_COPY
     ExecutableWriterHolder<void> writeBarrierWriterHolder((void*)dst, size);
-    memcpy(writeBarrierWriterHolder.GetRW(), (PVOID)src, size);
+    dst = (TADDR)writeBarrierWriterHolder.GetRW();
+#endif // FEATURE_WRITEBARRIER_COPY
+
+    memcpy((PVOID)dst, (PVOID)src, size);
 }
 
 #if _DEBUG
@@ -433,8 +437,10 @@ void UpdateGCWriteBarriers(bool postGrow = false)
         if(to)
         {
             to = (PBYTE)PCODEToPINSTR((PCODE)GetWriteBarrierCodeLocation(to));
+#ifdef FEATURE_WRITEBARRIER_COPY
             ExecutableWriterHolder<BYTE> barrierWriterHolder(to, pDesc->m_pFuncEnd - pDesc->m_pFuncStart);
             to = barrierWriterHolder.GetRW();
+#endif // FEATURE_WRITEBARRIER_COPY
             GWB_PATCH_OFFSET(g_lowest_address);
             GWB_PATCH_OFFSET(g_highest_address);
             GWB_PATCH_OFFSET(g_ephemeral_low);

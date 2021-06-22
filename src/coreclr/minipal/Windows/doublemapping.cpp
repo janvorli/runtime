@@ -6,7 +6,12 @@
 #define HIDWORD(_qw)    ((ULONG)((_qw) >> 32))
 #define LODWORD(_qw)    ((ULONG)(_qw))
 
+#ifdef TARGET_64BIT
 static const uint64_t MaxDoubleMappedSize = 2048ULL*1024*1024*1024;
+#else
+static const uint64_t MaxDoubleMappedSize = UINT_MAX;
+#endif
+
 #define VIRTUAL_ALLOC_RESERVE_GRANULARITY (64*1024)    // 0x10000  (64 KB)
 inline size_t ALIGN_UP( size_t val, size_t alignment )
 {
@@ -33,6 +38,7 @@ inline void *GetTopMemoryAddress(void)
     }
     return result;
 }
+
 inline void *GetBotMemoryAddress(void)
 {
     static void *result; // = NULL;
@@ -48,15 +54,18 @@ inline void *GetBotMemoryAddress(void)
 #define TOP_MEMORY (GetTopMemoryAddress())
 #define BOT_MEMORY (GetBotMemoryAddress())
 
-void* VMToOSInterface::CreateDoubleMemoryMapper()
+bool VMToOSInterface::CreateDoubleMemoryMapper(void **pHandle, size_t *pMaxExecutableCodeSize)
 {
-    return CreateFileMapping(
+    *pMaxExecutableCodeSize = (size_t)MaxDoubleMappedSize;
+    *pHandle = CreateFileMapping(
                  INVALID_HANDLE_VALUE,    // use paging file
                  NULL,                    // default security
                  PAGE_EXECUTE_READWRITE |  SEC_RESERVE,  // read/write/execute access
                  HIDWORD(MaxDoubleMappedSize),                       // maximum object size (high-order DWORD)
                  LODWORD(MaxDoubleMappedSize),   // maximum object size (low-order DWORD)
-                 NULL);        
+                 NULL);
+
+    return *pHandle != NULL;
 }
 
 void VMToOSInterface::DestroyDoubleMemoryMapper(void *mapperHandle)

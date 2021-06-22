@@ -12,6 +12,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#ifdef TARGET_LINUX
+#include <linux/memfd.h>
+#include <sys/syscall.h> // __NR_memfd_create
+#endif // TARGET_LINUX
 #include "minipal.h"
 
 #if defined(TARGET_OSX) && defined(TARGET_AMD64)
@@ -20,34 +24,44 @@
 #endif // TARGET_OSX && TARGET_AMD64
 
 #ifndef TARGET_OSX
+
+#ifdef TARGET_64BIT
 static const off_t MaxDoubleMappedSize = 2048ULL*1024*1024*1024;
+#else
+static const off_t MaxDoubleMappedSize = UINT_MAX;
+#endif
+
+#ifdef TARGET_LINUX
+#define memfd_create(...) syscall(__NR_memfd_create, __VA_ARGS__)
+#endif // TARGET_LINUX
+
 #endif // TARGET_OSX
 
-void* VMToOSInterface::CreateDoubleMemoryMapper()
+bool VMToOSInterface::CreateDoubleMemoryMapper(void** pHandle, size_t *pMaxExecutableCodeSize)
 {
 #ifndef TARGET_OSX
-    char name[256];
-    sprintf(name, "/doublemapper_%d", getpid());
-    shm_unlink(name);
-    int fd = shm_open(name, O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR);
+
+    int fd = memfd_create("doublemapper", MFD_CLOEXEC);
 
     if (fd == -1)
     {
-        return (void*)-1;
+        return false
     }
-
-    shm_unlink(name);
 
     if (ftruncate(fd, MaxDoubleMappedSize) == -1)
     {
         close(fd);
-        return (void*)-1;
+        return false;
     }
 
-    return (void*)(size_t)fd;
-#else
-    return NULL;
-#endif    
+    *pMaxExecutableCodeSize = MaxDoubleMappedSize;
+    *pHandle = (void*)(size_t)fd;
+#else // !TARGET_OSX
+    *pMaxExecutableCodeSize = SIZE_T_MAX;
+    *pHandle = NULL;
+#endif // !TARGET_OSX
+
+    return true;
 }
 
 void VMToOSInterface::DestroyDoubleMemoryMapper(void *mapperHandle)
@@ -88,7 +102,7 @@ void* VMToOSInterface::ReserveDoubleMappedMemory(void *mapperHandle, size_t offs
 
 void *VMToOSInterface::CommitDoubleMappedMemory(void* pStart, size_t size, bool isExecutable)
 {
-    if (mprotect(pStart, size, isExecutable ? PROT_EXEC : (PROT_READ | PROT_WRITE)) == -1)
+    if (mprotect(pStart, size, isExecutable ? (PROT_READ | PROT_EXEC) : (PROT_READ | PROT_WRITE)) == -1)
     {
         return NULL;
     }

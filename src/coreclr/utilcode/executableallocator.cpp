@@ -17,6 +17,8 @@ bool ExecutableAllocator::g_isWXorXEnabled = false;
 ExecutableAllocator* ExecutableAllocator::g_instance = NULL;
 bool ExecutableAllocator::IsDoubleMappingEnabled()
 {
+    LIMITED_METHOD_CONTRACT;
+
 #if defined(HOST_OSX) && defined(HOST_ARM64)
     return false;
 #else
@@ -26,11 +28,22 @@ bool ExecutableAllocator::IsDoubleMappingEnabled()
 
 bool ExecutableAllocator::IsWXORXEnabled()
 {
+    LIMITED_METHOD_CONTRACT;
+
 #if defined(HOST_OSX) && defined(HOST_ARM64)
     return true;
 #else
     return g_isWXorXEnabled;
 #endif
+}
+
+extern SYSTEM_INFO g_SystemInfo;
+
+size_t ExecutableAllocator::Granularity()
+{
+    LIMITED_METHOD_CONTRACT;
+
+    return g_SystemInfo.dwAllocationGranularity;
 }
 
 //
@@ -126,6 +139,7 @@ bool ExecutableAllocator::IsPreferredExecutableRange(void * p)
 
 ExecutableAllocator* ExecutableAllocator::Instance()
 {
+    LIMITED_METHOD_CONTRACT;
     return g_instance;
 }
 
@@ -137,32 +151,44 @@ ExecutableAllocator::~ExecutableAllocator()
     }
 }
 
-void ExecutableAllocator::StaticInitialize()
+HRESULT ExecutableAllocator::StaticInitialize()
 {
     g_isWXorXEnabled = CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_EnableWXORX) != 0;
     g_instance = new (nothrow) ExecutableAllocator();
-    g_instance->Initialize();
+    if (g_instance == NULL)
+    {
+        return E_OUTOFMEMORY;
+    }
+
+    if (!g_instance->Initialize())
+    {
+        return E_FAIL;
+    }
+
+    return S_OK;
 }
 
 bool ExecutableAllocator::Initialize()
 {
     if (IsDoubleMappingEnabled())
     {
-        m_doubleMemoryMapperHandle = VMToOSInterface::CreateDoubleMemoryMapper();
+        if (!VMToOSInterface::CreateDoubleMemoryMapper(&m_doubleMemoryMapperHandle, &m_maxExecutableCodeSize))
+        {
+            return false;
+        }
 
         m_CriticalSection = ClrCreateCriticalSection(CrstExecutableAllocatorLock,CrstFlags(CRST_UNSAFE_ANYMODE | CRST_DEBUGGER_THREAD));
+    }
 
-        return m_doubleMemoryMapperHandle != NULL;
-    }
-    else
-    {
-        return true;
-    }
+    return true;
 }
+
+//#define ENABLE_CACHED_MAPPINGS
 
 void ExecutableAllocator::UpdateCachedMapping(BlockRW *b)
 {
-    /*
+    LIMITED_METHOD_CONTRACT;
+#ifdef ENABLE_CACHED_MAPPINGS
     if (m_cachedMapping == NULL)
     {
         m_cachedMapping = b;
@@ -171,19 +197,20 @@ void ExecutableAllocator::UpdateCachedMapping(BlockRW *b)
     else if (m_cachedMapping != b)
     {
         void* unmapAddress = NULL;
-        if (!RemoveRWBlock(m_cachedMapping->baseRW, &unmapAddress))
+        size_t unmapSize;
+
+        if (!RemoveRWBlock(m_cachedMapping->baseRW, &unmapAddress, &unmapSize))
         {
             __debugbreak();
         }
-        if (unmapAddress && !UnmapViewOfFile(unmapAddress))
+        if (unmapAddress && !VMToOSInterface::ReleaseRWMapping(unmapAddress, unmapSize))
         {
-            InterlockedIncrement(&g_failedRwUnmaps);
             __debugbreak();
         }
         m_cachedMapping = b;
         b->refCount++;
     }
-    */
+#endif // ENABLE_CACHED_MAPPINGS    
 }
 
 void* ExecutableAllocator::FindRWBlock(void* baseRX, size_t size)
@@ -212,7 +239,8 @@ bool ExecutableAllocator::AddRWBlock(void* baseRW, void* baseRX, size_t size)
         }
     }
 
-    BlockRW* pBlockRW = (BlockRW*)malloc(sizeof(BlockRW));// new (nothrow) BlockRW();
+    //BlockRW* pBlockRW = (BlockRW*)malloc(sizeof(BlockRW));
+    BlockRW* pBlockRW = new (nothrow) BlockRW();
     if (pBlockRW == NULL)
     {
         return false;
@@ -257,8 +285,8 @@ bool ExecutableAllocator::RemoveRWBlock(void* pRW, void** pUnmapAddress, size_t*
             *pUnmapAddress = pBlockRW->baseRW;
             *pUnmapSize = pBlockRW->size;
 
-            //delete pBlockRW;
-            free(pBlockRW);
+            delete pBlockRW;
+            //free(pBlockRW);
             return true;
         }
 
@@ -270,12 +298,13 @@ bool ExecutableAllocator::RemoveRWBlock(void* pRW, void** pUnmapAddress, size_t*
 
 bool ExecutableAllocator::AllocateOffset(size_t *pOffset, size_t size)
 {
+    LIMITED_METHOD_CONTRACT;
+
     size_t offset = m_freeOffset;
     size_t newFreeOffset = offset + size;
 
-    if (newFreeOffset > maxSize)
+    if (newFreeOffset > m_maxExecutableCodeSize)
     {
-        __debugbreak();
         return false;
     }
 
@@ -288,6 +317,8 @@ bool ExecutableAllocator::AllocateOffset(size_t *pOffset, size_t size)
 
 void ExecutableAllocator::AddBlockToList(BlockRX* pBlock)
 {
+    LIMITED_METHOD_CONTRACT;
+
     pBlock->next = m_pFirstBlockRX;
     m_pFirstBlockRX = pBlock;
 }
@@ -631,6 +662,7 @@ void* ExecutableAllocator::MapRW(void* pRX, size_t size)
     {
         return pRX;
     }
+
 #ifndef CROSSGEN_COMPILE
     CRITSEC_Holder csh(m_CriticalSection);
 
