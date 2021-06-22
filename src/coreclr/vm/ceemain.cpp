@@ -670,7 +670,7 @@ void EEStartupHelper()
         // This needs to be done before the EE has started
         InitializeStartupFlags();
 
-        ExecutableAllocator::StaticInitialize();
+        IfFailGo(ExecutableAllocator::StaticInitialize());
 
         ThreadpoolMgr::StaticInitialize();
 
