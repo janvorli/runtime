@@ -978,6 +978,24 @@ g_rgWriteBarrierDescriptors:
 
     .global g_rgWriteBarrierDescriptors
 
+#ifdef FEATURE_WRITEBARRIER_COPY
+
+// ------------------------------------------------------------------
+// __declspec(naked) void F_CALL_CONV JIT_WriteBarrier_Callable(Object **dst, Object* val)
+    LEAF_ENTRY JIT_WriteBarrier_Callable
+
+#ifdef FEATURE_WRITEBARRIER_COPY
+    // Branch to the write barrier
+    ldr     r2, =JIT_WriteBarrier_Loc // or R3? See targetarm.h
+    ldr     pc, [r2]
+#else // FEATURE_WRITEBARRIER_COPY
+    // Branch to the write barrier
+    b       JIT_WriteBarrier
+#endif // FEATURE_WRITEBARRIER_COPY
+
+    LEAF_END JIT_WriteBarrier_Callable
+#endif // FEATURE_WRITEBARRIER_COPY
+
 #ifdef FEATURE_READYTORUN
 
     NESTED_ENTRY DelayLoad_MethodCall_FakeProlog, _TEXT, NoHandler

@@ -1084,7 +1084,7 @@ static void* s_barrierCopy = NULL;
 
 BYTE* GetWriteBarrierCodeLocation(VOID* barrier)
 {
-    return (BYTE*)s_barrierCopy + ((BYTE*)barrier - (BYTE*)JIT_PatchedCodeStart);
+    return (BYTE*)PINSTRToPCODE((TADDR)s_barrierCopy + ((TADDR)barrier - (TADDR)JIT_PatchedCodeStart));
 }
 
 BOOL IsIPInWriteBarrierCodeCopy(PCODE controlPc)
@@ -1106,6 +1106,10 @@ extern "C" void (*JIT_WriteBarrier_Table)();
 extern "C" void *JIT_WriteBarrier_Loc = 0;
 extern "C" void *JIT_WriteBarrier_Table_Loc = 0;
 #endif // TARGET_ARM64
+
+#ifdef TARGET_ARM
+extern "C" void *JIT_WriteBarrier_Loc = 0;
+#endif // TARGET_ARM
 
 #endif // FEATURE_WRITEBARRIER_COPY
 
@@ -1156,16 +1160,17 @@ void InitThreadManager()
     // Store the JIT_WriteBarrier copy location to a global variable so that helpers
     // can jump to it.
     JIT_WriteBarrier_Loc = GetWriteBarrierCodeLocation((void*)JIT_WriteBarrier);
-
     SetJitHelperFunction(CORINFO_HELP_ASSIGN_REF, GetWriteBarrierCodeLocation((void*)JIT_WriteBarrier));
 
 #ifdef TARGET_ARM64
     // Store the JIT_WriteBarrier_Table copy location to a global variable so that it can be updated.
     JIT_WriteBarrier_Table_Loc = GetWriteBarrierCodeLocation((void*)&JIT_WriteBarrier_Table);
+#endif // TARGET_ARM64
 
+#if defined(TARGET_ARM64) || defined(TARGET_ARM)
     SetJitHelperFunction(CORINFO_HELP_CHECKED_ASSIGN_REF, GetWriteBarrierCodeLocation((void*)JIT_CheckedWriteBarrier));
     SetJitHelperFunction(CORINFO_HELP_ASSIGN_BYREF, GetWriteBarrierCodeLocation((void*)JIT_ByRefWriteBarrier));
-#endif // TARGET_ARM64
+#endif // TARGET_ARM64 || TARGET_ARM
 
 #else // FEATURE_WRITEBARRIER_COPY
 

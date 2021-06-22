@@ -334,12 +334,13 @@ void ComputeWriteBarrierRange(BYTE ** ppbStart, DWORD * pcbLength)
 
 void CopyWriteBarrier(PCODE dstCode, PCODE srcCode, PCODE endCode)
 {
-    TADDR dst = PCODEToPINSTR(dstCode);
+    TADDR dst = (TADDR)PCODEToPINSTR((PCODE)GetWriteBarrierCodeLocation((void*)dstCode));
     TADDR src = PCODEToPINSTR(srcCode);
     TADDR end = PCODEToPINSTR(endCode);
 
     size_t size = (PBYTE)end - (PBYTE)src;
-    memcpy((PVOID)dst, (PVOID)src, size);
+    ExecutableWriterHolder<void> writeBarrierWriterHolder((void*)dst, size);
+    memcpy(writeBarrierWriterHolder.GetRW(), (PVOID)src, size);
 }
 
 #if _DEBUG
@@ -419,7 +420,7 @@ void UpdateGCWriteBarriers(bool postGrow = false)
     }
 #define GWB_PATCH_OFFSET(_global)                                       \
     if (pDesc->m_dw_##_global##_offset != 0xffff)                       \
-        PutThumb2Mov32((UINT16*)(to + pDesc->m_dw_##_global##_offset - 1), (UINT32)(dac_cast<TADDR>(_global)));
+        PutThumb2Mov32((UINT16*)(to + pDesc->m_dw_##_global##_offset), (UINT32)(dac_cast<TADDR>(_global)));
 
     // Iterate through the write barrier patch table created in the .clrwb section
     // (see write barrier asm code)
@@ -431,6 +432,9 @@ void UpdateGCWriteBarriers(bool postGrow = false)
         PBYTE to = FindWBMapping(pDesc->m_pFuncStart);
         if(to)
         {
+            to = (PBYTE)PCODEToPINSTR((PCODE)GetWriteBarrierCodeLocation(to));
+            ExecutableWriterHolder<BYTE> barrierWriterHolder(to, pDesc->m_pFuncEnd - pDesc->m_pFuncStart);
+            to = barrierWriterHolder.GetRW();
             GWB_PATCH_OFFSET(g_lowest_address);
             GWB_PATCH_OFFSET(g_highest_address);
             GWB_PATCH_OFFSET(g_ephemeral_low);
