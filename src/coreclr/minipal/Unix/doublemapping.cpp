@@ -45,7 +45,7 @@ bool VMToOSInterface::CreateDoubleMemoryMapper(void** pHandle, size_t *pMaxExecu
 
     if (fd == -1)
     {
-        return false
+        return false;
     }
 
     if (ftruncate(fd, MaxDoubleMappedSize) == -1)
@@ -71,10 +71,7 @@ void VMToOSInterface::DestroyDoubleMemoryMapper(void *mapperHandle)
 #endif
 }
 
-extern "C" void* PAL_VirtualReserveFromExecutableMemoryAllocatorWithinRange(
-    const void* lpBeginAddress,
-    const void* lpEndAddress,
-    size_t dwSize);
+extern "C" void* PAL_VirtualReserveFromExecutableMemoryAllocatorWithinRange(const void* lpBeginAddress, const void* lpEndAddress, size_t dwSize);
 
 void* VMToOSInterface::ReserveDoubleMappedMemory(void *mapperHandle, size_t offset, size_t size, const void *rangeStart, const void* rangeEnd)
 {

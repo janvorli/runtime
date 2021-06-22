@@ -3,18 +3,20 @@
 
 #include "pedecoder.h"
 #include "executableallocator.h"
-#ifndef DACCESS_COMPILE
 
 #if USE_UPPER_ADDRESS
-BYTE * ExecutableAllocator::s_CodeMinAddr;        // Preferred region to allocate the code in.
-BYTE * ExecutableAllocator::s_CodeMaxAddr;
-BYTE * ExecutableAllocator::s_CodeAllocStart;
-BYTE * ExecutableAllocator::s_CodeAllocHint;      // Next address to try to allocate for code in the preferred region.
+// Preferred region to allocate the code in.
+BYTE * ExecutableAllocator::g_codeMinAddr;
+BYTE * ExecutableAllocator::g_codeMaxAddr;
+BYTE * ExecutableAllocator::g_codeAllocStart;
+// Next address to try to allocate for code in the preferred region.
+BYTE * ExecutableAllocator::g_codeAllocHint;
 #endif // USE_UPPER_ADDRESS
 
 bool ExecutableAllocator::g_isWXorXEnabled = false;
 
 ExecutableAllocator* ExecutableAllocator::g_instance = NULL;
+
 bool ExecutableAllocator::IsDoubleMappingEnabled()
 {
     LIMITED_METHOD_CONTRACT;
@@ -46,11 +48,9 @@ size_t ExecutableAllocator::Granularity()
     return g_SystemInfo.dwAllocationGranularity;
 }
 
-//
-// Use this function to initialize the s_CodeAllocHint
+// Use this function to initialize the g_codeAllocHint
 // during startup. base is runtime .dll base address,
 // size is runtime .dll virtual size.
-//
 void ExecutableAllocator::InitCodeAllocHint(size_t base, size_t size, int randomPageOffset)
 {
 #if USE_UPPER_ADDRESS
@@ -61,7 +61,7 @@ void ExecutableAllocator::InitCodeAllocHint(size_t base, size_t size, int random
         return;
 #endif
 
-//
+    //
     // If we are using the UPPER_ADDRESS space (on Win64)
     // then for any code heap that doesn't specify an address
     // range using [pMinAddr..pMaxAddr] we place it in the
@@ -74,13 +74,13 @@ void ExecutableAllocator::InitCodeAllocHint(size_t base, size_t size, int random
 
     // We will choose the preferred code region based on the address of clr.dll. The JIT helpers
     // in clr.dll are the most heavily called functions.
-    s_CodeMinAddr = (base + size > reach) ? (BYTE *)(base + size - reach) : (BYTE *)0;
-    s_CodeMaxAddr = (base + reach > base) ? (BYTE *)(base + reach) : (BYTE *)-1;
+    g_codeMinAddr = (base + size > reach) ? (BYTE *)(base + size - reach) : (BYTE *)0;
+    g_codeMaxAddr = (base + reach > base) ? (BYTE *)(base + reach) : (BYTE *)-1;
 
     BYTE * pStart;
 
-    if (s_CodeMinAddr <= (BYTE *)CODEHEAP_START_ADDRESS &&
-        (BYTE *)CODEHEAP_START_ADDRESS < s_CodeMaxAddr)
+    if (g_codeMinAddr <= (BYTE *)CODEHEAP_START_ADDRESS &&
+        (BYTE *)CODEHEAP_START_ADDRESS < g_codeMaxAddr)
     {
         // clr.dll got loaded at its preferred base address? (OS without ASLR - pre-Vista)
         // Use the code head start address that does not cause collisions with NGen images.
@@ -92,9 +92,9 @@ void ExecutableAllocator::InitCodeAllocHint(size_t base, size_t size, int random
     {
         // clr.dll got address assigned by ASLR?
         // Try to occupy the space as far as possible to minimize collisions with other ASLR assigned
-        // addresses. Do not start at s_CodeMinAddr exactly so that we can also reach common native images
+        // addresses. Do not start at g_codeMinAddr exactly so that we can also reach common native images
         // that can be placed at higher addresses than clr.dll.
-        pStart = s_CodeMinAddr + (s_CodeMaxAddr - s_CodeMinAddr) / 8;
+        pStart = g_codeMinAddr + (g_codeMaxAddr - g_codeMinAddr) / 8;
     }
     else
     {
@@ -106,35 +106,31 @@ void ExecutableAllocator::InitCodeAllocHint(size_t base, size_t size, int random
     // Randomize the address space
     pStart += GetOsPageSize() * randomPageOffset;
 
-    s_CodeAllocStart = pStart;
-    s_CodeAllocHint = pStart;
+    g_codeAllocStart = pStart;
+    g_codeAllocHint = pStart;
 #endif
 }
 
-//
-// Use this function to reset the s_CodeAllocHint
+// Use this function to reset the g_codeAllocHint
 // after unloading an AppDomain
-//
 void ExecutableAllocator::ResetCodeAllocHint()
 {
     LIMITED_METHOD_CONTRACT;
 #if USE_UPPER_ADDRESS
-    s_CodeAllocHint = s_CodeAllocStart;
+    g_codeAllocHint = g_codeAllocStart;
 #endif
 }
 
-//
 // Returns TRUE if p is located in near clr.dll that allows us
 // to use rel32 IP-relative addressing modes.
-//
 bool ExecutableAllocator::IsPreferredExecutableRange(void * p)
 {
     LIMITED_METHOD_CONTRACT;
 #if USE_UPPER_ADDRESS
-    if (s_CodeMinAddr <= (BYTE *)p && (BYTE *)p < s_CodeMaxAddr)
-        return TRUE;
+    if (g_codeMinAddr <= (BYTE *)p && (BYTE *)p < g_codeMaxAddr)
+        return true;
 #endif
-    return FALSE;
+    return false;
 }
 
 ExecutableAllocator* ExecutableAllocator::Instance()
@@ -153,6 +149,8 @@ ExecutableAllocator::~ExecutableAllocator()
 
 HRESULT ExecutableAllocator::StaticInitialize()
 {
+    LIMITED_METHOD_CONTRACT;
+
     g_isWXorXEnabled = CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_EnableWXORX) != 0;
     g_instance = new (nothrow) ExecutableAllocator();
     if (g_instance == NULL)
@@ -170,6 +168,8 @@ HRESULT ExecutableAllocator::StaticInitialize()
 
 bool ExecutableAllocator::Initialize()
 {
+    LIMITED_METHOD_CONTRACT;
+
     if (IsDoubleMappingEnabled())
     {
         if (!VMToOSInterface::CreateDoubleMemoryMapper(&m_doubleMemoryMapperHandle, &m_maxExecutableCodeSize))
@@ -185,44 +185,46 @@ bool ExecutableAllocator::Initialize()
 
 //#define ENABLE_CACHED_MAPPINGS
 
-void ExecutableAllocator::UpdateCachedMapping(BlockRW *b)
+void ExecutableAllocator::UpdateCachedMapping(BlockRW* pBlock)
 {
     LIMITED_METHOD_CONTRACT;
 #ifdef ENABLE_CACHED_MAPPINGS
     if (m_cachedMapping == NULL)
     {
-        m_cachedMapping = b;
-        b->refCount++;
+        m_cachedMapping = pBlock;
+        pBlock->refCount++;
     }
-    else if (m_cachedMapping != b)
+    else if (m_cachedMapping != pBlock)
     {
         void* unmapAddress = NULL;
         size_t unmapSize;
 
         if (!RemoveRWBlock(m_cachedMapping->baseRW, &unmapAddress, &unmapSize))
         {
-            __debugbreak();
+            _ASSERTE(!"RemoveRWBlock failed");
         }
         if (unmapAddress && !VMToOSInterface::ReleaseRWMapping(unmapAddress, unmapSize))
         {
-            __debugbreak();
+            _ASSERTE(!"Releasing the RW mapping failed");
         }
-        m_cachedMapping = b;
-        b->refCount++;
+        m_cachedMapping = pBlock;
+        pBlock->refCount++;
     }
 #endif // ENABLE_CACHED_MAPPINGS    
 }
 
 void* ExecutableAllocator::FindRWBlock(void* baseRX, size_t size)
 {
-    for (BlockRW* b = m_pFirstBlockRW; b != NULL; b = b->next)
-    {
-        if (b->baseRX <= baseRX && ((size_t)baseRX + size) <= ((size_t)b->baseRX + b->size))
-        {
-            b->refCount++;
-            UpdateCachedMapping(b);
+    LIMITED_METHOD_CONTRACT;
 
-            return (BYTE*)b->baseRW + ((size_t)baseRX - (size_t)b->baseRX);
+    for (BlockRW* pBlock = m_pFirstBlockRW; pBlock != NULL; pBlock = pBlock->next)
+    {
+        if (pBlock->baseRX <= baseRX && ((size_t)baseRX + size) <= ((size_t)pBlock->baseRX + pBlock->size))
+        {
+            pBlock->refCount++;
+            UpdateCachedMapping(pBlock);
+
+            return (BYTE*)pBlock->baseRW + ((size_t)baseRX - (size_t)pBlock->baseRX);
         }
     }
 
@@ -231,18 +233,27 @@ void* ExecutableAllocator::FindRWBlock(void* baseRX, size_t size)
 
 bool ExecutableAllocator::AddRWBlock(void* baseRW, void* baseRX, size_t size)
 {
-    for (BlockRW* b = m_pFirstBlockRW; b != NULL; b = b->next)
+    LIMITED_METHOD_CONTRACT;
+
+    for (BlockRW* pBlock = m_pFirstBlockRW; pBlock != NULL; pBlock = pBlock->next)
     {
-        if (b->baseRX <= baseRX && ((size_t)baseRX + size) <= ((size_t)b->baseRX + b->size))
+        if (pBlock->baseRX <= baseRX && ((size_t)baseRX + size) <= ((size_t)pBlock->baseRX + pBlock->size))
         {
             break;
         }
     }
 
-    //BlockRW* pBlockRW = (BlockRW*)malloc(sizeof(BlockRW));
+    // The new "nothrow" below failure is handled in a non-fault way, so
+    // make sure that callers with FORBID_FAULT can call this method without
+    // firing the contract violation assert.
+    PERMANENT_CONTRACT_VIOLATION(FaultViolation, ReasonContractInfrastructure);
+
     BlockRW* pBlockRW = new (nothrow) BlockRW();
     if (pBlockRW == NULL)
     {
+        // TODO: we need to fail fast or have a backup set of blocks to use in case of
+        // OOM. But the EEPolicy::HandleFatalError is in vm while we are in utilcode, so
+        // what do we do?
         return false;
     }
 
@@ -260,6 +271,8 @@ bool ExecutableAllocator::AddRWBlock(void* baseRW, void* baseRX, size_t size)
 
 bool ExecutableAllocator::RemoveRWBlock(void* pRW, void** pUnmapAddress, size_t* pUnmapSize)
 {
+    LIMITED_METHOD_CONTRACT;
+
     BlockRW* pPrevBlockRW = NULL;
     for (BlockRW* pBlockRW = m_pFirstBlockRW; pBlockRW != NULL; pBlockRW = pBlockRW->next)
     {
@@ -286,7 +299,6 @@ bool ExecutableAllocator::RemoveRWBlock(void* pRW, void** pUnmapAddress, size_t*
             *pUnmapSize = pBlockRW->size;
 
             delete pBlockRW;
-            //free(pBlockRW);
             return true;
         }
 
@@ -296,7 +308,7 @@ bool ExecutableAllocator::RemoveRWBlock(void* pRW, void** pUnmapAddress, size_t*
     return false;
 }
 
-bool ExecutableAllocator::AllocateOffset(size_t *pOffset, size_t size)
+bool ExecutableAllocator::AllocateOffset(size_t* pOffset, size_t size)
 {
     LIMITED_METHOD_CONTRACT;
 
@@ -315,7 +327,7 @@ bool ExecutableAllocator::AllocateOffset(size_t *pOffset, size_t size)
     return true;
 }
 
-void ExecutableAllocator::AddBlockToList(BlockRX* pBlock)
+void ExecutableAllocator::AddRXBlock(BlockRX* pBlock)
 {
     LIMITED_METHOD_CONTRACT;
 
@@ -325,6 +337,8 @@ void ExecutableAllocator::AddBlockToList(BlockRX* pBlock)
 
 void* ExecutableAllocator::Commit(void* pStart, size_t size, bool isExecutable)
 {
+    LIMITED_METHOD_CONTRACT;
+
     if (IsDoubleMappingEnabled())
     {
         return VMToOSInterface::CommitDoubleMappedMemory(pStart, size, isExecutable);
@@ -337,41 +351,46 @@ void* ExecutableAllocator::Commit(void* pStart, size_t size, bool isExecutable)
 
 void ExecutableAllocator::Release(void* pRX)
 {
+    LIMITED_METHOD_CONTRACT;
+
     if (IsDoubleMappingEnabled())
     {
         CRITSEC_Holder csh(m_CriticalSection);
 
-        BlockRX* b;
-        BlockRX* pPrevBlockRX = NULL;
+        // Locate the RX block corresponding to the pRX and remove it from the linked list
+        BlockRX* pBlock;
+        BlockRX* pPrevBlock = NULL;
 
-        for (b = m_pFirstBlockRX; b != NULL; b = b->next)
+        for (pBlock = m_pFirstBlockRX; pBlock != NULL; pBlock = pBlock->next)
         {
-            if (pRX == b->baseRX)
+            if (pRX == pBlock->baseRX)
             {
-                if (pPrevBlockRX == NULL)
+                if (pPrevBlock == NULL)
                 {
-                    m_pFirstBlockRX = b->next;
+                    m_pFirstBlockRX = pBlock->next;
                 }
                 else
                 {
-                    pPrevBlockRX->next = b->next;
+                    pPrevBlock->next = pBlock->next;
                 }
 
                 break;
             }
-            pPrevBlockRX = b;
+            pPrevBlock = pBlock;
         }
 
-        if (b != NULL)
+        if (pBlock != NULL)
         {
-            VMToOSInterface::ReleaseDoubleMappedMemory(m_doubleMemoryMapperHandle, pRX, b->offset, b->size);
-            b->baseRX = NULL;
-            b->next = m_pFirstFreeBlockRX;
-            m_pFirstFreeBlockRX = b;
+            VMToOSInterface::ReleaseDoubleMappedMemory(m_doubleMemoryMapperHandle, pRX, pBlock->offset, pBlock->size);
+            // Put the released block into the free block list
+            pBlock->baseRX = NULL;
+            pBlock->next = m_pFirstFreeBlockRX;
+            m_pFirstFreeBlockRX = pBlock;
         }
         else
         {
-            __debugbreak();
+            // The block was not found, which should never happen.
+            _ASSERTE(false);
         }
     }
     else
@@ -380,57 +399,63 @@ void ExecutableAllocator::Release(void* pRX)
     }
 }
 
+// Find a free block with the closest size >= the requested size.
+// Returns NULL if no such block exists.
 ExecutableAllocator::BlockRX* ExecutableAllocator::FindBestFreeBlock(size_t size)
 {
-    BlockRX* pPrevBlockRX = NULL;
-    BlockRX* pPrevBestBlockRX = NULL;
-    BlockRX* pBestBlockRX = NULL;
-    BlockRX* bBlockRX = m_pFirstFreeBlockRX;
-    int count = 0;
-    while (bBlockRX != NULL)
+    LIMITED_METHOD_CONTRACT;
+
+    BlockRX* pPrevBlock = NULL;
+    BlockRX* pPrevBestBlock = NULL;
+    BlockRX* pBestBlock = NULL;
+    BlockRX* pBlock = m_pFirstFreeBlockRX;
+
+    while (pBlock != NULL)
     {
-        count++;
-        if (bBlockRX->size >= size)
+        if (pBlock->size >= size)
         {
-            if (pBestBlockRX != NULL)
+            if (pBestBlock != NULL)
             {
-                if (bBlockRX->size < pBestBlockRX->size)
+                if (pBlock->size < pBestBlock->size)
                 {
-                    pPrevBestBlockRX = pPrevBlockRX;
-                    pBestBlockRX = bBlockRX;
+                    pPrevBestBlock = pPrevBlock;
+                    pBestBlock = pBlock;
                 }
             }
             else
             {
-                pPrevBestBlockRX = pPrevBlockRX;
-                pBestBlockRX = bBlockRX;
+                pPrevBestBlock = pPrevBlock;
+                pBestBlock = pBlock;
             }
         }
-        pPrevBlockRX = bBlockRX;
-        bBlockRX = bBlockRX->next;
+        pPrevBlock = pBlock;
+        pBlock = pBlock->next;
     }
 
-    if (pBestBlockRX != NULL)
+    if (pBestBlock != NULL)
     {
-        if (pPrevBestBlockRX != NULL)
+        if (pPrevBestBlock != NULL)
         {
-            pPrevBestBlockRX->next = pBestBlockRX->next;
+            pPrevBestBlock->next = pBestBlock->next;
         }
         else
         {
-            m_pFirstFreeBlockRX = pBestBlockRX->next;
+            m_pFirstFreeBlockRX = pBestBlock->next;
         }
 
-        pBestBlockRX->next = NULL;
-
-        printf("@@@ Found best free block in %d blocks - requested size 0x%llx, found size 0x%llx\n", count, (uint64_t)size, (uint64_t)pBestBlockRX->size);
+        pBestBlock->next = NULL;
     }
 
-    return pBestBlockRX;
+    return pBestBlock;
 }
 
+// Allocate a new block of executable memory and the related descriptor structure.
+// First try to get it from the free blocks and if there is no suitable free block,
+// allocate a new one.
 ExecutableAllocator::BlockRX* ExecutableAllocator::AllocateBlock(size_t size, bool* pIsFreeBlock)
 {
+    LIMITED_METHOD_CONTRACT;
+
     size_t offset;
     BlockRX* block = FindBestFreeBlock(size);
     *pIsFreeBlock = (block != NULL);
@@ -439,7 +464,6 @@ ExecutableAllocator::BlockRX* ExecutableAllocator::AllocateBlock(size_t size, bo
     {
         if (!AllocateOffset(&offset, size))
         {
-            __debugbreak();
             return NULL;
         }
 
@@ -456,8 +480,12 @@ ExecutableAllocator::BlockRX* ExecutableAllocator::AllocateBlock(size_t size, bo
     return block;
 }
 
+// Backout a previously allocated block. The block is added to the free blocks list and
+// reused for later allocation requests.
 void ExecutableAllocator::BackoutBlock(BlockRX* pBlock, bool isFreeBlock)
 {
+    LIMITED_METHOD_CONTRACT;
+
     if (!isFreeBlock)
     {
         m_freeOffset -= pBlock->size;
@@ -470,8 +498,12 @@ void ExecutableAllocator::BackoutBlock(BlockRX* pBlock, bool isFreeBlock)
     }
 }
 
+// Reserve executable memory within the specified virtual address space range. If it is not possible to
+// reserve memory in that range, the method returns NULL and nothing is allocated.
 void* ExecutableAllocator::ReserveWithinRange(size_t size, const void* loAddress, const void* hiAddress)
 {
+    LIMITED_METHOD_CONTRACT;
+
     _ASSERTE((size & (Granularity() - 1)) == 0);
     if (IsDoubleMappingEnabled())
     {
@@ -489,7 +521,7 @@ void* ExecutableAllocator::ReserveWithinRange(size_t size, const void* loAddress
         if (result != NULL)
         {
             block->baseRX = result;
-            AddBlockToList(block);
+            AddRXBlock(block);
         }
         else 
         {
@@ -511,8 +543,13 @@ void* ExecutableAllocator::ReserveWithinRange(size_t size, const void* loAddress
     }
 }
 
+// Reserve executable memory. On Windows it tries to use the allocation hints to
+// allocate memory close to the previously allocated executable memory and loaded
+// executable files.
 void* ExecutableAllocator::Reserve(size_t size)
 {
+    LIMITED_METHOD_CONTRACT;
+
     _ASSERTE((size & (Granularity() - 1)) == 0);
 
     BYTE *result = NULL;
@@ -527,27 +564,27 @@ void* ExecutableAllocator::Reserve(size_t size)
     // to reach the code for our ngen-ed images on x64,
     // since they are also placed in the UPPER_ADDRESS space.
     //
-    BYTE * pHint = s_CodeAllocHint;
+    BYTE * pHint = g_codeAllocHint;
 
-    if (size <= (SIZE_T)(s_CodeMaxAddr - s_CodeMinAddr) && pHint != NULL)
+    if (size <= (SIZE_T)(g_codeMaxAddr - g_codeMinAddr) && pHint != NULL)
     {
         // Try to allocate in the preferred region after the hint
-        result = (BYTE*)ReserveWithinRange(size, pHint, s_CodeMaxAddr);
+        result = (BYTE*)ReserveWithinRange(size, pHint, g_codeMaxAddr);
         if (result != NULL)
         {
-            s_CodeAllocHint = result + size;
+            g_codeAllocHint = result + size;
         }
         else
         {
             // Try to allocate in the preferred region before the hint
-            result = (BYTE*)ReserveWithinRange(size, s_CodeMinAddr, pHint + size);
+            result = (BYTE*)ReserveWithinRange(size, g_codeMinAddr, pHint + size);
 
             if (result != NULL)
             {
-                s_CodeAllocHint = result + size;
+                g_codeAllocHint = result + size;
             }
 
-            s_CodeAllocHint = NULL;
+            g_codeAllocHint = NULL;
         }
     }
 
@@ -572,7 +609,7 @@ void* ExecutableAllocator::Reserve(size_t size)
             if (result != NULL)
             {
                 block->baseRX = result;
-                AddBlockToList(block);
+                AddRXBlock(block);
             }
             else 
             {
@@ -595,8 +632,12 @@ void* ExecutableAllocator::Reserve(size_t size)
     return result;
 }
 
+// Reserve a block of executable memory at the specified virtual address. If it is not
+// possible, the method returns NULL.
 void* ExecutableAllocator::ReserveAt(void* baseAddressRX, size_t size)
 {
+    LIMITED_METHOD_CONTRACT;
+
     _ASSERTE((size & (Granularity() - 1)) == 0);
 
     if (IsDoubleMappingEnabled())
@@ -615,7 +656,7 @@ void* ExecutableAllocator::ReserveAt(void* baseAddressRX, size_t size)
         if (result != NULL)
         {
             block->baseRX = result;
-            AddBlockToList(block);
+            AddRXBlock(block);
         }
         else 
         {
@@ -630,92 +671,92 @@ void* ExecutableAllocator::ReserveAt(void* baseAddressRX, size_t size)
     }
 }
 
-void ExecutableAllocator::UnmapRW(void* pRW)
-{
-    if (!IsDoubleMappingEnabled())
-    {
-        return;
-    }
-
-#ifndef CROSSGEN_COMPILE
-    CRITSEC_Holder csh(m_CriticalSection);
-    _ASSERTE(pRW != NULL);
-
-    void* unmapAddress = NULL;
-    size_t unmapSize;
-    
-    if (!RemoveRWBlock(pRW, &unmapAddress, &unmapSize))
-    {
-        __debugbreak();            
-    }
-
-    if (unmapAddress && !VMToOSInterface::ReleaseRWMapping(unmapAddress, unmapSize))
-    {
-        __debugbreak();
-    }
-#endif // CROSSGEN_COMPILE
-}
-
+// Map an executable memory block as writeable. If there is already a mapping
+// covering the specified block, return that mapping instead of creating a new one.
+// Return starting address of the writeable mapping.
 void* ExecutableAllocator::MapRW(void* pRX, size_t size)
 {
+    LIMITED_METHOD_CONTRACT;
+
     if (!IsDoubleMappingEnabled())
     {
         return pRX;
     }
 
-#ifndef CROSSGEN_COMPILE
     CRITSEC_Holder csh(m_CriticalSection);
 
-//#define DISABLE_MAP_REUSE
-
-#ifndef DISABLE_MAP_REUSE
     void* result = FindRWBlock(pRX, size);
     if (result != NULL)
     {
         return result;
     }
-#endif
 
-    size_t searchLength = 0;
-    for (BlockRX* b = m_pFirstBlockRX; b != NULL; b = b->next)
+    for (BlockRX* pBlock = m_pFirstBlockRX; pBlock != NULL; pBlock = pBlock->next)
     {
-        if (pRX >= b->baseRX && ((size_t)pRX + size) <= ((size_t)b->baseRX + b->size))
+        if (pRX >= pBlock->baseRX && ((size_t)pRX + size) <= ((size_t)pBlock->baseRX + pBlock->size))
         {
             // Offset of the RX address in the originally allocated block
-            size_t offset = (size_t)pRX - (size_t)b->baseRX;
+            size_t offset = (size_t)pRX - (size_t)pBlock->baseRX;
             // Offset of the RX address that will start the newly mapped block
             size_t mapOffset = ALIGN_DOWN(offset, Granularity());
             // Size of the block we will map
             size_t mapSize = ALIGN_UP(offset - mapOffset + size, Granularity());
-            void* pRW = VMToOSInterface::GetRWMapping(m_doubleMemoryMapperHandle, (BYTE*)b->baseRX + mapOffset, b->offset + mapOffset, mapSize);
+            void* pRW = VMToOSInterface::GetRWMapping(m_doubleMemoryMapperHandle, (BYTE*)pBlock->baseRX + mapOffset, pBlock->offset + mapOffset, mapSize);
 
             if (pRW == NULL)
             {
-                __debugbreak();
-                return NULL;
+                _ASSERTE(!"ExecutableAllocator::MapRW: Failed to create the RW mapping");
+                //EEPOLICY_HANDLE_FATAL_ERROR(COR_E_EXECUTIONENGINE);
             }
 
-            AddRWBlock(pRW, (BYTE*)b->baseRX + mapOffset, mapSize);
+            AddRWBlock(pRW, (BYTE*)pBlock->baseRX + mapOffset, mapSize);
 
             return (void*)((size_t)pRW + (offset - mapOffset));
         }
-        else if (pRX >= b->baseRX && pRX < (void*)((size_t)b->baseRX + b->size))
+        else if (pRX >= pBlock->baseRX && pRX < (void*)((size_t)pBlock->baseRX + pBlock->size))
         {
-            // Error - attempting to map a block that crosses the end of the allocated range
-            __debugbreak();
+            _ASSERTE(!"ExecutableAllocator::MapRW: Attempting to map a block that crosses the end of the allocated range");
+            //EEPOLICY_HANDLE_FATAL_ERROR(COR_E_EXECUTIONENGINE);
         }
-        else if (pRX < b->baseRX && (void*)((size_t)pRX + size) > b->baseRX)
+        else if (pRX < pBlock->baseRX && (void*)((size_t)pRX + size) > pBlock->baseRX)
         {
-            // Error - attempting to map a block that crosses the beginning of the allocated range
-            __debugbreak();
+            _ASSERTE(!"ExecutableAllocator::MapRW: Attempting to map a block that crosses the beginning of the allocated range");
+            //EEPOLICY_HANDLE_FATAL_ERROR(COR_E_EXECUTIONENGINE);
         }
-        searchLength++;
     }
-//        return NULL;
-    __debugbreak();
-    // TODO: this is a hack for the preallocated pages that are part of the coreclr module
-#endif // !CROSSGEN_COMPILE        
-    return pRX;
+
+    // The executable memory block was not found, so we cannot provide the writeable mapping.
+    _ASSERTE(!"ExecutableAllocator::MapRW: The executable block to map was not found");
+    //EEPOLICY_HANDLE_FATAL_ERROR(COR_E_EXECUTIONENGINE);
+
+    return NULL;
 }
 
-#endif
+// Unmap writeable mapping at the specified address. The address must be an address
+// returned by the MapRW method.
+void ExecutableAllocator::UnmapRW(void* pRW)
+{
+    LIMITED_METHOD_CONTRACT;
+
+    if (!IsDoubleMappingEnabled())
+    {
+        return;
+    }
+
+    CRITSEC_Holder csh(m_CriticalSection);
+    _ASSERTE(pRW != NULL);
+
+    void* unmapAddress = NULL;
+    size_t unmapSize;
+
+    if (!RemoveRWBlock(pRW, &unmapAddress, &unmapSize))
+    {
+        _ASSERTE(!"RemoveRWBlock failed");
+        return;
+    }
+
+    if (unmapAddress && !VMToOSInterface::ReleaseRWMapping(unmapAddress, unmapSize))
+    {
+        _ASSERTE(!"Releasing the RW mapping failed");
+    }
+}
