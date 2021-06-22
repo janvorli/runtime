@@ -469,7 +469,14 @@ void* ExecutableAllocator::ReserveWithinRange(size_t size, const void* loAddress
     }
     else
     {
-        return ClrVirtualAllocWithinRange((const BYTE*)loAddress, (const BYTE*)hiAddress, size, MEM_RESERVE, PAGE_NOACCESS);
+        DWORD allocationType = MEM_RESERVE;
+#ifdef HOST_UNIX
+        // Tell PAL to use the executable memory allocator to satisfy this request for virtual memory.
+        // This will allow us to place JIT'ed code close to the coreclr library
+        // and thus improve performance by avoiding jump stubs in managed code.
+        allocationType |= MEM_RESERVE_EXECUTABLE;
+#endif
+        return ClrVirtualAllocWithinRange((const BYTE*)loAddress, (const BYTE*)hiAddress, size, allocationType, PAGE_NOACCESS);
     }
 }
 
