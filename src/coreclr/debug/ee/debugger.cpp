@@ -1317,13 +1317,19 @@ DebuggerEval::DebuggerEval(CONTEXT * pContext, DebuggerIPCE_FuncEvalInfo * pEval
 
     // Allocate the breakpoint instruction info in executable memory.
     void *bpInfoSegmentRX = g_pDebugger->GetInteropSafeExecutableHeap()->Alloc(sizeof(DebuggerEvalBreakpointInfoSegment));
+
+#if !defined(DBI_COMPILE) && !defined(DACCESS_COMPILE) && defined(HOST_OSX) && defined(HOST_ARM64)
     ExecutableWriterHolder<DebuggerEvalBreakpointInfoSegment> bpInfoSegmentWriterHolder((DebuggerEvalBreakpointInfoSegment*)bpInfoSegmentRX, sizeof(DebuggerEvalBreakpointInfoSegment));
-    new (bpInfoSegmentWriterHolder.GetRW()) DebuggerEvalBreakpointInfoSegment(this);
+    DebuggerEvalBreakpointInfoSegment *bpInfoSegmentRW = bpInfoSegmentWriterHolder.GetRW();
+#else // !DBI_COMPILE && !DACCESS_COMPILE && HOST_OSX && HOST_ARM64
+    DebuggerEvalBreakpointInfoSegment *bpInfoSegmentRW = (DebuggerEvalBreakpointInfoSegment*)bpInfoSegmentRX;
+#endif // !DBI_COMPILE && !DACCESS_COMPILE && HOST_OSX && HOST_ARM64
+    new (bpInfoSegmentRW) DebuggerEvalBreakpointInfoSegment(this);
     m_bpInfoSegment = (DebuggerEvalBreakpointInfoSegment*)bpInfoSegmentRX;
 
     // This must be non-zero so that the saved opcode is non-zero, and on IA64 we want it to be 0x16
     // so that we can have a breakpoint instruction in any slot in the bundle.
-    bpInfoSegmentWriterHolder.GetRW()->m_breakpointInstruction[0] = 0x16;
+    bpInfoSegmentRW->m_breakpointInstruction[0] = 0x16;
 #if defined(TARGET_ARM)
     USHORT *bp = (USHORT*)&m_bpInfoSegment->m_breakpointInstruction;
     *bp = CORDbg_BREAK_INSTRUCTION;
