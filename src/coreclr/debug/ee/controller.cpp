@@ -70,6 +70,7 @@ bool DebuggerControllerPatch::IsSafeForStackTrace()
 }
 
 #ifndef FEATURE_EMULATE_SINGLESTEP
+
 // returns a pointer to the shared buffer.  each call will AddRef() the object
 // before returning it so callers only need to Release() when they're finished with it.
 SharedPatchBypassBuffer* DebuggerControllerPatch::GetOrCreateSharedPatchBypassBuffer()
@@ -84,8 +85,13 @@ SharedPatchBypassBuffer* DebuggerControllerPatch::GetOrCreateSharedPatchBypassBu
     if (m_pSharedPatchBypassBuffer == NULL)
     {
         void *pSharedPatchBypassBufferRX = g_pDebugger->GetInteropSafeExecutableHeap()->Alloc(sizeof(SharedPatchBypassBuffer));
+#ifndef HOST_WINDOWS
         ExecutableWriterHolder<SharedPatchBypassBuffer> sharedPatchBypassBufferWriterHolder((SharedPatchBypassBuffer*)pSharedPatchBypassBufferRX, sizeof(SharedPatchBypassBuffer));
-        new (sharedPatchBypassBufferWriterHolder.GetRW()) SharedPatchBypassBuffer();
+        void *pSharedPatchBypassBufferRW = sharedPatchBypassBufferWriterHolder.GetRW();
+#else // !HOST_WINDOWS
+        void *pSharedPatchBypassBufferRW = pSharedPatchBypassBufferRX;
+#endif // !HOST_WINDOWS
+        new (pSharedPatchBypassBufferRW) SharedPatchBypassBuffer();
         m_pSharedPatchBypassBuffer = (SharedPatchBypassBuffer*)pSharedPatchBypassBufferRX;
 
         _ASSERTE(m_pSharedPatchBypassBuffer);

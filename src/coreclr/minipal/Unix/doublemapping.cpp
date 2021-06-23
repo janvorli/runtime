@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <limits.h>
 #ifdef TARGET_LINUX
 #include <linux/memfd.h>
 #include <sys/syscall.h> // __NR_memfd_create
