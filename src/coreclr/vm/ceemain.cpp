@@ -607,6 +607,11 @@ void EESocketCleanupHelper(bool isExecutingOnAltStack)
 #endif // TARGET_UNIX
 #endif // CROSSGEN_COMPILE
 
+void FatalErrorHandler(UINT errorCode, LPCWSTR pszMessage)
+{
+    EEPOLICY_HANDLE_FATAL_ERROR_WITH_MESSAGE(errorCode, pszMessage);
+}
+
 void EEStartupHelper()
 {
     CONTRACTL
@@ -670,7 +675,7 @@ void EEStartupHelper()
         // This needs to be done before the EE has started
         InitializeStartupFlags();
 
-        IfFailGo(ExecutableAllocator::StaticInitialize());
+        IfFailGo(ExecutableAllocator::StaticInitialize(FatalErrorHandler));
 
         ThreadpoolMgr::StaticInitialize();
 

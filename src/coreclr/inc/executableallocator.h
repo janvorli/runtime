@@ -48,8 +48,13 @@ class ExecutableAllocator
         size_t refCount;
     };
 
+    typedef void (*FatalErrorHandler)(UINT errorCode, LPCWSTR pszMessage);
+
     // Instance of the allocator
     static ExecutableAllocator* g_instance;
+
+    // Callback to the runtime to report fatal errors
+    static FatalErrorHandler g_fatalErrorHandler;
 
 #if USE_UPPER_ADDRESS
     // Preferred region to allocate the code in.
@@ -141,7 +146,7 @@ public:
 
     // Initialize the static members of the Executable allocator and allocate
     // and initialize the instance of it.
-    static HRESULT StaticInitialize();
+    static HRESULT StaticInitialize(FatalErrorHandler fatalErrorHandler);
 
     // Destroy the allocator
     // TODO: remove
