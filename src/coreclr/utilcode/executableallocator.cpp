@@ -15,6 +15,8 @@ BYTE * ExecutableAllocator::g_codeAllocHint;
 
 bool ExecutableAllocator::g_isWXorXEnabled = false;
 
+ExecutableAllocator::FatalErrorHandler ExecutableAllocator::g_fatalErrorHandler = NULL;
+
 ExecutableAllocator* ExecutableAllocator::g_instance = NULL;
 
 bool ExecutableAllocator::IsDoubleMappingEnabled()
@@ -147,10 +149,11 @@ ExecutableAllocator::~ExecutableAllocator()
     }
 }
 
-HRESULT ExecutableAllocator::StaticInitialize()
+HRESULT ExecutableAllocator::StaticInitialize(FatalErrorHandler fatalErrorHandler)
 {
     LIMITED_METHOD_CONTRACT;
 
+    g_fatalErrorHandler = fatalErrorHandler;
     g_isWXorXEnabled = CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_EnableWXORX) != 0;
     g_instance = new (nothrow) ExecutableAllocator();
     if (g_instance == NULL)
@@ -201,11 +204,11 @@ void ExecutableAllocator::UpdateCachedMapping(BlockRW* pBlock)
 
         if (!RemoveRWBlock(m_cachedMapping->baseRW, &unmapAddress, &unmapSize))
         {
-            _ASSERTE(!"RemoveRWBlock failed");
+            g_fatalErrorHandler(COR_E_EXECUTIONENGINE, W("The RW block to unmap was not found"));
         }
         if (unmapAddress && !VMToOSInterface::ReleaseRWMapping(unmapAddress, unmapSize))
         {
-            _ASSERTE(!"Releasing the RW mapping failed");
+            g_fatalErrorHandler(COR_E_EXECUTIONENGINE, W("Releasing the RW mapping failed"));
         }
         m_cachedMapping = pBlock;
         pBlock->refCount++;
@@ -390,7 +393,7 @@ void ExecutableAllocator::Release(void* pRX)
         else
         {
             // The block was not found, which should never happen.
-            _ASSERTE(false);
+            g_fatalErrorHandler(COR_E_EXECUTIONENGINE, W("The RX block to release was not found"));
         }
     }
     else
@@ -705,8 +708,7 @@ void* ExecutableAllocator::MapRW(void* pRX, size_t size)
 
             if (pRW == NULL)
             {
-                _ASSERTE(!"ExecutableAllocator::MapRW: Failed to create the RW mapping");
-                //EEPOLICY_HANDLE_FATAL_ERROR(COR_E_EXECUTIONENGINE);
+                g_fatalErrorHandler(COR_E_EXECUTIONENGINE, W("Failed to create RW mapping for RX memory"));
             }
 
             AddRWBlock(pRW, (BYTE*)pBlock->baseRX + mapOffset, mapSize);
@@ -715,20 +717,16 @@ void* ExecutableAllocator::MapRW(void* pRX, size_t size)
         }
         else if (pRX >= pBlock->baseRX && pRX < (void*)((size_t)pBlock->baseRX + pBlock->size))
         {
-            _ASSERTE(!"ExecutableAllocator::MapRW: Attempting to map a block that crosses the end of the allocated range");
-            //EEPOLICY_HANDLE_FATAL_ERROR(COR_E_EXECUTIONENGINE);
+            g_fatalErrorHandler(COR_E_EXECUTIONENGINE, W("Attempting to RW map a block that crosses the end of the allocated RX range"));
         }
         else if (pRX < pBlock->baseRX && (void*)((size_t)pRX + size) > pBlock->baseRX)
         {
-            _ASSERTE(!"ExecutableAllocator::MapRW: Attempting to map a block that crosses the beginning of the allocated range");
-            //EEPOLICY_HANDLE_FATAL_ERROR(COR_E_EXECUTIONENGINE);
+            g_fatalErrorHandler(COR_E_EXECUTIONENGINE, W("Attempting to map a block that crosses the beginning of the allocated range"));
         }
     }
 
     // The executable memory block was not found, so we cannot provide the writeable mapping.
-    _ASSERTE(!"ExecutableAllocator::MapRW: The executable block to map was not found");
-    //EEPOLICY_HANDLE_FATAL_ERROR(COR_E_EXECUTIONENGINE);
-
+    g_fatalErrorHandler(COR_E_EXECUTIONENGINE, W("The RX block to map as RW was not found"));
     return NULL;
 }
 
@@ -751,12 +749,11 @@ void ExecutableAllocator::UnmapRW(void* pRW)
 
     if (!RemoveRWBlock(pRW, &unmapAddress, &unmapSize))
     {
-        _ASSERTE(!"RemoveRWBlock failed");
-        return;
+        g_fatalErrorHandler(COR_E_EXECUTIONENGINE, W("The RW block to unmap was not found"));
     }
 
     if (unmapAddress && !VMToOSInterface::ReleaseRWMapping(unmapAddress, unmapSize))
     {
-        _ASSERTE(!"Releasing the RW mapping failed");
+        g_fatalErrorHandler(COR_E_EXECUTIONENGINE, W("Releasing the RW mapping failed"));
     }
 }

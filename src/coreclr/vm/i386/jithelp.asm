@@ -411,15 +411,28 @@ ENDM
 ;*******************************************************************************
 ; Write barrier wrappers with fcall calling convention
 ;
-UniversalWriteBarrierHelper MACRO name
+CallableWriteBarrierHelper MACRO rg
+
+        .data
         ALIGN 4
-PUBLIC @JIT_&name&@8
-@JIT_&name&@8 PROC
-        mov eax,edx
-        mov edx,ecx
-        jmp _JIT_&name&EAX@0
-@JIT_&name&@8 ENDP
+        public  _JIT_WriteBarrier&rg&_Loc
+_JIT_WriteBarrier&rg&_Loc dd 0
+
+        .code
+        ALIGN 8
+PUBLIC _JIT_WriteBarrier&rg&_Callable@0
+_JIT_WriteBarrier&rg&_Callable@0 PROC
+        jmp     DWORD PTR [_JIT_WriteBarrier&rg&_Loc]
+_JIT_WriteBarrier&rg&_Callable@0 ENDP
+
 ENDM
+
+CallableWriteBarrierHelper <EAX>
+CallableWriteBarrierHelper <EBX>
+CallableWriteBarrierHelper <ECX>
+CallableWriteBarrierHelper <ESI>
+CallableWriteBarrierHelper <EDI>
+CallableWriteBarrierHelper <EBP>
 
 ; WriteBarrierStart and WriteBarrierEnd are used to determine bounds of
 ; WriteBarrier functions so can determine if got AV in them.
@@ -432,8 +445,28 @@ _JIT_WriteBarrierGroup@0 ENDP
 ifdef FEATURE_USE_ASM_GC_WRITE_BARRIERS
 ; Only define these if we're using the ASM GC write barriers; if this flag is not defined,
 ; we'll use C++ versions of these write barriers.
-UniversalWriteBarrierHelper <CheckedWriteBarrier>
-UniversalWriteBarrierHelper <WriteBarrier>
+
+        ALIGN 4
+PUBLIC @JIT_CheckedWriteBarrier@8
+@JIT_CheckedWriteBarrier@8 PROC
+        mov eax,edx
+        mov edx,ecx
+        jmp _JIT_CheckedWriteBarrierEAX@0
+@JIT_CheckedWriteBarrier@8 ENDP
+
+        ALIGN 4
+PUBLIC @JIT_WriteBarrier@8
+@JIT_WriteBarrier@8 PROC
+        mov eax,edx
+        mov edx,ecx
+ifdef FEATURE_WRITEBARRIER_COPY
+        jmp DWORD PTR [_JIT_WriteBarrierEAX_Loc]
+else
+        jmp _JIT_WriteBarrierEAX@0
+endif
+
+@JIT_WriteBarrier@8 ENDP
+
 endif
 
 WriteBarrierHelper <EAX>
@@ -1233,6 +1266,8 @@ fremloopd:
 ; PatchedCodeStart and PatchedCodeEnd are used to determine bounds of patched code.
 ;
 
+            ALIGN 4
+
 _JIT_PatchedCodeStart@0 proc public
 ret
 _JIT_PatchedCodeStart@0 endp
@@ -1277,7 +1312,6 @@ _JIT_PatchedCodeLast@0 endp
 _JIT_PatchedCodeEnd@0 proc public
 ret
 _JIT_PatchedCodeEnd@0 endp
-
 
 ; Note that the debugger skips this entirely when doing SetIP,
 ; since COMPlusCheckForAbort should always return 0.  Excep.cpp:LeaveCatch
