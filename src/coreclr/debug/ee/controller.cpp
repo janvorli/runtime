@@ -4513,7 +4513,7 @@ DebuggerPatchSkip::DebuggerPatchSkip(Thread *thread,
         thread->SetThreadContext(&c);
 
 
-    LOG((LF_CORDB, LL_INFO10000, "DPS::DPS Bypass at 0x%p for opcode %p \n", patchBypass, patch->opcode));
+    LOG((LF_CORDB, LL_INFO10000, "DPS::DPS Bypass at 0x%p for opcode %p \n", patchBypassRX, patch->opcode));
 
     //
     // Turn on single step (if the platform supports it) so we can

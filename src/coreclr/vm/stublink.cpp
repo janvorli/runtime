@@ -846,7 +846,7 @@ Stub *StubLinker::Link(LoaderHeap *pHeap, DWORD flags)
                 );
         ASSERT(pStub != NULL);
 
-        bool fSuccess = EmitStub(pStub, globalsize, pHeap);
+        bool fSuccess = EmitStub(pStub, globalsize, size, pHeap);
 
 #ifdef STUBLINKER_GENERATES_UNWIND_INFO
         if (fSuccess)
@@ -1007,13 +1007,14 @@ int StubLinker::CalculateSize(int* pGlobalSize)
     return globalsize + datasize;
 }
 
-bool StubLinker::EmitStub(Stub* pStub, int globalsize, LoaderHeap* pHeap)
+bool StubLinker::EmitStub(Stub* pStub, int globalsize, int totalSize, LoaderHeap* pHeap)
 {
     STANDARD_VM_CONTRACT;
 
     BYTE *pCode = (BYTE*)(pStub->GetBlob());
 
-    ExecutableWriterHolder<Stub> stubWriterHolder(pStub, sizeof(Stub));
+    // TODO: is the size below correct?
+    ExecutableWriterHolder<Stub> stubWriterHolder(pStub, sizeof(Stub) + totalSize);
     Stub *pStubRW = stubWriterHolder.GetRW();
 
     BYTE *pCodeRW = (BYTE*)(pStubRW->GetBlob());

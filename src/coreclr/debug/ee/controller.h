@@ -266,12 +266,12 @@ public:
 
     LONG AddRef()
     {
-#ifndef HOST_WINDOWS
+#if !defined(HOST_WINDOWS) && !defined(DACCESS_COMPILE)
         ExecutableWriterHolder<LONG> refCountWriterHolder(&m_refCount, sizeof(LONG));
-        LONG *pRefCountRW = sharedPatchBypassBufferWriterHolder.GetRW();
-#else // !HOST_WINDOWS
+        LONG *pRefCountRW = refCountWriterHolder.GetRW();
+#else // !HOST_WINDOWS && !DACCESS_COMPILE
         LONG *pRefCountRW = &m_refCount;
-#endif // !HOST_WINDOWS
+#endif // !HOST_WINDOWS && !DACCESS_COMPILE
 
         LONG newRefCount = InterlockedIncrement(pRefCountRW);
         _ASSERTE(newRefCount > 0);
@@ -280,12 +280,12 @@ public:
 
     LONG Release()
     {
-#ifndef HOST_WINDOWS
+#if !defined(HOST_WINDOWS) && !defined(DACCESS_COMPILE)
         ExecutableWriterHolder<LONG> refCountWriterHolder(&m_refCount, sizeof(LONG));
-        LONG *pRefCountRW = sharedPatchBypassBufferWriterHolder.GetRW();
-#else // !HOST_WINDOWS
+        LONG *pRefCountRW = refCountWriterHolder.GetRW();
+#else // !HOST_WINDOWS && !DACCESS_COMPILE
         LONG *pRefCountRW = &m_refCount;
-#endif // !HOST_WINDOWS
+#endif // !HOST_WINDOWS && !DACCESS_COMPILE
 
         LONG newRefCount = InterlockedDecrement(pRefCountRW);
         _ASSERTE(newRefCount >= 0);
