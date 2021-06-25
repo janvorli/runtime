@@ -4357,7 +4357,15 @@ DebuggerPatchSkip::DebuggerPatchSkip(Thread *thread,
     //
 
     m_pSharedPatchBypassBuffer = patch->GetOrCreateSharedPatchBypassBuffer();
-    BYTE* patchBypass = m_pSharedPatchBypassBuffer->PatchBypass;
+#ifndef HOST_WINDOWS
+    ExecutableWriterHolder<SharedPatchBypassBuffer> sharedPatchBypassBufferWriterHolder((SharedPatchBypassBuffer*)m_pSharedPatchBypassBuffer, sizeof(SharedPatchBypassBuffer));
+    SharedPatchBypassBuffer *pSharedPatchBypassBufferRW = sharedPatchBypassBufferWriterHolder.GetRW();
+#else // !HOST_WINDOWS
+    SharedPatchBypassBuffer *pSharedPatchBypassBufferRW = m_pSharedPatchBypassBuffer;
+#endif // !HOST_WINDOWS
+
+    BYTE* patchBypassRX = m_pSharedPatchBypassBuffer->PatchBypass;
+    BYTE* patchBypassRW = pSharedPatchBypassBufferRW->PatchBypass;
 
     // Copy the instruction block over to the patch skip
     // WARNING: there used to be an issue here because CopyInstructionBlock copied the breakpoint from the
@@ -4372,19 +4380,19 @@ DebuggerPatchSkip::DebuggerPatchSkip(Thread *thread,
     // the 2nd skip executes the new jump-stamp code and not the original method prologue code. Copying
     // the code every time ensures that we have the most up-to-date version of the code in the buffer.
     _ASSERTE( patch->IsBound() );
-    CopyInstructionBlock(patchBypass, (const BYTE *)patch->address);
+    CopyInstructionBlock(patchBypassRW, (const BYTE *)patch->address);
 
     // Technically, we could create a patch skipper for an inactive patch, but we rely on the opcode being
     // set here.
     _ASSERTE( patch->IsActivated() );
-    CORDbgSetInstruction((CORDB_ADDRESS_TYPE *)patchBypass, patch->opcode);
+    CORDbgSetInstruction((CORDB_ADDRESS_TYPE *)patchBypassRW, patch->opcode);
 
     LOG((LF_CORDB, LL_EVERYTHING, "SetInstruction was called\n"));
     //
     // Look at instruction to get some attributes
     //
 
-    NativeWalker::DecodeInstructionForPatchSkip(patchBypass, &(m_instrAttrib));
+    NativeWalker::DecodeInstructionForPatchSkip(patchBypassRX, &(m_instrAttrib));
 
 #if defined(TARGET_AMD64)
 
@@ -4400,33 +4408,33 @@ DebuggerPatchSkip::DebuggerPatchSkip(Thread *thread,
         // Populate the RIP-relative buffer with the current value if needed
         //
 
-        BYTE* bufferBypass = m_pSharedPatchBypassBuffer->BypassBuffer;
+        BYTE* bufferBypassRW = pSharedPatchBypassBufferRW->BypassBuffer;
 
         // Overwrite the *signed* displacement.
-        int dwOldDisp = *(int*)(&patchBypass[m_instrAttrib.m_dwOffsetToDisp]);
+        int dwOldDisp = *(int*)(&patchBypassRX[m_instrAttrib.m_dwOffsetToDisp]);
         int dwNewDisp = offsetof(SharedPatchBypassBuffer, BypassBuffer) -
                           (offsetof(SharedPatchBypassBuffer, PatchBypass) + m_instrAttrib.m_cbInstr);
-        *(int*)(&patchBypass[m_instrAttrib.m_dwOffsetToDisp]) = dwNewDisp;
+        *(int*)(&patchBypassRW[m_instrAttrib.m_dwOffsetToDisp]) = dwNewDisp;
 
         // This could be an LEA, which we'll just have to change into a MOV
         // and copy the original address
-        if (((patchBypass[0] == 0x4C) || (patchBypass[0] == 0x48)) && (patchBypass[1] == 0x8d))
+        if (((patchBypassRX[0] == 0x4C) || (patchBypassRX[0] == 0x48)) && (patchBypassRX[1] == 0x8d))
         {
-            patchBypass[1] = 0x8b; // MOV reg, mem
+            patchBypassRW[1] = 0x8b; // MOV reg, mem
             _ASSERTE((int)sizeof(void*) <= SharedPatchBypassBuffer::cbBufferBypass);
-            *(void**)bufferBypass = (void*)(patch->address + m_instrAttrib.m_cbInstr + dwOldDisp);
+            *(void**)bufferBypassRW = (void*)(patch->address + m_instrAttrib.m_cbInstr + dwOldDisp);
         }
         else
         {
             _ASSERTE(m_instrAttrib.m_cOperandSize <= SharedPatchBypassBuffer::cbBufferBypass);
             // Copy the data into our buffer.
-            memcpy(bufferBypass, patch->address + m_instrAttrib.m_cbInstr + dwOldDisp, m_instrAttrib.m_cOperandSize);
+            memcpy(bufferBypassRW, patch->address + m_instrAttrib.m_cbInstr + dwOldDisp, m_instrAttrib.m_cOperandSize);
 
             if (m_instrAttrib.m_fIsWrite)
             {
                 // save the actual destination address and size so when we TriggerSingleStep() we can update the value
-                m_pSharedPatchBypassBuffer->RipTargetFixup = (UINT_PTR)(patch->address + m_instrAttrib.m_cbInstr + dwOldDisp);
-                m_pSharedPatchBypassBuffer->RipTargetFixupSize = m_instrAttrib.m_cOperandSize;
+                pSharedPatchBypassBufferRW->RipTargetFixup = (UINT_PTR)(patch->address + m_instrAttrib.m_cbInstr + dwOldDisp);
+                pSharedPatchBypassBufferRW->RipTargetFixupSize = m_instrAttrib.m_cOperandSize;
             }
         }
     }
@@ -4495,11 +4503,11 @@ DebuggerPatchSkip::DebuggerPatchSkip(Thread *thread,
 #else // FEATURE_EMULATE_SINGLESTEP
 
 #ifdef TARGET_ARM64
-    patchBypass = NativeWalker::SetupOrSimulateInstructionForPatchSkip(context, m_pSharedPatchBypassBuffer, (const BYTE *)patch->address, patch->opcode);
+    patchBypassRX = NativeWalker::SetupOrSimulateInstructionForPatchSkip(context, m_pSharedPatchBypassBuffer, (const BYTE *)patch->address, patch->opcode);
 #endif //TARGET_ARM64
 
     //set eip to point to buffer...
-    SetIP(context, (PCODE)patchBypass);
+    SetIP(context, (PCODE)patchBypassRX);
 
     if (context ==(T_CONTEXT*) &c)
         thread->SetThreadContext(&c);

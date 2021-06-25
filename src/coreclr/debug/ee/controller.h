@@ -266,14 +266,28 @@ public:
 
     LONG AddRef()
     {
-        LONG newRefCount = InterlockedIncrement(&m_refCount);
+#ifndef HOST_WINDOWS
+        ExecutableWriterHolder<LONG> refCountWriterHolder(&m_refCount, sizeof(LONG));
+        LONG *pRefCountRW = sharedPatchBypassBufferWriterHolder.GetRW();
+#else // !HOST_WINDOWS
+        LONG *pRefCountRW = &m_refCount;
+#endif // !HOST_WINDOWS
+
+        LONG newRefCount = InterlockedIncrement(pRefCountRW);
         _ASSERTE(newRefCount > 0);
         return newRefCount;
     }
 
     LONG Release()
     {
-        LONG newRefCount = InterlockedDecrement(&m_refCount);
+#ifndef HOST_WINDOWS
+        ExecutableWriterHolder<LONG> refCountWriterHolder(&m_refCount, sizeof(LONG));
+        LONG *pRefCountRW = sharedPatchBypassBufferWriterHolder.GetRW();
+#else // !HOST_WINDOWS
+        LONG *pRefCountRW = &m_refCount;
+#endif // !HOST_WINDOWS
+
+        LONG newRefCount = InterlockedDecrement(pRefCountRW);
         _ASSERTE(newRefCount >= 0);
 
         if (newRefCount == 0)
