@@ -370,35 +370,46 @@ NESTED_END JIT_ByRefWriteBarrier, _TEXT
 
 .endm
 
-.macro CallableWriteBarrierHelper rg
-
-        .data
-        .align 4
-        .global _JIT_WriteBarrier\rg\()_Loc
-C_FUNC(JIT_WriteBarrier\rg\()_Loc):
-        dd 0
-
-        .text
-        .align 8
-LEAF_ENTRY JIT_WriteBarrier\rg\()_Callable, _TEXT
-        jmp     [eip + C_FUNC(JIT_WriteBarrier\rg\()_Loc)]
-LEAF_END JIT_WriteBarrier\rg\()_Callable, _TEXT
-
-.endm
-
-CallableWriteBarrierHelper EAX
-CallableWriteBarrierHelper EBX
-CallableWriteBarrierHelper ECX
-CallableWriteBarrierHelper ESI
-CallableWriteBarrierHelper EDI
-CallableWriteBarrierHelper EBP
-
 // JIT_WriteBarrierGroup and JIT_WriteBarrierGroup_End are used
 // to determine bounds of WriteBarrier functions so can determine if got AV in them.
 //
 LEAF_ENTRY JIT_WriteBarrierGroup, _TEXT
     ret
 LEAF_END JIT_WriteBarrierGroup, _TEXT
+
+#ifdef FEATURE_WRITEBARRIER_COPY
+    .data
+    .align 4
+    .global C_FUNC(JIT_WriteBarrierEAX_Loc)
+C_FUNC(JIT_WriteBarrierEAX_Loc):
+    .word 0
+    .text
+
+LEAF_ENTRY JIT_WriteBarrier_Callable, _TEXT
+    mov eax, edx
+    mov edx, ecx
+    push    eax
+    call    1f
+1:
+    pop     eax
+2:
+    add     eax, offset _GLOBAL_OFFSET_TABLE_+1 // (2b - 1b)
+    mov     eax, dword ptr [eax + C_FUNC(JIT_WriteBarrierEAX_Loc)@GOT]
+    xchg    eax, dword ptr [esp]
+    ret
+LEAF_END JIT_WriteBarrier_Callable, _TEXT
+#endif // FEATURE_WRITEBARRIER_COPY
+
+.macro UniversalWriteBarrierHelper name
+.align 4
+
+LEAF_ENTRY JIT_\name, _TEXT
+    mov eax, edx
+    mov edx, ecx
+    jmp C_FUNC(JIT_\name\()EAX)
+LEAF_END JIT_\name, _TEXT
+
+.endm
 
 #ifdef FEATURE_USE_ASM_GC_WRITE_BARRIERS
 // *******************************************************************************
@@ -407,28 +418,8 @@ LEAF_END JIT_WriteBarrierGroup, _TEXT
 
 // Only define these if we're using the ASM GC write barriers; if this flag is not defined,
 // we'll use C++ versions of these write barriers.
-
-.align 4
-
-LEAF_ENTRY JIT_CheckedWriteBarrier, _TEXT
-    mov eax, edx
-    mov edx, ecx
-    jmp C_FUNC(JIT_CheckedWriteBarrierEAX)
-LEAF_END JIT_CheckedWriteBarrier, _TEXT
-
-.align 4
-
-LEAF_ENTRY JIT_WriteBarrier, _TEXT
-    mov eax, edx
-    mov edx, ecx
-#ifdef FEATURE_WRITEBARRIER_COPY
-    jmp [eip + C_FUNC(JIT_WriteBarrierEAX_Loc)]
-#else
-    jmp C_FUNC(JIT_WriteBarrierEAX)
-#endif
-
-LEAF_END JIT_WriteBarrier, _TEXT
-
+UniversalWriteBarrierHelper CheckedWriteBarrier
+UniversalWriteBarrierHelper WriteBarrier
 #endif // FEATURE_USE_ASM_GC_WRITE_BARRIERS
 
 WriteBarrierHelper EAX

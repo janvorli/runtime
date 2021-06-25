@@ -82,9 +82,14 @@ void* VMToOSInterface::ReserveDoubleMappedMemory(void *mapperHandle, size_t offs
     {
         void* result = PAL_VirtualReserveFromExecutableMemoryAllocatorWithinRange(rangeStart, rangeEnd, size);
 #ifndef TARGET_OSX
-        // Create double mappable mapping over the range reserved from the executable memory allocator.
-        result = mmap(result, size, PROT_NONE, MAP_SHARED | MAP_FIXED, fd, offset);
+        if (result != NULL)
+        {
+            // Create double mappable mapping over the range reserved from the executable memory allocator.
+            result = mmap(result, size, PROT_NONE, MAP_SHARED | MAP_FIXED, fd, offset);
+        }
 #endif // TARGET_OSX
+        assert(result != MAP_FAILED);
+
         return result;
     }
 
@@ -94,7 +99,7 @@ void* VMToOSInterface::ReserveDoubleMappedMemory(void *mapperHandle, size_t offs
     void* result = mmap(NULL, size, PROT_NONE, MAP_JIT | MAP_ANON | MAP_PRIVATE, -1, 0);
 #endif    
     assert(result != MAP_FAILED);
-
+    // TODO: we should return NULL if the result is MAP_FAILED
     return result;
 }
 

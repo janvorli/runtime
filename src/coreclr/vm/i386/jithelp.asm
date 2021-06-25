@@ -411,28 +411,13 @@ ENDM
 ;*******************************************************************************
 ; Write barrier wrappers with fcall calling convention
 ;
-CallableWriteBarrierHelper MACRO rg
 
         .data
         ALIGN 4
-        public  _JIT_WriteBarrier&rg&_Loc
-_JIT_WriteBarrier&rg&_Loc dd 0
+        public  _JIT_WriteBarrierEAX_Loc
+_JIT_WriteBarrierEAX_Loc dd 0
 
         .code
-        ALIGN 8
-PUBLIC _JIT_WriteBarrier&rg&_Callable@0
-_JIT_WriteBarrier&rg&_Callable@0 PROC
-        jmp     DWORD PTR [_JIT_WriteBarrier&rg&_Loc]
-_JIT_WriteBarrier&rg&_Callable@0 ENDP
-
-ENDM
-
-CallableWriteBarrierHelper <EAX>
-CallableWriteBarrierHelper <EBX>
-CallableWriteBarrierHelper <ECX>
-CallableWriteBarrierHelper <ESI>
-CallableWriteBarrierHelper <EDI>
-CallableWriteBarrierHelper <EBP>
 
 ; WriteBarrierStart and WriteBarrierEnd are used to determine bounds of
 ; WriteBarrier functions so can determine if got AV in them.
@@ -442,30 +427,30 @@ _JIT_WriteBarrierGroup@0 PROC
 ret
 _JIT_WriteBarrierGroup@0 ENDP
 
+        ALIGN 4
+PUBLIC @JIT_WriteBarrier_Callable@8
+@JIT_WriteBarrier_Callable@8 PROC
+        mov eax,edx
+        mov edx,ecx
+        jmp DWORD PTR [_JIT_WriteBarrierEAX_Loc]
+
+@JIT_WriteBarrier_Callable@8 ENDP
+
+UniversalWriteBarrierHelper MACRO name
+        ALIGN 4
+PUBLIC @JIT_&name&@8
+@JIT_&name&@8 PROC
+        mov eax,edx
+        mov edx,ecx
+        jmp _JIT_&name&EAX@0
+@JIT_&name&@8 ENDP
+ENDM
+
 ifdef FEATURE_USE_ASM_GC_WRITE_BARRIERS
 ; Only define these if we're using the ASM GC write barriers; if this flag is not defined,
 ; we'll use C++ versions of these write barriers.
-
-        ALIGN 4
-PUBLIC @JIT_CheckedWriteBarrier@8
-@JIT_CheckedWriteBarrier@8 PROC
-        mov eax,edx
-        mov edx,ecx
-        jmp _JIT_CheckedWriteBarrierEAX@0
-@JIT_CheckedWriteBarrier@8 ENDP
-
-        ALIGN 4
-PUBLIC @JIT_WriteBarrier@8
-@JIT_WriteBarrier@8 PROC
-        mov eax,edx
-        mov edx,ecx
-ifdef FEATURE_WRITEBARRIER_COPY
-        jmp DWORD PTR [_JIT_WriteBarrierEAX_Loc]
-else
-        jmp _JIT_WriteBarrierEAX@0
-endif
-
-@JIT_WriteBarrier@8 ENDP
+UniversalWriteBarrierHelper <CheckedWriteBarrier>
+UniversalWriteBarrierHelper <WriteBarrier>
 
 endif
 

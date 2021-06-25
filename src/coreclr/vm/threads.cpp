@@ -1102,11 +1102,6 @@ PCODE AdjustWriteBarrierIP(PCODE controlPc)
 
 #ifdef TARGET_X86
 extern "C" void *JIT_WriteBarrierEAX_Loc;
-extern "C" void *JIT_WriteBarrierECX_Loc;
-extern "C" void *JIT_WriteBarrierEBX_Loc;
-extern "C" void *JIT_WriteBarrierESI_Loc;
-extern "C" void *JIT_WriteBarrierEDI_Loc;
-extern "C" void *JIT_WriteBarrierEBP_Loc;
 #else
 extern "C" void *JIT_WriteBarrier_Loc;
 #endif
@@ -1171,11 +1166,12 @@ void InitThreadManager()
     // can jump to it.
 #ifdef TARGET_X86
     JIT_WriteBarrierEAX_Loc = GetWriteBarrierCodeLocation((void*)JIT_WriteBarrierEAX);
-    JIT_WriteBarrierECX_Loc = GetWriteBarrierCodeLocation((void*)JIT_WriteBarrierECX);
-    JIT_WriteBarrierEBX_Loc = GetWriteBarrierCodeLocation((void*)JIT_WriteBarrierEBX);
-    JIT_WriteBarrierESI_Loc = GetWriteBarrierCodeLocation((void*)JIT_WriteBarrierESI);
-    JIT_WriteBarrierEDI_Loc = GetWriteBarrierCodeLocation((void*)JIT_WriteBarrierEDI);
-    JIT_WriteBarrierEBP_Loc = GetWriteBarrierCodeLocation((void*)JIT_WriteBarrierEBP);
+    SetJitHelperFunction(CORINFO_HELP_ASSIGN_REF_EAX, GetWriteBarrierCodeLocation((void*)JIT_WriteBarrierEAX));
+    SetJitHelperFunction(CORINFO_HELP_ASSIGN_REF_ECX, GetWriteBarrierCodeLocation((void*)JIT_WriteBarrierECX));
+    SetJitHelperFunction(CORINFO_HELP_ASSIGN_REF_EBX, GetWriteBarrierCodeLocation((void*)JIT_WriteBarrierEBX));
+    SetJitHelperFunction(CORINFO_HELP_ASSIGN_REF_ESI, GetWriteBarrierCodeLocation((void*)JIT_WriteBarrierESI));
+    SetJitHelperFunction(CORINFO_HELP_ASSIGN_REF_EDI, GetWriteBarrierCodeLocation((void*)JIT_WriteBarrierEDI));
+    SetJitHelperFunction(CORINFO_HELP_ASSIGN_REF_EBP, GetWriteBarrierCodeLocation((void*)JIT_WriteBarrierEBP));
 #else // TARGET_X86
     JIT_WriteBarrier_Loc = GetWriteBarrierCodeLocation((void*)JIT_WriteBarrier);
 #endif // TARGET_X86

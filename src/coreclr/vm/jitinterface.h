@@ -238,7 +238,7 @@ extern "C" FCDECL2(Object*, ChkCastAny_NoCacheLookup, CORINFO_CLASS_HANDLE type,
 extern "C" FCDECL2(Object*, IsInstanceOfAny_NoCacheLookup, CORINFO_CLASS_HANDLE type, Object* obj);
 extern "C" FCDECL2(LPVOID, Unbox_Helper, CORINFO_CLASS_HANDLE type, Object* obj);
 
-#if defined(TARGET_ARM64) || (defined(FEATURE_WRITEBARRIER_COPY) && !defined(TARGET_X86))
+#if defined(TARGET_ARM64) || (defined(FEATURE_WRITEBARRIER_COPY) /*&& !defined(TARGET_X86)*/)
 // ARM64 JIT_WriteBarrier uses speciall ABI and thus is not callable directly
 // Copied write barriers must be called at a different location
 extern "C" FCDECL2(VOID, JIT_WriteBarrier_Callable, Object **dst, Object *ref);
@@ -246,18 +246,6 @@ extern "C" FCDECL2(VOID, JIT_WriteBarrier_Callable, Object **dst, Object *ref);
 #else
 // in other cases the regular JIT helper is callable.
 #define WriteBarrier_Helper JIT_WriteBarrier
-#endif
-
-#if defined(TARGET_X86) && defined(FEATURE_WRITEBARRIER_COPY)
-extern "C"
-{
-    void STDCALL JIT_WriteBarrierEAX_Callable();
-    void STDCALL JIT_WriteBarrierECX_Callable();
-    void STDCALL JIT_WriteBarrierEBX_Callable();
-    void STDCALL JIT_WriteBarrierESI_Callable();
-    void STDCALL JIT_WriteBarrierEDI_Callable();
-    void STDCALL JIT_WriteBarrierEBP_Callable();
-}
 #endif
 
 extern "C" FCDECL1(void, JIT_InternalThrow, unsigned exceptNum);
