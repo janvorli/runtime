@@ -288,7 +288,7 @@ public:
 
     static Precode * GetPrecodeForTemporaryEntryPoint(TADDR temporaryEntryPoints, int index);
 
-    static SIZE_T SizeOfTemporaryEntryPoints(PrecodeType t, bool preallocateJumpStubs, int count);
+    static SIZE_T SizeOfTemporaryEntryPoints(PrecodeType t, int count);
     static SIZE_T SizeOfTemporaryEntryPoints(TADDR temporaryEntryPoints, int count);
 
     static TADDR AllocateTemporaryEntryPoints(MethodDescChunk* pChunk,

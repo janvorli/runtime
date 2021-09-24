@@ -660,11 +660,6 @@ struct FixupPrecode {
     }
 #endif // HAS_FIXUP_PRECODE_CHUNKS
 
-#ifdef FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
-    PCODE GetDynamicMethodPrecodeFixupJumpStub();
-    PCODE GetDynamicMethodEntryJumpStub();
-#endif // FIXUP_PRECODE_PREALLOCATE_DYNAMIC_METHOD_JUMP_STUBS
-
     PCODE GetTarget()
     {
         LIMITED_METHOD_DAC_CONTRACT;

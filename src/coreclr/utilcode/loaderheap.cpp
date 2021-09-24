@@ -2127,6 +2127,66 @@ BOOL LoaderHeapEvent::QuietValidate()
 
 #ifndef DACCESS_COMPILE
 
+void StubHeap::AllocateBlock()
+{
+    uint8_t* previousBlock = m_currentBlock;
+    m_numBlocks++;
+    fprintf(stderr, "@@@@@@@@@@@@@@@@ Allocated stub block #%d @@@@@@@@@@@@@@@\n", m_numBlocks);
+
+    m_currentBlock = (uint8_t*)ExecutableAllocator::Instance()->Reserve(BlockSize);
+    if (m_currentBlock == NULL)
+    {
+        throw 1;
+    }
+
+    // TCode
+    ExecutableAllocator::Instance()->Commit(m_currentBlock, 4096, true /* isExecutable */);
+    // TData
+    ExecutableAllocator::Instance()->Commit(m_currentBlock + 4096, 4096, false /* isExecutable */);
+    if (m_thunkSize != 0)
+    {
+        // TThunk
+        ExecutableAllocator::Instance()->Commit(m_currentBlock + 4096 + 4096, m_thunkBlockSize, false /* isExecutable */);
+    }
+
+    {
+        ExecutableWriterHolder<uint8_t> codePageWriterHolder(m_currentBlock, 4096);
+        m_codePageGenerator(codePageWriterHolder.GetRW());
+/*
+        // TODO: generate the code page - need some callback, this is just a quick hack
+        int dataOffset = 8192-7+16;
+        for (uint8_t* code = codePageWriterHolder.GetRW() + m_codeSize; code < codePageWriterHolder.GetRW() + 4096; code += m_codeSize)
+        {
+            code[0] = 0x4C;
+            code[1] = 0x8D;
+            code[2] = 0x15;
+            code[3] = dataOffset & 0xFF;
+            code[4] = dataOffset >> 8;
+            code[5] = 0x00;
+            code[6] = 0x00;
+            code[7] = 0xFF;
+            code[8] = 0x25;
+            code[9] = 0xF3;
+            code[10] = 0x0F;
+            code[11] = 0x00;
+            code[12] = 0x00;
+            code[13] = 0x90;
+            code[14] = 0x90;
+            code[15] = 0x90;
+            dataOffset += 16;
+        }
+*/            
+    }
+
+    StubHeapBlockHeader* pBlockHeader = (StubHeapBlockHeader*)(m_currentBlock + 4096);
+    new (pBlockHeader) StubHeapBlockHeader();
+    pBlockHeader->pNext = (StubHeapBlockHeader*)(previousBlock + 4096);
+
+    _ASSERTE(sizeof(StubHeapBlockHeader) <= m_dataSize);
+
+    m_freeLoc = m_currentBlock + m_codeSize;
+}
+
 AllocMemTracker::AllocMemTracker()
 {
     CONTRACTL

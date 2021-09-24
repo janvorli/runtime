@@ -428,6 +428,96 @@ inline CRITSEC_COOKIE CreateLoaderHeapLock()
     return ClrCreateCriticalSection(CrstLoaderHeap,CrstFlags(CRST_UNSAFE_ANYMODE | CRST_DEBUGGER_THREAD));
 }
 
+struct StubHeapBlockHeader
+{
+    StubHeapBlockHeader* pNext;
+    size_t blockHeaderMagic1 = (size_t)-1;
+
+    bool IsValid()
+    {
+        return blockHeaderMagic1 == (size_t)-1;
+    }
+};
+
+class StubHeap
+{
+    CRITSEC_COOKIE    m_CriticalSection;
+    size_t BlockSize;// = 4096 * (sizeof(TThunk) / sizeof(TCode)) + 4096 + 4096;
+    uint8_t* m_currentBlock;
+    uint8_t* m_freeLoc;
+    size_t m_codeSize;
+    size_t m_dataSize;
+    size_t m_thunkSize;
+    size_t m_thunkBlockSize;
+    //uint8_t* m_codePageTemplate;
+    void (*m_codePageGenerator)(uint8_t* pageBase);
+    int m_numBlocks = 0;
+
+    // TODO: free list - not needed for UMEntryThunk, it has its own list of free stubs. Maybe all stubs can do that?
+
+#ifndef DACCESS_COMPILE
+    // TODO: add support for the template page
+    void AllocateBlock();
+#endif
+public:
+#ifndef DACCESS_COMPILE
+    StubHeap(size_t thunkSize, size_t codeSize, size_t dataSize, void (*codePageGenerator)(uint8_t* pageBase))
+    : m_CriticalSection(CreateLoaderHeapLock()), m_codePageGenerator(codePageGenerator)
+    {
+        _ASSERTE(dataSize == codeSize);
+        // TThunk size has to be a multiple of TCode size
+        _ASSERTE(codeSize * (thunkSize / codeSize) == thunkSize);
+        // TODO: check that it is a power of 2 multiple?
+
+        m_codeSize = codeSize;
+        m_dataSize = dataSize;
+        m_thunkSize = thunkSize;
+
+
+        m_thunkBlockSize = 4096 * (thunkSize / codeSize);
+
+        BlockSize = m_thunkBlockSize + 4096 + 4096;
+
+        AllocateBlock();
+
+        // m_codePageTemplate = (uint8_t*)ExecutableAllocator::Instance()->Reserve(4096);
+        // ExecutableAllocator::Instance()->Commit(m_codePageTemplate, 4096, true /* isExecutable */);
+        // ExecutableWriterHolder<uint8_t> codePageWriterHolder(m_codePageTemplate, 4096);
+        // codePageGenerator(codePageWriterHolder.GetRW());
+    }
+
+    void* Allocate()
+    {
+        // TODO: interlocked allocation?
+        CRITSEC_Holder csh(m_CriticalSection);
+
+        if (m_freeLoc == m_currentBlock + 4096)
+        {
+            AllocateBlock();
+        }
+        uint8_t* result = m_freeLoc;
+        m_freeLoc += m_codeSize;
+
+        return (void*)result;
+    }
+#endif // DACCESS_COMPILE
+
+    virtual ~StubHeap()
+    {
+        WRAPPER_NO_CONTRACT;
+
+        // TODO: VirtualFree of all the blocks
+
+#ifndef DACCESS_COMPILE
+        if (m_CriticalSection != NULL)
+        {
+            ClrDeleteCriticalSection(m_CriticalSection);
+        }
+#endif // DACCESS_COMPILE
+    }
+
+};
+
 //===============================================================================
 // The LoaderHeap is the black-box heap and has a Backout() method but none
 // of the advanced features that let you control address ranges.
