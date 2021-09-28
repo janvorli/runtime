@@ -4964,27 +4964,14 @@ Thread* __stdcall CreateThreadBlockReturnHr(ComMethodFrame *pFrame)
 
 #ifdef HAS_FIXUP_PRECODE
 
-#ifdef HAS_FIXUP_PRECODE_CHUNKS
-TADDR FixupPrecode::GetMethodDesc()
-{
-    LIMITED_METHOD_CONTRACT;
-    SUPPORTS_DAC;
-
-    // This lookup is also manually inlined in PrecodeFixupThunk assembly code
-    TADDR base = *PTR_TADDR(GetBase());
-    if (base == NULL)
-        return NULL;
-    return base + (m_MethodDescChunkIndex * MethodDesc::ALIGNMENT);
-}
-#endif
-
 #ifdef DACCESS_COMPILE
 void FixupPrecode::EnumMemoryRegions(CLRDataEnumMemoryFlags flags)
 {
     SUPPORTS_DAC;
     DacEnumMemoryRegion(dac_cast<TADDR>(this), sizeof(FixupPrecode));
 
-    DacEnumMemoryRegion(GetBase(), sizeof(TADDR));
+    // TODO: enumerate the data part
+//    DacEnumMemoryRegion(GetBase(), sizeof(TADDR));
 }
 #endif // DACCESS_COMPILE
 
@@ -5059,91 +5046,91 @@ void NDirectImportPrecode::Init(NDirectImportPrecode* pPrecodeRX, MethodDesc* pM
 
 
 #ifdef HAS_FIXUP_PRECODE
-void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator, int iMethodDescChunkIndex /*=0*/, int iPrecodeChunkIndex /*=0*/)
+void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator)
 {
     WRAPPER_NO_CONTRACT;
+/*
+    m_lea[0] = 0x48;
+    m_lea[1] = 0x8D;
+    m_lea[2] = 0x05;
+    m_lea[3] = 0xF9;
+    m_lea[4] = 0x0F;
+    m_lea[5] = 0x00;
+    m_lea[6] = 0x00;
+    m_jmpRax[0] = 0xff;
+    m_jmpRax[1] = 0x20;
+*/
 
-    m_op   = X86_INSTR_CALL_REL32;       // call PrecodeFixupThunk
-    m_type = FixupPrecode::TypePrestub;
-
-    // Initialize chunk indices only if they are not initialized yet. This is necessary to make MethodDesc::Reset work.
-    if (m_PrecodeChunkIndex == 0)
-    {
-        _ASSERTE(FitsInU1(iPrecodeChunkIndex));
-        m_PrecodeChunkIndex = static_cast<BYTE>(iPrecodeChunkIndex);
-    }
-
-    if (iMethodDescChunkIndex != -1)
-    {
-        if (m_MethodDescChunkIndex == 0)
-        {
-            _ASSERTE(FitsInU1(iMethodDescChunkIndex));
-            m_MethodDescChunkIndex = static_cast<BYTE>(iMethodDescChunkIndex);
-        }
-
-        if (*(void**)GetBase() == NULL)
-            *(void**)GetBase() = (BYTE*)pMD - (iMethodDescChunkIndex * MethodDesc::ALIGNMENT);
-    }
+    *(MethodDesc**)((BYTE*)this + 4096 + 8) = pMD;
 
     _ASSERTE(GetMethodDesc() == (TADDR)pMD);
 
     PCODE target = (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk);
-    if (pLoaderAllocator != NULL)
-    {
-        m_rel32 = rel32UsingJumpStub(&pPrecodeRX->m_rel32, target, NULL /* pMD */, pLoaderAllocator);
-    }
+    *(PCODE*)((BYTE*)this + 4096) = target;
 }
+
+void FixupPrecode::GenerateCodePage(uint8_t* pageBase)
+{
+    pageBase[0] = 0x48;
+    pageBase[1] = 0x8D;
+    pageBase[2] = 0x05;
+    pageBase[3] = 0xF9;
+    pageBase[4] = 0x0F;
+    pageBase[5] = 0x00;
+    pageBase[6] = 0x00;
+    pageBase[7] = 0xff;
+    pageBase[8] = 0x20;
+    pageBase[9] = 0x90;
+    pageBase[10] = 0x90;
+    pageBase[11] = 0x90;
+    pageBase[12] = 0x90;
+    pageBase[13] = 0x90;
+    pageBase[14] = 0x90;
+    pageBase[15] = 0x90;
+
+    // Copy the same two instructions to the whole page
+    memcpy(pageBase + 16, pageBase, 16);
+    memcpy(pageBase + 32, pageBase, 32);
+    memcpy(pageBase + 64, pageBase, 64);
+    memcpy(pageBase + 128, pageBase, 128);
+    memcpy(pageBase + 256, pageBase, 256);
+    memcpy(pageBase + 512, pageBase, 512);
+    memcpy(pageBase + 1024, pageBase, 1024);
+    memcpy(pageBase + 2048, pageBase, 2048);
+}
+
 
 void FixupPrecode::ResetTargetInterlocked()
 {
     CONTRACTL
     {
-        THROWS;         // Creating a JumpStub could throw OutOfMemory
+        NOTHROW;
         GC_NOTRIGGER;
     }
     CONTRACTL_END;
 
-    FixupPrecode newValue = *this;
-    newValue.m_op = X86_INSTR_CALL_REL32; // call PrecodeFixupThunk
-    newValue.m_type = FixupPrecode::TypePrestub;
-
     PCODE target = (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk);
-    MethodDesc* pMD = (MethodDesc*)GetMethodDesc();
-
-    newValue.m_rel32 = rel32UsingJumpStub(&m_rel32, target, pMD);
 
     _ASSERTE(IS_ALIGNED(this, sizeof(INT64)));
 
-    ExecutableWriterHolder<FixupPrecode> precodeWriterHolder(this, sizeof(FixupPrecode));
-    FastInterlockExchangeLong((INT64*)precodeWriterHolder.GetRW(), *(INT64*)&newValue);
+    FastInterlockExchangeLong((INT64*)((BYTE*)this + 4096), (INT64)target);
 }
 
 BOOL FixupPrecode::SetTargetInterlocked(TADDR target, TADDR expected)
 {
     CONTRACTL
     {
-        THROWS;         // Creating a JumpStub could throw OutOfMemory
+        NOTHROW;
         GC_NOTRIGGER;
     }
     CONTRACTL_END;
 
-    INT64 oldValue = *(INT64*)this;
-    BYTE* pOldValue = (BYTE*)&oldValue;
-
     MethodDesc * pMD = (MethodDesc*)GetMethodDesc();
     g_IBCLogger.LogMethodPrecodeWriteAccess(pMD);
 
-    INT64 newValue = oldValue;
-    BYTE* pNewValue = (BYTE*)&newValue;
+    INT64 oldTarget = *(INT64*)((BYTE*)this + 4096);
 
-    if (pOldValue[OFFSETOF_PRECODE_TYPE_CALL_OR_JMP] == FixupPrecode::TypePrestub)
-    {
-        pNewValue[OFFSETOF_PRECODE_TYPE_CALL_OR_JMP] = FixupPrecode::Type;
-
-        pOldValue[offsetof(FixupPrecode, m_op)] = X86_INSTR_CALL_REL32;
-        pNewValue[offsetof(FixupPrecode, m_op)] = X86_INSTR_JMP_REL32;
-    }
-    else if (pOldValue[OFFSETOF_PRECODE_TYPE_CALL_OR_JMP] == FixupPrecode::Type)
+    if (oldTarget != (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk))
     {
 #ifdef FEATURE_CODE_VERSIONING
         // No change needed, jmp is already in place
@@ -5152,19 +5139,15 @@ BOOL FixupPrecode::SetTargetInterlocked(TADDR target, TADDR expected)
         return FALSE;
 #endif
     }
-    else
-    {
-        // Pre-existing code doesn't conform to the expectations for a FixupPrecode
-        return FALSE;
-    }
-
-    *(INT32*)(&pNewValue[offsetof(FixupPrecode, m_rel32)]) =
-            rel32UsingJumpStub(&m_rel32, target, pMD);
 
     _ASSERTE(IS_ALIGNED(this, sizeof(INT64)));
 
-    ExecutableWriterHolder<FixupPrecode> precodeWriterHolder(this, sizeof(FixupPrecode));
-    return FastInterlockCompareExchangeLong((INT64*)precodeWriterHolder.GetRW(), newValue, oldValue) == oldValue;
+    // if ((target & 0xffff) == 8)
+    // {
+    //     __debugbreak(); 
+    // }
+
+    return FastInterlockCompareExchangeLong((INT64*)((BYTE*)this + 4096), (INT64)target, oldTarget) == oldTarget;
 }
 
 #endif // HAS_FIXUP_PRECODE

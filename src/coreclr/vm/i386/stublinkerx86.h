@@ -617,73 +617,38 @@ struct FixupPrecode {
     // jmp NativeCode
     // db Type (pop edi)
 
-    BYTE            m_op;
-    INT32           m_rel32;
-    BYTE            m_type;
-    BYTE            m_MethodDescChunkIndex;
-    BYTE            m_PrecodeChunkIndex;
-#ifdef HAS_FIXUP_PRECODE_CHUNKS
-    // Fixup precode chunk is associated with MethodDescChunk. The layout of the fixup precode chunk is:
-    //
-    // FixupPrecode     Entrypoint PrecodeChunkIndex = 2
-    // FixupPrecode     Entrypoint PrecodeChunkIndex = 1
-    // FixupPrecode     Entrypoint PrecodeChunkIndex = 0
-    // TADDR            Base of MethodDescChunk
-#else
-    TADDR           m_pMethodDesc;
-#endif
+    BYTE            m_code[16];
+//    BYTE            m_lea[7];    // lea rax, [rip+4089]
+//   BYTE            m_jmpRax[2]; // jmp [rax]
+//    BYTE            m_pad[7];
 
-    void Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator, int iMethodDescChunkIndex = 0, int iPrecodeChunkIndex = 0);
+    void Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator);
 
-#ifdef HAS_FIXUP_PRECODE_CHUNKS
-    TADDR GetBase()
-    {
-        LIMITED_METHOD_CONTRACT;
-        SUPPORTS_DAC;
+    static void GenerateCodePage(uint8_t* pageBase);
 
-        return dac_cast<TADDR>(this) + (m_PrecodeChunkIndex + 1) * sizeof(FixupPrecode);
-    }
-
-    size_t GetSizeRW()
-    {
-        LIMITED_METHOD_CONTRACT;
-
-        return GetBase() + sizeof(void*) - dac_cast<TADDR>(this);
-    }
-
-    TADDR GetMethodDesc();
-#else // HAS_FIXUP_PRECODE_CHUNKS
     TADDR GetMethodDesc()
     {
         LIMITED_METHOD_CONTRACT;
-        return m_pMethodDesc;
+        return *(TADDR*)((BYTE*)this + 4096 + 8);
     }
-#endif // HAS_FIXUP_PRECODE_CHUNKS
 
     PCODE GetTarget()
     {
         LIMITED_METHOD_DAC_CONTRACT;
 
-        return rel32Decode(PTR_HOST_MEMBER_TADDR(FixupPrecode, this, m_rel32));
+        return *(PCODE*)((BYTE*)this + 4096);
     }
 
     void ResetTargetInterlocked();
     BOOL SetTargetInterlocked(TADDR target, TADDR expected);
 
-    static BOOL IsFixupPrecodeByASM(TADDR addr)
-    {
-        LIMITED_METHOD_CONTRACT;
-
-        return *dac_cast<PTR_BYTE>(addr) == X86_INSTR_JMP_REL32;
-    }
-
 #ifdef DACCESS_COMPILE
     void EnumMemoryRegions(CLRDataEnumMemoryFlags flags);
 #endif
 };
-IN_TARGET_32BIT(static_assert_no_msg(offsetof(FixupPrecode, m_type) == OFFSETOF_PRECODE_TYPE));
-IN_TARGET_64BIT(static_assert_no_msg(offsetof(FixupPrecode, m_op)   == OFFSETOF_PRECODE_TYPE);)
-IN_TARGET_64BIT(static_assert_no_msg(offsetof(FixupPrecode, m_type) == OFFSETOF_PRECODE_TYPE_CALL_OR_JMP);)
+// IN_TARGET_32BIT(static_assert_no_msg(offsetof(FixupPrecode, m_type) == OFFSETOF_PRECODE_TYPE));
+// IN_TARGET_64BIT(static_assert_no_msg(offsetof(FixupPrecode, m_op)   == OFFSETOF_PRECODE_TYPE);)
+// IN_TARGET_64BIT(static_assert_no_msg(offsetof(FixupPrecode, m_type) == OFFSETOF_PRECODE_TYPE_CALL_OR_JMP);)
 
 typedef DPTR(FixupPrecode) PTR_FixupPrecode;
 

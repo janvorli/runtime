@@ -486,17 +486,19 @@ public:
         // codePageGenerator(codePageWriterHolder.GetRW());
     }
 
-    void* Allocate()
+    void* Allocate(int count = 1)
     {
         // TODO: interlocked allocation?
         CRITSEC_Holder csh(m_CriticalSection);
 
-        if (m_freeLoc == m_currentBlock + 4096)
+        if (m_freeLoc + count * m_codeSize > m_currentBlock + 4096)
         {
+            // TODO: the count should be less than number of entries per block
+            // TODO: can we stop wasting potentially available slots?
             AllocateBlock();
         }
         uint8_t* result = m_freeLoc;
-        m_freeLoc += m_codeSize;
+        m_freeLoc += count * m_codeSize;
 
         return (void*)result;
     }

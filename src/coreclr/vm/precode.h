@@ -122,7 +122,7 @@ public:
 #endif // _AMD64
 
 #if defined(HAS_FIXUP_PRECODE) && (defined(TARGET_X86) || defined(TARGET_AMD64))
-        if (type == FixupPrecode::TypePrestub)
+        if (type == 0x48) //FixupPrecode::TypePrestub)
             type = FixupPrecode::Type;
 #endif
 
@@ -280,9 +280,7 @@ public:
     static SIZE_T SizeOfTemporaryEntryPoint(PrecodeType t)
     {
         LIMITED_METHOD_DAC_CONTRACT;
-#ifdef HAS_FIXUP_PRECODE_CHUNKS
-        _ASSERTE(t != PRECODE_FIXUP);
-#endif
+
         return ALIGN_UP(SizeOf(t), AlignOf(t));
     }
 
@@ -296,21 +294,6 @@ public:
 
 #ifdef DACCESS_COMPILE
     void EnumMemoryRegions(CLRDataEnumMemoryFlags flags);
-#endif
-
-#ifdef HAS_FIXUP_PRECODE_CHUNKS
-    static DWORD GetOffsetOfBase(PrecodeType t, DWORD count)
-    {
-        assert(t == PRECODE_FIXUP);
-        return (DWORD)(count * sizeof(FixupPrecode));
-    }
-
-    static DWORD GetOffset(PrecodeType t, DWORD index, DWORD count)
-    {
-        assert(t == PRECODE_FIXUP);
-        assert(index < count);
-        return (DWORD)((count - index - 1)* sizeof(FixupPrecode));
-    }
 #endif
 };
 

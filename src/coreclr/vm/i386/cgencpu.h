@@ -81,7 +81,6 @@ EXTERN_C void SinglecastDelegateInvokeStub();
 #define HAS_NDIRECT_IMPORT_PRECODE              1
 
 #define HAS_FIXUP_PRECODE                       1
-#define HAS_FIXUP_PRECODE_CHUNKS                1
 
 // ThisPtrRetBufPrecode one is necessary for closed delegates over static methods with return buffer
 #define HAS_THISPTR_RETBUF_PRECODE              1

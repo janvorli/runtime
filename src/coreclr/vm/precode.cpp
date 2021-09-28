@@ -169,19 +169,6 @@ BOOL Precode::IsCorrectMethodDesc(MethodDesc *  pMD)
     if (pMDfromPrecode == pMD)
         return TRUE;
 
-#ifdef HAS_FIXUP_PRECODE_CHUNKS
-    if (pMDfromPrecode == NULL)
-    {
-        PrecodeType precodeType = GetType();
-
-#ifdef HAS_FIXUP_PRECODE_CHUNKS
-        // We do not keep track of the MethodDesc in every kind of fixup precode
-        if (precodeType == PRECODE_FIXUP)
-            return TRUE;
-#endif
-    }
-#endif // HAS_FIXUP_PRECODE_CHUNKS
-
     return FALSE;
 }
 
@@ -223,12 +210,6 @@ Precode* Precode::GetPrecodeForTemporaryEntryPoint(TADDR temporaryEntryPoints, i
 {
     WRAPPER_NO_CONTRACT;
     PrecodeType t = PTR_Precode(temporaryEntryPoints)->GetType();
-#ifdef HAS_FIXUP_PRECODE_CHUNKS
-    if (t == PRECODE_FIXUP)
-    {
-        return PTR_Precode(temporaryEntryPoints + index * sizeof(FixupPrecode));
-    }
-#endif
     SIZE_T oneSize = SizeOfTemporaryEntryPoint(t);
     return PTR_Precode(temporaryEntryPoints + index * oneSize);
 }
@@ -238,14 +219,6 @@ SIZE_T Precode::SizeOfTemporaryEntryPoints(PrecodeType t, int count)
     WRAPPER_NO_CONTRACT;
     SUPPORTS_DAC;
 
-#ifdef HAS_FIXUP_PRECODE_CHUNKS
-    if (t == PRECODE_FIXUP)
-    {
-        SIZE_T size = count * sizeof(FixupPrecode) + sizeof(PTR_MethodDesc);
-
-        return size;
-    }
-#endif
     SIZE_T oneSize = SizeOfTemporaryEntryPoint(t);
     return count * oneSize;
 }
@@ -273,22 +246,20 @@ Precode* Precode::Allocate(PrecodeType t, MethodDesc* pMD,
     }
     CONTRACTL_END;
 
-    SIZE_T size;
+    SIZE_T size = Precode::SizeOf(t);
+    Precode* pPrecode;
 
-#ifdef HAS_FIXUP_PRECODE_CHUNKS
     if (t == PRECODE_FIXUP)
     {
-        size = sizeof(FixupPrecode) + sizeof(PTR_MethodDesc);
+        pPrecode = (Precode*)pLoaderAllocator->GetFixupPrecodeHeap()->Allocate();
+        pPrecode->Init(pPrecode, t, pMD, pLoaderAllocator);
     }
     else
-#endif
     {
-        size = Precode::SizeOf(t);
+        pPrecode = (Precode*)pamTracker->Track(pLoaderAllocator->GetPrecodeHeap()->AllocAlignedMem(size, AlignOf(t)));
+        ExecutableWriterHolder<Precode> precodeWriterHolder(pPrecode, size);
+        precodeWriterHolder.GetRW()->Init(pPrecode, t, pMD, pLoaderAllocator);
     }
-
-    Precode* pPrecode = (Precode*)pamTracker->Track(pLoaderAllocator->GetPrecodeHeap()->AllocAlignedMem(size, AlignOf(t)));
-    ExecutableWriterHolder<Precode> precodeWriterHolder(pPrecode, size);
-    precodeWriterHolder.GetRW()->Init(pPrecode, t, pMD, pLoaderAllocator);
 
     ClrFlushInstructionCache(pPrecode, size);
 
@@ -400,20 +371,9 @@ void Precode::Reset()
     WRAPPER_NO_CONTRACT;
 
     MethodDesc* pMD = GetMethodDesc();
-    SIZE_T size;
+
     PrecodeType t = GetType();
-#ifdef HAS_FIXUP_PRECODE_CHUNKS
-    if (t == PRECODE_FIXUP)
-    {
-        // The writeable size the Init method accesses is dynamic depending on
-        // the FixupPrecode members.
-        size = ((FixupPrecode*)this)->GetSizeRW();
-    }
-    else
-#endif
-    {
-        size = Precode::SizeOf(t);
-    }
+    SIZE_T size = Precode::SizeOf(t);
 
     ExecutableWriterHolder<Precode> precodeWriterHolder(this, size);
     precodeWriterHolder.GetRW()->Init(this, GetType(), pMD, pMD->GetLoaderAllocator());
@@ -493,49 +453,42 @@ TADDR Precode::AllocateTemporaryEntryPoints(MethodDescChunk *  pChunk,
         return NULL;
 #endif
 
-    TADDR temporaryEntryPoints = (TADDR)pamTracker->Track(pLoaderAllocator->GetPrecodeHeap()->AllocAlignedMem(totalSize, AlignOf(t)));
-    ExecutableWriterHolder<void> entryPointsWriterHolder((void*)temporaryEntryPoints, totalSize);
+    TADDR temporaryEntryPoints;
+    SIZE_T oneSize = SizeOfTemporaryEntryPoint(t);
+    MethodDesc * pMD = pChunk->GetFirstMethodDesc();
 
-#ifdef HAS_FIXUP_PRECODE_CHUNKS
     if (t == PRECODE_FIXUP)
     {
+        // This is unfortunate, as the entrypoints needs to be sequential.
+        temporaryEntryPoints = (TADDR)pLoaderAllocator->GetFixupPrecodeHeap()->Allocate(count);
         TADDR entryPoint = temporaryEntryPoints;
-        TADDR entryPointRW = (TADDR)entryPointsWriterHolder.GetRW();
-
-        MethodDesc * pMD = pChunk->GetFirstMethodDesc();
         for (int i = 0; i < count; i++)
         {
-            ((FixupPrecode *)entryPointRW)->Init((FixupPrecode*)entryPoint, pMD, pLoaderAllocator, pMD->GetMethodDescIndex(), (count - 1) - i);
+            ((Precode *)entryPoint)->Init((Precode *)entryPoint, t, pMD, pLoaderAllocator);
 
             _ASSERTE((Precode *)entryPoint == GetPrecodeForTemporaryEntryPoint(temporaryEntryPoints, i));
-            entryPoint += sizeof(FixupPrecode);
-            entryPointRW += sizeof(FixupPrecode);
+            entryPoint += oneSize;
 
             pMD = (MethodDesc *)(dac_cast<TADDR>(pMD) + pMD->SizeOf());
         }
-
-#ifdef FEATURE_PERFMAP
-        PerfMap::LogStubs(__FUNCTION__, "PRECODE_FIXUP", (PCODE)temporaryEntryPoints, count * sizeof(FixupPrecode));
-#endif
-        ClrFlushInstructionCache((LPVOID)temporaryEntryPoints, count * sizeof(FixupPrecode));
-
-        return temporaryEntryPoints;
     }
-#endif
-
-    SIZE_T oneSize = SizeOfTemporaryEntryPoint(t);
-    TADDR entryPoint = temporaryEntryPoints;
-    TADDR entryPointRW = (TADDR)entryPointsWriterHolder.GetRW();
-    MethodDesc * pMD = pChunk->GetFirstMethodDesc();
-    for (int i = 0; i < count; i++)
+    else
     {
-        ((Precode *)entryPointRW)->Init((Precode *)entryPoint, t, pMD, pLoaderAllocator);
+        temporaryEntryPoints = (TADDR)pamTracker->Track(pLoaderAllocator->GetPrecodeHeap()->AllocAlignedMem(totalSize, AlignOf(t)));
+        ExecutableWriterHolder<void> entryPointsWriterHolder((void*)temporaryEntryPoints, totalSize);
 
-        _ASSERTE((Precode *)entryPoint == GetPrecodeForTemporaryEntryPoint(temporaryEntryPoints, i));
-        entryPoint += oneSize;
-        entryPointRW += oneSize;
+        TADDR entryPoint = temporaryEntryPoints;
+        TADDR entryPointRW = (TADDR)entryPointsWriterHolder.GetRW();
+        for (int i = 0; i < count; i++)
+        {
+            ((Precode *)entryPointRW)->Init((Precode *)entryPoint, t, pMD, pLoaderAllocator);
 
-        pMD = (MethodDesc *)(dac_cast<TADDR>(pMD) + pMD->SizeOf());
+            _ASSERTE((Precode *)entryPoint == GetPrecodeForTemporaryEntryPoint(temporaryEntryPoints, i));
+            entryPoint += oneSize;
+            entryPointRW += oneSize;
+
+            pMD = (MethodDesc *)(dac_cast<TADDR>(pMD) + pMD->SizeOf());
+        }
     }
 
 #ifdef FEATURE_PERFMAP
@@ -554,14 +507,6 @@ void Precode::EnumMemoryRegions(CLRDataEnumMemoryFlags flags)
 {
     SUPPORTS_DAC;
     PrecodeType t = GetType();
-
-#ifdef HAS_FIXUP_PRECODE_CHUNKS
-    if (t == PRECODE_FIXUP)
-    {
-        AsFixupPrecode()->EnumMemoryRegions(flags);
-        return;
-    }
-#endif
 
     DacEnumMemoryRegion(GetStart(), SizeOf(t));
 }

@@ -2131,9 +2131,10 @@ void StubHeap::AllocateBlock()
 {
     uint8_t* previousBlock = m_currentBlock;
     m_numBlocks++;
-    fprintf(stderr, "@@@@@@@@@@@@@@@@ Allocated stub block #%d @@@@@@@@@@@@@@@\n", m_numBlocks);
+    //fprintf(stderr, "@@@@@@@@@@@@@@@@ Allocated stub block #%d @@@@@@@@@@@@@@@\n", m_numBlocks);
 
-    m_currentBlock = (uint8_t*)ExecutableAllocator::Instance()->Reserve(BlockSize);
+    // TODO: this needs to be updated to separate reservation and commiting
+    m_currentBlock = (uint8_t*)ExecutableAllocator::Instance()->Reserve(ALIGN_UP(BlockSize, 64 * 1024));
     if (m_currentBlock == NULL)
     {
         throw 1;
