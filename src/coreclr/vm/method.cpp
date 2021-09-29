@@ -2124,7 +2124,16 @@ MethodDesc* NonVirtualEntry2MethodDesc(PCODE entryPoint)
 
     RangeSection* pRS = ExecutionManager::FindCodeRange(entryPoint, ExecutionManager::GetScanFlags());
     if (pRS == NULL)
+    {
+        // TODO: this is a hack, probably need to update the ExecutionManager to track the new precodes
+        Precode* pPrecode = (Precode*)entryPoint;
+        if (pPrecode->GetType() == PRECODE_FIXUP)
+        {
+            return pPrecode->GetMethodDesc();
+        }
+
         return NULL;
+    }
 
     MethodDesc* pMD;
     if (pRS->pjit->JitCodeToMethodInfo(pRS, entryPoint, &pMD, NULL))

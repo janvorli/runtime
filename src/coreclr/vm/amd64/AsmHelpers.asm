@@ -249,8 +249,8 @@ NESTED_END JIT_RareDisableHelper, _TEXT
 ; EXTERN_C VOID __stdcall PrecodeFixupThunk();
 LEAF_ENTRY PrecodeFixupThunk, _TEXT
 
-        add     rax, 8      ; Move RAX to point to the MethodDesc
-        mov     METHODDESC_REGISTER, qword ptr [rax]
+        ;add     rax, 8      ; Move RAX to point to the MethodDesc
+        mov     METHODDESC_REGISTER, qword ptr [rax+8]
 
         ; Tail call to prestub
         jmp     ThePreStub
