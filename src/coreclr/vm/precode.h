@@ -122,8 +122,8 @@ public:
 #endif // _AMD64
 
 #if defined(HAS_FIXUP_PRECODE) && (defined(TARGET_X86) || defined(TARGET_AMD64))
-        if (type == 0x48) //FixupPrecode::TypePrestub)
-//        if (type == 0x4C) //FixupPrecode::TypePrestub)
+//        if (type == 0x48) //FixupPrecode::TypePrestub)
+        if (type == 0x4C) //FixupPrecode::TypePrestub)
             type = FixupPrecode::Type;
 #endif
 

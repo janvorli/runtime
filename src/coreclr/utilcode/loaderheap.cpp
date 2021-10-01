@@ -2127,18 +2127,34 @@ BOOL LoaderHeapEvent::QuietValidate()
 
 #ifndef DACCESS_COMPILE
 
+void StubHeap::ReserveBlocks()
+{
+    m_currentReservation = (uint8_t*)ExecutableAllocator::Instance()->Reserve(ALIGN_UP(BlockSize, 64 * 1024));
+    _ASSERTE(m_currentReservation != NULL);
+}
+
 void StubHeap::AllocateBlock()
 {
     uint8_t* previousBlock = m_currentBlock;
     m_numBlocks++;
     //fprintf(stderr, "@@@@@@@@@@@@@@@@ Allocated stub block #%d @@@@@@@@@@@@@@@\n", m_numBlocks);
 
-    // TODO: this needs to be updated to separate reservation and commiting
-    m_currentBlock = (uint8_t*)ExecutableAllocator::Instance()->Reserve(ALIGN_UP(BlockSize, 64 * 1024));
-    if (m_currentBlock == NULL)
+    if (m_currentBlock == NULL || (m_currentBlock + 2 * BlockSize) > m_currentReservation + 64 * 1024)
     {
-        throw 1;
+        ReserveBlocks();
+        m_currentBlock = m_currentReservation;
     }
+    else
+    {
+        m_currentBlock += BlockSize;
+    }
+
+    // TODO: this needs to be updated to separate reservation and commiting
+    // m_currentBlock = (uint8_t*)ExecutableAllocator::Instance()->Reserve(ALIGN_UP(BlockSize, 64 * 1024));
+    // if (m_currentBlock == NULL)
+    // {
+    //     throw 1;
+    // }
 
     // TCode
     ExecutableAllocator::Instance()->Commit(m_currentBlock, 4096, true /* isExecutable */);

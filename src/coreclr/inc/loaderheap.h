@@ -443,6 +443,7 @@ class StubHeap
 {
     CRITSEC_COOKIE    m_CriticalSection;
     size_t BlockSize;// = 4096 * (sizeof(TThunk) / sizeof(TCode)) + 4096 + 4096;
+    uint8_t* m_currentReservation;
     uint8_t* m_currentBlock;
     uint8_t* m_freeLoc;
     size_t m_codeSize;
@@ -457,6 +458,7 @@ class StubHeap
 
 #ifndef DACCESS_COMPILE
     // TODO: add support for the template page
+    void ReserveBlocks();
     void AllocateBlock();
 #endif
 public:

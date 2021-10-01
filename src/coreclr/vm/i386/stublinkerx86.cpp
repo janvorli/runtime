@@ -5078,7 +5078,7 @@ void FixupPrecode::GenerateCodePage(uint8_t* pageBase)
         0:  4c 8b 15 01 10 00 00    mov    r10,QWORD PTR [rip+0x1001]        # 1008 <_main+0x1008>
         7:  ff 25 f3 0f 00 00       jmp    QWORD PTR [rip+0xff3]        # 1000 <_main+0x1000>        
     */
-   /*
+  // /*
     pageBase[0] = 0x4C;
     pageBase[1] = 0x8B;
     pageBase[2] = 0x15;
@@ -5095,8 +5095,8 @@ void FixupPrecode::GenerateCodePage(uint8_t* pageBase)
     pageBase[13] = 0x90;
     pageBase[14] = 0x90;
     pageBase[15] = 0x90;
-    */
-///*
+//    */
+/*
     pageBase[0] = 0x48;
     pageBase[1] = 0x8D;
     pageBase[2] = 0x05;
@@ -5113,7 +5113,7 @@ void FixupPrecode::GenerateCodePage(uint8_t* pageBase)
     pageBase[13] = 0x90;
     pageBase[14] = 0x90;
     pageBase[15] = 0x90;
-//*/
+*/
     // Copy the same two instructions to the whole page
     memcpy(pageBase + 16, pageBase, 16);
     memcpy(pageBase + 32, pageBase, 32);
