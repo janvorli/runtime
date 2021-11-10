@@ -672,6 +672,17 @@ void EEStartupHelper()
         CallCountingManager::StaticInitialize();
         OnStackReplacementManager::StaticInitialize();
 
+#ifndef TARGET_UNIX
+        {
+            // Record mscorwks geometry
+            PEDecoder pe(GetClrModuleBase());
+
+            g_runtimeLoadedBaseAddress = (SIZE_T)pe.GetBase();
+            g_runtimeVirtualSize = (SIZE_T)pe.GetVirtualSize();
+            ExecutableAllocator::InitCodeAllocHint(g_runtimeLoadedBaseAddress, g_runtimeVirtualSize, GetRandomInt(64));
+        }
+#endif // !TARGET_UNIX
+
         InitThreadManager();
         STRESS_LOG0(LF_STARTUP, LL_ALWAYS, "Returned successfully from InitThreadManager");
 

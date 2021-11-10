@@ -263,6 +263,7 @@ public:
 
 public:
     BOOL                m_fExplicitControl;  // Am I a LoaderHeap or an ExplicitControlLoaderHeap?
+    void (*m_codePageGenerator)(uint8_t* pageBase);
 
 #ifdef DACCESS_COMPILE
 public:
@@ -283,7 +284,9 @@ protected:
                        const BYTE* dwReservedRegionAddress,
                        SIZE_T dwReservedRegionSize,
                        RangeList *pRangeList = NULL,
-                       BOOL fMakeExecutable = FALSE);
+                       BOOL fMakeExecutable = FALSE,
+                       BOOL fSeparateRWData = FALSE,
+                       void (*codePageGenerator)(uint8_t* pageBase) = NULL);
 
     ~UnlockedLoaderHeap();
 #endif
@@ -443,9 +446,9 @@ class StubHeap
 {
     CRITSEC_COOKIE    m_CriticalSection;
     size_t BlockSize;// = 4096 * (sizeof(TThunk) / sizeof(TCode)) + 4096 + 4096;
-    uint8_t* m_currentReservation;
-    uint8_t* m_currentBlock;
-    uint8_t* m_freeLoc;
+    uint8_t* m_currentReservation = NULL;
+    uint8_t* m_currentBlock = NULL;
+    uint8_t* m_freeLoc = NULL;
     size_t m_codeSize;
     size_t m_dataSize;
     size_t m_thunkSize;
@@ -538,13 +541,17 @@ public:
                DWORD dwCommitBlockSize,
                RangeList *pRangeList = NULL,
                BOOL fMakeExecutable = FALSE,
-               BOOL fUnlocked = FALSE
+               BOOL fUnlocked = FALSE,
+               BOOL fSeparateRWData = FALSE,
+               void (*codePageGenerator)(uint8_t* pageBase) = NULL
                )
       : UnlockedLoaderHeap(dwReserveBlockSize,
                            dwCommitBlockSize,
                            NULL, 0,
                            pRangeList,
-                           fMakeExecutable),
+                           fMakeExecutable,
+                           fSeparateRWData,
+                           codePageGenerator),
         m_CriticalSection(fUnlocked ? NULL : CreateLoaderHeapLock())
     {
         WRAPPER_NO_CONTRACT;
@@ -558,14 +565,17 @@ public:
                SIZE_T dwReservedRegionSize,
                RangeList *pRangeList = NULL,
                BOOL fMakeExecutable = FALSE,
-               BOOL fUnlocked = FALSE
+               BOOL fUnlocked = FALSE,
+               BOOL fSeparateRWData = FALSE,
+               void (*codePageGenerator)(uint8_t* pageBase) = NULL
                )
       : UnlockedLoaderHeap(dwReserveBlockSize,
                            dwCommitBlockSize,
                            dwReservedRegionAddress,
                            dwReservedRegionSize,
                            pRangeList,
-                           fMakeExecutable),
+                           fMakeExecutable,
+                           fSeparateRWData, codePageGenerator),
         m_CriticalSection(fUnlocked ? NULL : CreateLoaderHeapLock())
     {
         WRAPPER_NO_CONTRACT;

@@ -983,10 +983,10 @@ static void UpdateWriteBarrierState(bool skipEphemeralCheck)
 {
     BYTE *writeBarrierCodeStart = GetWriteBarrierCodeLocation((void*)JIT_PatchedCodeStart);
     BYTE *writeBarrierCodeStartRW = writeBarrierCodeStart;
-    ExecutableWriterHolder<BYTE> writeBarrierWriterHolder;
+    ExecutableWriterHolderC<BYTE> writeBarrierWriterHolder;
     if (IsWriteBarrierCopyEnabled())
     {
-        writeBarrierWriterHolder = ExecutableWriterHolder<BYTE>(writeBarrierCodeStart, (BYTE*)JIT_PatchedCodeLast - (BYTE*)JIT_PatchedCodeStart);
+        writeBarrierWriterHolder = ExecutableWriterHolderC<BYTE>::Create(writeBarrierCodeStart, (BYTE*)JIT_PatchedCodeLast - (BYTE*)JIT_PatchedCodeStart);
         writeBarrierCodeStartRW = writeBarrierWriterHolder.GetRW();
     }
     JIT_UpdateWriteBarrierState(GCHeapUtilities::IsServerHeap(), writeBarrierCodeStartRW - writeBarrierCodeStart);

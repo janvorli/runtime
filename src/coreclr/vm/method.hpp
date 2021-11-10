@@ -283,8 +283,8 @@ public:
     {
         CONTRACTL
         {
-            THROWS;
-            GC_TRIGGERS;
+            NOTHROW;
+            GC_NOTRIGGER;
             MODE_ANY;
         }
         CONTRACTL_END

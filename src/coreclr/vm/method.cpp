@@ -534,7 +534,6 @@ PTR_PCODE MethodDesc::GetAddrOfSlot()
     CONTRACTL_END;
 
     // Keep implementations of MethodDesc::GetMethodEntryPoint and MethodDesc::GetAddrOfSlot in sync!
-
     if (HasNonVtableSlot())
     {
         SIZE_T size = GetBaseSize();
@@ -2342,8 +2341,8 @@ BOOL MethodDesc::MayHaveNativeCode()
 {
     CONTRACTL
     {
-        THROWS;
-        GC_TRIGGERS;
+        NOTHROW;
+        GC_NOTRIGGER;
         MODE_ANY;
     }
     CONTRACTL_END

@@ -531,6 +531,8 @@ typedef DPTR(const CallCountingStub) PTR_CallCountingStub;
 
 class CallCountingStub
 {
+    const UINT8 m_code[24];
+
 public:
     static const SIZE_T Alignment = sizeof(void *);
 
@@ -551,6 +553,18 @@ public:
 #endif // !DACCESS_COMPILE
 
 public:
+
+#ifndef DACCESS_COMPILE
+    void Initialize(PCODE targetForMethod, CallCount* remainingCallCountCell)
+    {
+        *(CallCount**)((BYTE*)this + 4096) = remainingCallCountCell;
+        *(PCODE*)((BYTE*)this + 4096 + 8) = targetForMethod;
+        *(PCODE*)((BYTE*)this + 4096 + 16) = CallCountingStub::TargetForThresholdReached;
+    }
+#endif // !DACCESS_COMPILE
+
+    static void GenerateCodePage(uint8_t* pageBase);
+
     PTR_CallCount GetRemainingCallCountCell() const;
     PCODE GetTargetForMethod() const;
 
@@ -583,6 +597,7 @@ protected:
     DISABLE_COPY(CallCountingStub);
 };
 
+/*
 ////////////////////////////////////////////////////////////////
 // CallCountingStubShort
 
@@ -796,7 +811,7 @@ public:
     DISABLE_COPY(CallCountingStubLong);
 };
 #pragma pack(pop)
-
+*/
 ////////////////////////////////////////////////////////////////
 // CallCountingStub definitions
 
@@ -805,32 +820,28 @@ inline const CallCountingStub *CallCountingStub::From(TADDR stubIdentifyingToken
 {
     WRAPPER_NO_CONTRACT;
     _ASSERTE(stubIdentifyingToken != NULL);
+    // _ASSERTE(Is(stubIdentifyingToken));
+    // _ASSERTE(stubIdentifyingToken % Alignment == offsetof(CallCountingStubLong, m_alignmentPadding[0]) % Alignment);
 
-    return
-        CallCountingStubShort::Is(stubIdentifyingToken)
-            ? (const CallCountingStub *)CallCountingStubShort::From(stubIdentifyingToken)
-            : (const CallCountingStub *)CallCountingStubLong::From(stubIdentifyingToken);
+    const CallCountingStub *stub =
+        (const CallCountingStub *)(stubIdentifyingToken - sizeof(CallCountingStub));
+    _ASSERTE(IS_ALIGNED(stub, Alignment));
+    return stub;
 }
 #endif
 
 inline PTR_CallCount CallCountingStub::GetRemainingCallCountCell() const
 {
     WRAPPER_NO_CONTRACT;
-    static_assert_no_msg(
-        offsetof(CallCountingStubShort, m_remainingCallCountCell) ==
-        offsetof(CallCountingStubLong, m_remainingCallCountCell));
-
-    return PTR_CallCount(dac_cast<PTR_CallCountingStubShort>(this)->m_remainingCallCountCell);
+    PTR_PTR_VOID cc = dac_cast<PTR_PTR_VOID>((UINT8*)this + 4096);
+    return dac_cast<PTR_CallCount>(*cc);
 }
 
 inline PCODE CallCountingStub::GetTargetForMethod() const
 {
     WRAPPER_NO_CONTRACT;
 
-    return
-        CallCountingStubShort::Is(PTR_CallCountingStub(this))
-            ? CallCountingStubShort::From(PTR_CallCountingStub(this))->GetTargetForMethod()
-            : CallCountingStubLong::From(PTR_CallCountingStub(this))->GetTargetForMethod();
+    return *dac_cast<PTR_PCODE>((UINT8*)this + 4096 + 8);
 }
 
 ////////////////////////////////////////////////////////////////

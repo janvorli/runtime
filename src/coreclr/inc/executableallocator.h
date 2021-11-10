@@ -15,6 +15,8 @@
 
 #ifndef DACCESS_COMPILE
 
+#define LOG_STATISTICS
+
 // This class is responsible for allocation of all the executable memory in the runtime.
 class ExecutableAllocator
 {
@@ -49,7 +51,17 @@ class ExecutableAllocator
     };
 
     typedef void (*FatalErrorHandler)(UINT errorCode, LPCWSTR pszMessage);
+#ifdef LOG_STATISTICS
+    static int64_t g_mapTimeSum;
+    static int64_t g_mapTimeWithLockSum;
+    static int64_t g_unmapTimeSum;
+    static int64_t g_unmapTimeWithLockSum;
+    static int64_t g_mapFindRXTimeSum;
+    static int64_t g_mapCreateTimeSum;
 
+    static int64_t g_releaseCount;
+    static int64_t g_reserveCount;
+#endif
     // Instance of the allocator
     static ExecutableAllocator* g_instance;
 
@@ -142,7 +154,27 @@ class ExecutableAllocator
     // Initialize the allocator instance
     bool Initialize();
 
+#ifdef LOG_STATISTICS
+    static CRITSEC_COOKIE s_LoggerCriticalSection;
+
+    struct LogEntry
+    {
+        const char* source;
+        const char* function;
+        int line;
+        int count;
+    };
+
+    static LogEntry s_usageLog[256];
+    static int s_logMaxIndex;
+#endif
+
 public:
+
+#ifdef LOG_STATISTICS
+    static void LogUsage(const char* source, int line, const char* function);
+    static void DumpHolderUsage();
+#endif
 
     // Return the ExecuteAllocator singleton instance
     static ExecutableAllocator* Instance();
@@ -200,6 +232,8 @@ public:
     // Unmap the RW mapping at the specified address
     void UnmapRW(void* pRW);
 };
+
+#define ExecutableWriterHolder ExecutableWriterHolderC
 
 // Holder class to map read-execute memory as read-write so that it can be modified without using read-write-execute mapping.
 // At the moment the implementation is dummy, returning the same addresses for both cases and expecting them to be read-write-execute.
@@ -274,6 +308,18 @@ public:
     {
         return m_addressRW;
     }
+
+    static ExecutableWriterHolder Create(T* addressRX, size_t size)
+    {
+        return ExecutableWriterHolder(addressRX, size);
+    }
 };
+
+#ifdef LOG_STATISTICS
+#undef ExecutableWriterHolder
+#define ExecutableWriterHolder ExecutableAllocator::LogUsage(__FILE__, __LINE__, __FUNCTION__); ExecutableWriterHolderC
+#else
+#define ExecutableWriterHolder ExecutableWriterHolderC
+#endif
 
 #endif // !DACCESS_COMPILE

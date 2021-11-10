@@ -186,8 +186,13 @@ BOOL Precode::IsPointingToPrestub(PCODE target)
         return TRUE;
 
 #ifdef HAS_FIXUP_PRECODE
+#ifdef INDIRECTION_SLOT_FROM_JIT
+    if (IsPointingTo(target, ((PCODE)this + 6)))
+        return TRUE;
+#else
     if (IsPointingTo(target, GetEEFuncEntryPoint(PrecodeFixupThunk)))
         return TRUE;
+#endif
 #endif
 
     return FALSE;
@@ -375,9 +380,16 @@ void Precode::Reset()
     PrecodeType t = GetType();
     SIZE_T size = Precode::SizeOf(t);
 
-    ExecutableWriterHolder<Precode> precodeWriterHolder(this, size);
-    precodeWriterHolder.GetRW()->Init(this, GetType(), pMD, pMD->GetLoaderAllocator());
-    ClrFlushInstructionCache(this, SizeOf());
+    if (t == PRECODE_FIXUP)
+    {
+        Init(this, t, pMD, pMD->GetLoaderAllocator());
+    }
+    else
+    {
+        ExecutableWriterHolder<Precode> precodeWriterHolder(this, size);
+        precodeWriterHolder.GetRW()->Init(this, t, pMD, pMD->GetLoaderAllocator());
+        ClrFlushInstructionCache(this, SizeOf());
+    }
 }
 
 /* static */

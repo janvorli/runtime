@@ -418,7 +418,7 @@ void GCCoverageInfo::SprinkleBreakpoints(
 #if (defined(TARGET_X86) || defined(TARGET_AMD64)) && USE_DISASSEMBLER
 
     BYTE * codeStart = (BYTE *)pCode;
-    ExecutableWriterHolder<BYTE> codeWriterHolder;
+    ExecutableWriterHolderC<BYTE> codeWriterHolder;
     size_t writeableOffset;
 
     memcpy(saveAddr, codeStart, codeSize);
@@ -432,7 +432,7 @@ void GCCoverageInfo::SprinkleBreakpoints(
     }
     else
     {
-        codeWriterHolder = ExecutableWriterHolder<BYTE>(codeStart, codeSize);
+        codeWriterHolder = ExecutableWriterHolderC<BYTE>::Create(codeStart, codeSize);
         writeableOffset = codeWriterHolder.GetRW() - codeStart;
     }
 

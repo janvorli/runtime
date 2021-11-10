@@ -348,10 +348,10 @@ void CopyWriteBarrier(PCODE dstCode, PCODE srcCode, PCODE endCode)
 
     size_t size = (PBYTE)end - (PBYTE)src;
 
-    ExecutableWriterHolder<void> writeBarrierWriterHolder;
+    ExecutableWriterHolderC<void> writeBarrierWriterHolder;
     if (IsWriteBarrierCopyEnabled())
     {
-        writeBarrierWriterHolder = ExecutableWriterHolder<void>((void*)dst, size);
+        writeBarrierWriterHolder = ExecutableWriterHolderC<void>::Create((void*)dst, size);
         dst = (TADDR)writeBarrierWriterHolder.GetRW();
     }
 
@@ -458,10 +458,10 @@ void UpdateGCWriteBarriers(bool postGrow = false)
         if(to)
         {
             to = (PBYTE)PCODEToPINSTR((PCODE)GetWriteBarrierCodeLocation(to));
-            ExecutableWriterHolder<BYTE> barrierWriterHolder;
+            ExecutableWriterHolderC<BYTE> barrierWriterHolder;
             if (IsWriteBarrierCopyEnabled())
             {
-                barrierWriterHolder = ExecutableWriterHolder<BYTE>(to, barrierSize);
+                barrierWriterHolder = ExecutableWriterHolderC<BYTE>::Create(to, barrierSize);
                 to = barrierWriterHolder.GetRW();
             }
             GWB_PATCH_OFFSET(g_lowest_address);

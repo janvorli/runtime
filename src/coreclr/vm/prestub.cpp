@@ -193,6 +193,8 @@ PCODE MethodDesc::DoBackpatch(MethodTable * pMT, MethodTable *pDispatchingMT, BO
 
     // The owning slot has been updated already, so there is no need to backpatch it
     _ASSERTE(pMT->GetSlot(GetSlot()) == pTarget);
+    // TODO: HACK!
+    //pMT->SetSlot(GetSlot(), pTarget);
 
     if (pDispatchingMT != NULL && pDispatchingMT != pMT)
     {

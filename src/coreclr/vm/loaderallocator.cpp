@@ -1194,7 +1194,11 @@ void LoaderAllocator::Init(BaseDomain *pDomain, BYTE *pExecutableHeapMemory)
 
     m_pPrecodeHeap = new (&m_PrecodeHeapInstance) CodeFragmentHeap(this, STUB_CODE_BLOCK_PRECODE);
 
+#if defined(INDIRECT_JUMP_PERF_TEST) || defined(INDIRECTION_SLOT_FROM_JIT)
+    m_pFixupPrecodeHeap = new (&m_FixupPrecodeHeapInstance) StubHeap(0, sizeof(FixupPrecode), 24, FixupPrecode::GenerateCodePage);
+#else
     m_pFixupPrecodeHeap = new (&m_FixupPrecodeHeapInstance) StubHeap(0, sizeof(FixupPrecode), 16, FixupPrecode::GenerateCodePage);
+#endif
     // Initialize the EE marshaling data to NULL.
     m_pMarshalingData = NULL;
 

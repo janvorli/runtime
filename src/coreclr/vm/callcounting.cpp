@@ -118,6 +118,7 @@ PTR_CallCount CallCountingManager::CallCountingInfo::GetRemainingCallCountCell()
 {
     WRAPPER_NO_CONTRACT;
     _ASSERTE(m_stage != Stage::Disabled);
+    //_ASSERTE(m_callCountingStub != nullptr);
 
     return &m_remainingCallCount;
 }
@@ -257,47 +258,94 @@ const CallCountingStub *CallCountingManager::CallCountingStubAllocator::Allocate
         heap = AllocateHeap();
     }
 
-    SIZE_T sizeInBytes;
-    const CallCountingStub *stub;
-    do
-    {
-        bool forceLongStub = false;
-    #if defined(_DEBUG) && defined(TARGET_AMD64)
-        if (s_callCountingStubCount % 2 == 0)
-        {
-            forceLongStub = true;
-        }
-    #endif
-
-        if (!forceLongStub)
-        {
-            sizeInBytes = sizeof(CallCountingStubShort);
-            AllocMemHolder<void> allocationAddressHolder(heap->AllocAlignedMem(sizeInBytes, CallCountingStub::Alignment));
-        #ifdef TARGET_AMD64
-            if (CallCountingStubShort::CanUseFor(allocationAddressHolder, targetForMethod))
-        #endif
-            {
-                ExecutableWriterHolder<void> writerHolder(allocationAddressHolder, sizeInBytes);
-                new(writerHolder.GetRW()) CallCountingStubShort((CallCountingStubShort*)(void*)allocationAddressHolder, remainingCallCountCell, targetForMethod);
-                stub = (CallCountingStub*)(void*)allocationAddressHolder;
-                allocationAddressHolder.SuppressRelease();
-                break;
-            }
-        }
-
-    #ifdef TARGET_AMD64
-        sizeInBytes = sizeof(CallCountingStubLong);
-        void *allocationAddress = (void *)heap->AllocAlignedMem(sizeInBytes, CallCountingStub::Alignment);
-        ExecutableWriterHolder<void> writerHolder(allocationAddress, sizeInBytes);
-        new(writerHolder.GetRW()) CallCountingStubLong(remainingCallCountCell, targetForMethod);
-        stub = (CallCountingStub*)allocationAddress;
-    #else
-        UNREACHABLE();
-    #endif
-    } while (false);
+    SIZE_T sizeInBytes = sizeof(CallCountingStub);
+    AllocMemHolder<void> allocationAddressHolder(heap->AllocAlignedMem(sizeInBytes, 1)); //CallCountingStub::Alignment));
+    CallCountingStub *stub = (CallCountingStub*)(void*)allocationAddressHolder;
+    allocationAddressHolder.SuppressRelease();
+    stub->Initialize(targetForMethod, remainingCallCountCell);
 
     ClrFlushInstructionCache(stub, sizeInBytes);
     return stub;
+}
+
+void CallCountingStub::GenerateCodePage(uint8_t* pageBase)
+{
+/*
+    0:  66 ff 0d f9 0f 00 00    dec    WORD PTR [rip+0xff9]        # 1000 <l0+0xff1>
+    7:  74 06                   je     f <l0>
+    9:  ff 25 f9 0f 00 00       jmp    QWORD PTR [rip+0xff9]        # 1008 <l0+0xff9>
+    000000000000000f <l0>:
+    f:  ff 15 fb 0f 00 00       call   QWORD PTR [rip+0xffb]        # 1010 <l0+0x1001>
+    15: cc                      int3
+
+
+    0:  48 8b 05 f9 0f 00 00    mov    rax,QWORD PTR [rip+0xff9]        # 1000 <l0+0xfee>
+    7:  66 ff 08                dec    WORD PTR [rax]
+    a:  74 06                   je     12 <l0>
+    c:  ff 25 f6 0f 00 00       jmp    QWORD PTR [rip+0xff6]        # 1008 <l0+0xff6>
+    0000000000000012 <l0>:
+    12: ff 15 f8 0f 00 00       call   QWORD PTR [rip+0xff8]        # 1010 <l0+0xffe>
+*/
+    pageBase[0] = 0x48;
+    pageBase[1] = 0x8b;
+    pageBase[2] = 0x05;
+    pageBase[3] = 0xf9;
+    pageBase[4] = 0x0f;
+    pageBase[5] = 0x00;
+    pageBase[6] = 0x00;
+    pageBase[7] = 0x66;
+    pageBase[8] = 0xff;
+    pageBase[9] = 0x08;
+    pageBase[10] = 0x74;
+    pageBase[11] = 0x06;
+    pageBase[12] = 0xff;
+    pageBase[13] = 0x25;
+    pageBase[14] = 0xf6;
+    pageBase[15] = 0x0f;
+    pageBase[16] = 0x00;
+    pageBase[17] = 0x00;
+    pageBase[18] = 0xff;
+    pageBase[19] = 0x15;
+    pageBase[20] = 0xf8;
+    pageBase[21] = 0x0f;
+    pageBase[22] = 0x00;
+    pageBase[23] = 0x00;
+
+/*
+    pageBase[0] = 0x66;
+    pageBase[1] = 0xff;
+    pageBase[2] = 0x0d;
+    pageBase[3] = 0xf9;
+    pageBase[4] = 0x0f;
+    pageBase[5] = 0x00;
+    pageBase[6] = 0x00;
+    pageBase[7] = 0x74;
+    pageBase[8] = 0x06;
+    pageBase[9] = 0xff;
+    pageBase[10] = 0x25;
+    pageBase[11] = 0xf9;
+    pageBase[12] = 0x0f;
+    pageBase[13] = 0x00;
+    pageBase[14] = 0x00;
+    pageBase[15] = 0xff;
+    pageBase[16] = 0x15;
+    pageBase[17] = 0xfb;
+    pageBase[18] = 0x0f;
+    pageBase[19] = 0x00;
+    pageBase[20] = 0x00;
+    pageBase[21] = 0xcc;
+    pageBase[22] = 0x90;
+    pageBase[23] = 0x90;
+*/
+    // Copy the same two instructions to the whole page
+    memcpy(pageBase + 24, pageBase, 24);
+    memcpy(pageBase + 48, pageBase, 48);
+    memcpy(pageBase + 96, pageBase, 96);
+    memcpy(pageBase + 192, pageBase, 192);
+    memcpy(pageBase + 384, pageBase, 384);
+    memcpy(pageBase + 768, pageBase, 768);
+    memcpy(pageBase + 1536, pageBase, 1536);
+    memcpy(pageBase + 3072, pageBase, 1008);
 }
 
 NOINLINE LoaderHeap *CallCountingManager::CallCountingStubAllocator::AllocateHeap()
@@ -312,7 +360,7 @@ NOINLINE LoaderHeap *CallCountingManager::CallCountingStubAllocator::AllocateHea
 
     _ASSERTE(m_heap == nullptr);
 
-    LoaderHeap *heap = new LoaderHeap(0, 0, &m_heapRangeList, true /* fMakeExecutable */, true /* fUnlocked */);
+    LoaderHeap *heap = new LoaderHeap(0, 0, &m_heapRangeList, true /* fMakeExecutable */, true /* fUnlocked */, true /* fSeparateRWData */, CallCountingStub::GenerateCodePage);
     m_heap = heap;
     return heap;
 }

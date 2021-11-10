@@ -394,6 +394,10 @@ HRESULT CorHost2::ExecuteAssembly(DWORD dwAppDomainId,
     UNINSTALL_UNWIND_AND_CONTINUE_HANDLER;
     UNINSTALL_UNHANDLED_MANAGED_EXCEPTION_TRAP;
 
+#ifdef LOG_STATISTICS
+    ExecutableAllocator::DumpHolderUsage();
+#endif
+
 ErrExit:
 
     return hr;

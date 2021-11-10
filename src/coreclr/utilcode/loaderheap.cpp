@@ -9,6 +9,7 @@
 #include "eventtracebase.h"
 
 #define LHF_EXECUTABLE  0x1
+#define LHF_SEPARATE_RW_DATA 0x2
 
 #ifndef DACCESS_COMPILE
 
@@ -729,10 +730,10 @@ struct LoaderHeapFreeBlock
 #endif
 
             void* pMemRW = pMem;
-            ExecutableWriterHolder<void> memWriterHolder;
+            ExecutableWriterHolderC<void> memWriterHolder;
             if (pHeap->IsExecutable())
             {
-                memWriterHolder = ExecutableWriterHolder<void>(pMem, dwTotalSize);
+                memWriterHolder = ExecutableWriterHolderC<void>::Create(pMem, dwTotalSize);
                 pMemRW = memWriterHolder.GetRW();
             }
 
@@ -793,10 +794,10 @@ struct LoaderHeapFreeBlock
             if (pResult)
             {
                 void *pResultRW = pResult;
-                ExecutableWriterHolder<void> resultWriterHolder;
+                ExecutableWriterHolderC<void> resultWriterHolder;
                 if (pHeap->IsExecutable())
                 {
-                    resultWriterHolder = ExecutableWriterHolder<void>(pResult, dwSize);
+                    resultWriterHolder = ExecutableWriterHolderC<void>::Create(pResult, dwSize);
                     pResultRW = resultWriterHolder.GetRW();
                 }
                 // Callers of loaderheap assume allocated memory is zero-inited so we must preserve this invariant!
@@ -828,10 +829,10 @@ struct LoaderHeapFreeBlock
                 size_t dwCombinedSize = dwSize + pNextBlock->m_dwSize;
                 LoaderHeapFreeBlock *pNextNextBlock = pNextBlock->m_pNext;
                 void *pMemRW = pFreeBlock->m_pBlockAddress;
-                ExecutableWriterHolder<void> memWriterHolder;
+                ExecutableWriterHolderC<void> memWriterHolder;
                 if (pHeap->IsExecutable())
                 {
-                    memWriterHolder = ExecutableWriterHolder<void>(pFreeBlock->m_pBlockAddress, dwCombinedSize);
+                    memWriterHolder = ExecutableWriterHolderC<void>::Create(pFreeBlock->m_pBlockAddress, dwCombinedSize);
                     pMemRW = memWriterHolder.GetRW();
                 }
                 INDEBUG(memset(pMemRW, 0xcc, dwCombinedSize);)
@@ -883,7 +884,7 @@ inline size_t AllocMem_TotalSize(size_t dwRequestedSize, UnlockedLoaderHeap *pHe
     if (!pHeap->m_fExplicitControl)
     {
 #ifdef _DEBUG
-        dwSize += sizeof(LoaderHeapValidationTag);
+//        dwSize += sizeof(LoaderHeapValidationTag);
 #endif
     }
     dwSize = ((dwSize + ALLOC_ALIGN_CONSTANT) & (~ALLOC_ALIGN_CONSTANT));
@@ -919,7 +920,9 @@ UnlockedLoaderHeap::UnlockedLoaderHeap(DWORD dwReserveBlockSize,
                                        const BYTE* dwReservedRegionAddress,
                                        SIZE_T dwReservedRegionSize,
                                        RangeList *pRangeList,
-                                       BOOL fMakeExecutable)
+                                       BOOL fMakeExecutable,
+                                       BOOL fSeparateRWData,
+                                       void (*codePageGenerator)(uint8_t* pageBase))
 {
     CONTRACTL
     {
@@ -956,6 +959,14 @@ UnlockedLoaderHeap::UnlockedLoaderHeap(DWORD dwReserveBlockSize,
 
     if (fMakeExecutable)
         m_Options                |= LHF_EXECUTABLE;
+
+    _ASSERTE(fMakeExecutable || !fSeparateRWData);
+
+    if (fSeparateRWData)
+        m_Options                |= LHF_SEPARATE_RW_DATA;
+
+    _ASSERTE(!fSeparateRWData || codePageGenerator != NULL);
+    m_codePageGenerator = codePageGenerator;
 
     m_pFirstFreeBlock            = NULL;
 
@@ -1154,8 +1165,14 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
         pData.SuppressRelease();
     }
 
+    size_t dwSizeToCommitPart = dwSizeToCommit;
+    if (m_Options & LHF_SEPARATE_RW_DATA)
+    {
+        dwSizeToCommitPart /= 2;
+    }
+
     // Commit first set of pages, since it will contain the LoaderHeapBlock
-    void *pTemp = ExecutableAllocator::Instance()->Commit(pData, dwSizeToCommit, (m_Options & LHF_EXECUTABLE));
+    void *pTemp = ExecutableAllocator::Instance()->Commit(pData, dwSizeToCommitPart, (m_Options & LHF_EXECUTABLE));
     if (pTemp == NULL)
     {
         //_ASSERTE(!"Unable to ClrVirtualAlloc commit in a loaderheap");
@@ -1173,6 +1190,25 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
         {
             return FALSE;
         }
+    }
+
+    if (m_Options & LHF_SEPARATE_RW_DATA)
+    {
+        _ASSERTE(dwSizeToCommitPart == GetOsPageSize());
+        // fill in the code page
+        // TODO: use ExecutableWriterHolder
+
+        void *pTemp = ExecutableAllocator::Instance()->Commit((BYTE*)pData + dwSizeToCommitPart, dwSizeToCommitPart, FALSE);
+        if (pTemp == NULL)
+        {
+            //_ASSERTE(!"Unable to ClrVirtualAlloc commit in a loaderheap");
+
+            return FALSE;
+        }
+
+        ExecutableWriterHolder<BYTE> codeWriterHolder((BYTE*)pData, dwSizeToCommitPart);
+        m_codePageGenerator(codeWriterHolder.GetRW());
+        // TODO: flush cache here or in the generator or in the stub creation?
     }
 
     LoaderHeapBlock *pNewBlock = new (nothrow) LoaderHeapBlock;
@@ -1193,7 +1229,16 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
     // Add to the linked list
     m_pFirstBlock = pNewBlock;
 
+    if (m_Options & LHF_SEPARATE_RW_DATA)
+    {
+        dwSizeToCommit /= 2;
+    }
+
     SETUP_NEW_BLOCK(pData, dwSizeToCommit, dwSizeToReserve);
+    if ((m_Options & LHF_SEPARATE_RW_DATA) && (((TADDR)m_pPtrToEndOfCommittedRegion) & 0x1000) == 0x0000)
+    {
+        __debugbreak();
+    }
 
     return TRUE;
 }
@@ -1216,10 +1261,25 @@ BOOL UnlockedLoaderHeap::GetMoreCommittedPages(size_t dwMinSize)
     // If we have memory we can use, what are you doing here!
     _ASSERTE(dwMinSize > (SIZE_T)(m_pPtrToEndOfCommittedRegion - m_pAllocPtr));
 
+    if (m_Options & LHF_SEPARATE_RW_DATA)
+    {
+        // This mode interleaves data and code pages 1:1. So the code size is required to be smaller than
+        // a page size to ensure that the code range is consecutive.
+        _ASSERTE(dwMinSize <= GetOsPageSize());
+        // Minimum size to get is two memory pages
+        dwMinSize = 2 * GetOsPageSize();
+    }
+
     // Does this fit in the reserved region?
     if (dwMinSize <= (size_t)(m_pEndReservedRegion - m_pAllocPtr))
     {
         SIZE_T dwSizeToCommit = (m_pAllocPtr + dwMinSize) - m_pPtrToEndOfCommittedRegion;
+        // TODO: make this cleaner - the end of committed region currently points to the code page end, the data page goes after
+        // so we move it here 
+        if (m_Options & LHF_SEPARATE_RW_DATA)
+        {
+            m_pPtrToEndOfCommittedRegion += GetOsPageSize();
+        }
 
         if (dwSizeToCommit < m_dwCommitBlockSize)
             dwSizeToCommit = min((SIZE_T)(m_pEndReservedRegion - m_pPtrToEndOfCommittedRegion), (SIZE_T)m_dwCommitBlockSize);
@@ -1227,19 +1287,50 @@ BOOL UnlockedLoaderHeap::GetMoreCommittedPages(size_t dwMinSize)
         // Round to page size
         dwSizeToCommit = ALIGN_UP(dwSizeToCommit, GetOsPageSize());
 
+        size_t dwSizeToCommitPart = dwSizeToCommit;
+        if (m_Options & LHF_SEPARATE_RW_DATA)
+        {
+            dwSizeToCommitPart /= 2;
+        }
+
         // Yes, so commit the desired number of reserved pages
-        void *pData = ExecutableAllocator::Instance()->Commit(m_pPtrToEndOfCommittedRegion, dwSizeToCommit, (m_Options & LHF_EXECUTABLE));
+        void *pData = ExecutableAllocator::Instance()->Commit(m_pPtrToEndOfCommittedRegion, dwSizeToCommitPart, (m_Options & LHF_EXECUTABLE));
         if (pData == NULL)
             return FALSE;
 
-        m_dwTotalAlloc += dwSizeToCommit;
+        m_dwTotalAlloc += dwSizeToCommitPart;
 
-        m_pPtrToEndOfCommittedRegion += dwSizeToCommit;
+        m_pPtrToEndOfCommittedRegion += dwSizeToCommitPart;
+
+        if (m_Options & LHF_SEPARATE_RW_DATA)
+        {
+            if ((((TADDR)m_pPtrToEndOfCommittedRegion) & 0x1000) == 0x0000)
+            {
+                __debugbreak();
+            }
+            ExecutableAllocator::Instance()->Commit(m_pPtrToEndOfCommittedRegion, dwSizeToCommitPart, FALSE);
+            m_dwTotalAlloc += dwSizeToCommitPart;
+
+            //m_pPtrToEndOfCommittedRegion += dwSizeToCommit;
+            ExecutableWriterHolder<BYTE> codeWriterHolder((BYTE*)pData, dwSizeToCommitPart);
+            m_codePageGenerator(codeWriterHolder.GetRW());
+
+            m_pAllocPtr = (BYTE*)pData;
+        }
+
         return TRUE;
     }
 
     // Need to allocate a new set of reserved pages
     INDEBUG(m_dwDebugWastedBytes += (size_t)(m_pPtrToEndOfCommittedRegion - m_pAllocPtr);)
+
+    //if (m_Options & LHF_SEPARATE_RW_DATA)
+    //{
+    //    if (m_pPtrToEndOfCommittedRegion != NULL)
+    //    {
+    //        m_pPtrToEndOfCommittedRegion += GetOsPageSize();
+    //    }
+    //}
 
     // Note, there are unused reserved pages at end of current region -can't do much about that
     // Provide dwMinSize here since UnlockedReservePages will round up the commit size again
@@ -1346,10 +1437,10 @@ again:
         {
 #ifdef _DEBUG
             BYTE *pAllocatedBytes = (BYTE*)pData;
-            ExecutableWriterHolder<void> dataWriterHolder;
+            ExecutableWriterHolderC<void> dataWriterHolder;
             if (m_Options & LHF_EXECUTABLE)
             {
-                dataWriterHolder = ExecutableWriterHolder<void>(pData, dwSize);
+                dataWriterHolder = ExecutableWriterHolderC<void>::Create(pData, dwSize);
                 pAllocatedBytes = (BYTE *)dataWriterHolder.GetRW();
             }
 
@@ -1365,11 +1456,11 @@ again:
 
             if (!m_fExplicitControl)
             {
-                LoaderHeapValidationTag *pTag = AllocMem_GetTag(pAllocatedBytes, dwRequestedSize);
-                pTag->m_allocationType  = kAllocMem;
-                pTag->m_dwRequestedSize = dwRequestedSize;
-                pTag->m_szFile          = szFile;
-                pTag->m_lineNum         = lineNum;
+                // LoaderHeapValidationTag *pTag = AllocMem_GetTag(pAllocatedBytes, dwRequestedSize);
+                // pTag->m_allocationType  = kAllocMem;
+                // pTag->m_dwRequestedSize = dwRequestedSize;
+                // pTag->m_szFile          = szFile;
+                // pTag->m_lineNum         = lineNum;
             }
 
             if (m_dwDebugFlags & kCallTracing)
@@ -1424,7 +1515,7 @@ void UnlockedLoaderHeap::UnlockedBackoutMem(void *pMem,
         return;
     }
 
-#ifdef _DEBUG
+#ifdef _DEBUGa
     {
         DEBUG_ONLY_REGION();
 
@@ -1534,10 +1625,10 @@ void UnlockedLoaderHeap::UnlockedBackoutMem(void *pMem,
     if (m_pAllocPtr == ( ((BYTE*)pMem) + dwSize ))
     {
         void *pMemRW = pMem;
-        ExecutableWriterHolder<void> memWriterHolder;
+        ExecutableWriterHolderC<void> memWriterHolder;
         if (m_Options & LHF_EXECUTABLE)
         {
-            memWriterHolder = ExecutableWriterHolder<void>(pMem, dwSize);
+            memWriterHolder = ExecutableWriterHolderC<void>::Create(pMem, dwSize);
             pMemRW = memWriterHolder.GetRW();
         }
 
@@ -1630,16 +1721,20 @@ void *UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSiz
     }
 
     pResult = m_pAllocPtr;
+    if ((m_Options & LHF_SEPARATE_RW_DATA) && (((TADDR)pResult) & 0x1000) == 0x1000)
+    {
+        __debugbreak();
+    }
 
     size_t extra = alignment - ((size_t)pResult & ((size_t)alignment - 1));
 
 // On DEBUG, we force a non-zero extra so people don't forget to adjust for it on backout
-#ifndef _DEBUG
+//#ifndef _DEBUG
     if (extra == alignment)
     {
         extra = 0;
     }
-#endif
+//#endif
 
     S_SIZE_T cbAllocSize = S_SIZE_T( dwRequestedSize ) + S_SIZE_T( extra );
     if( cbAllocSize.IsOverflow() )
@@ -1655,10 +1750,10 @@ void *UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSiz
 
 #ifdef _DEBUG
     BYTE *pAllocatedBytes = (BYTE *)pResult;
-    ExecutableWriterHolder<void> resultWriterHolder;
+    ExecutableWriterHolderC<void> resultWriterHolder;
     if (m_Options & LHF_EXECUTABLE)
     {
-        resultWriterHolder = ExecutableWriterHolder<void>(pResult, dwSize - extra);
+        resultWriterHolder = ExecutableWriterHolderC<void>::Create(pResult, dwSize - extra);
         pAllocatedBytes = (BYTE *)resultWriterHolder.GetRW();
     }
 
@@ -1667,7 +1762,7 @@ void *UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSiz
     memset(pAllocatedBytes + dwRequestedSize, 0xee, LOADER_HEAP_DEBUG_BOUNDARY);
 #endif
 
-    if (dwRequestedSize != 0)
+    if (dwRequestedSize != 0 && !(m_Options & LHF_SEPARATE_RW_DATA))
     {
         _ASSERTE_MSG(pAllocatedBytes[0] == 0 && memcmp(pAllocatedBytes, pAllocatedBytes + 1, dwRequestedSize - 1) == 0,
             "LoaderHeap must return zero-initialized memory");
@@ -1691,11 +1786,11 @@ void *UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSiz
 
     if (!m_fExplicitControl)
     {
-        LoaderHeapValidationTag *pTag = AllocMem_GetTag(pAllocatedBytes - extra, dwRequestedSize + extra);
-        pTag->m_allocationType  = kAllocMem;
-        pTag->m_dwRequestedSize = dwRequestedSize + extra;
-        pTag->m_szFile          = szFile;
-        pTag->m_lineNum         = lineNum;
+        // LoaderHeapValidationTag *pTag = AllocMem_GetTag(pAllocatedBytes - extra, dwRequestedSize + extra);
+        // pTag->m_allocationType  = kAllocMem;
+        // pTag->m_dwRequestedSize = dwRequestedSize + extra;
+        // pTag->m_szFile          = szFile;
+        // pTag->m_lineNum         = lineNum;
     }
 #endif //_DEBUG
 
@@ -2167,8 +2262,8 @@ void StubHeap::AllocateBlock()
     }
 
     {
-        ExecutableWriterHolder<uint8_t> codePageWriterHolder(m_currentBlock, 4096);
-        m_codePageGenerator(codePageWriterHolder.GetRW());
+//        ExecutableWriterHolder<uint8_t> codePageWriterHolder(m_currentBlock, 4096);
+        m_codePageGenerator(m_currentBlock);
 /*
         // TODO: generate the code page - need some callback, this is just a quick hack
         int dataOffset = 8192-7+16;
