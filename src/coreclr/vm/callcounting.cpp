@@ -264,11 +264,11 @@ const CallCountingStub *CallCountingManager::CallCountingStubAllocator::Allocate
     allocationAddressHolder.SuppressRelease();
     stub->Initialize(targetForMethod, remainingCallCountCell);
 
-    ClrFlushInstructionCache(stub, sizeInBytes);
+    //ClrFlushInstructionCache(stub, sizeInBytes);
     return stub;
 }
 
-void CallCountingStub::GenerateCodePage(uint8_t* pageBase)
+size_t CallCountingStub::GenerateCodePage(uint8_t* pageBaseRX)
 {
 /*
     0:  66 ff 0d f9 0f 00 00    dec    WORD PTR [rip+0xff9]        # 1000 <l0+0xff1>
@@ -286,6 +286,9 @@ void CallCountingStub::GenerateCodePage(uint8_t* pageBase)
     0000000000000012 <l0>:
     12: ff 15 f8 0f 00 00       call   QWORD PTR [rip+0xff8]        # 1010 <l0+0xffe>
 */
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, 4096);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
+
     pageBase[0] = 0x48;
     pageBase[1] = 0x8b;
     pageBase[2] = 0x05;
@@ -346,6 +349,10 @@ void CallCountingStub::GenerateCodePage(uint8_t* pageBase)
     memcpy(pageBase + 768, pageBase, 768);
     memcpy(pageBase + 1536, pageBase, 1536);
     memcpy(pageBase + 3072, pageBase, 1008);
+
+    ClrFlushInstructionCache(pageBaseRX, 4096);
+
+    return 0;
 }
 
 NOINLINE LoaderHeap *CallCountingManager::CallCountingStubAllocator::AllocateHeap()

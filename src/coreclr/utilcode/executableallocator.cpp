@@ -842,6 +842,10 @@ void ExecutableAllocator::UnmapRW(void* pRW)
     CRITSEC_Holder csh(m_CriticalSection);
     _ASSERTE(pRW != NULL);
 
+#ifdef LOG_STATISTICS
+    StopWatch swNoLock(&g_unmapTimeSum);
+#endif
+
     void* unmapAddress = NULL;
     size_t unmapSize;
 

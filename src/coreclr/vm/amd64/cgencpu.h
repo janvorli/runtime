@@ -563,7 +563,7 @@ public:
     }
 #endif // !DACCESS_COMPILE
 
-    static void GenerateCodePage(uint8_t* pageBase);
+    static size_t GenerateCodePage(uint8_t* pageBase);
 
     PTR_CallCount GetRemainingCallCountCell() const;
     PCODE GetTargetForMethod() const;

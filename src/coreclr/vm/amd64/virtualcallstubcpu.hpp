@@ -69,10 +69,15 @@ get quickly changed to point to another kind of stub.
 */
 struct LookupStub
 {
-    inline PCODE entryPoint()           { LIMITED_METHOD_CONTRACT; return (PCODE)&_entryPoint[0]; }
+    //inline PCODE entryPoint()           { LIMITED_METHOD_CONTRACT; return (PCODE)&_entryPoint[0]; }
 
-    inline size_t  token()              { LIMITED_METHOD_CONTRACT; return _token; }
-    inline size_t  size()               { LIMITED_METHOD_CONTRACT; return sizeof(LookupStub); }
+    //inline size_t  token()              { LIMITED_METHOD_CONTRACT; return _token; }
+    //inline size_t  size()               { LIMITED_METHOD_CONTRACT; return sizeof(LookupStub); }
+
+    inline PCODE entryPoint() { LIMITED_METHOD_CONTRACT; return (PCODE)this; }
+
+    inline size_t  token() { LIMITED_METHOD_CONTRACT; return *(size_t*)((BYTE*)this + 4096); }
+    inline size_t  size() { LIMITED_METHOD_CONTRACT; return sizeof(LookupStub); }
 
 private:
     friend struct LookupHolder;
@@ -81,13 +86,15 @@ private:
     // if the stub is lookup stub or a dispatch stub.  We can read thye first byte
     // of a stub to find out what kind of a stub we have.
 
-    BYTE    _entryPoint [3];      // 90                       nop
-                                  // 48 B8                    mov    rax,
-    size_t  _token;               // xx xx xx xx xx xx xx xx              64-bit address
-    BYTE    part2 [3];            // 50                       push   rax
-                                  // 48 B8                    mov    rax,
-    size_t  _resolveWorkerAddr;   // xx xx xx xx xx xx xx xx              64-bit address
-    BYTE    part3 [2];            // FF E0                    jmp    rax
+    BYTE _code[16];
+
+    //BYTE    _entryPoint [3];      // 90                       nop
+    //                              // 48 B8                    mov    rax,
+    //size_t  _token;               // xx xx xx xx xx xx xx xx              64-bit address
+    //BYTE    part2 [3];            // 50                       push   rax
+    //                              // 48 B8                    mov    rax,
+    //size_t  _resolveWorkerAddr;   // xx xx xx xx xx xx xx xx              64-bit address
+    //BYTE    part3 [2];            // FF E0                    jmp    rax
 };
 
 /* LookupHolders are the containers for LookupStubs, they provide for any alignment of
@@ -102,6 +109,8 @@ struct LookupHolder
     LookupStub*    stub()         { LIMITED_METHOD_CONTRACT;  return &_stub;    }
 
     static LookupHolder* FromLookupEntry(PCODE lookupEntry);
+
+    static size_t GenerateCodePage(uint8_t* pageBase);
 
 private:
     friend struct LookupStub;
@@ -222,38 +231,14 @@ struct DispatchStub
 {
     friend struct DispatchHolder;
 
-    enum DispatchStubType
-    {
-        e_TYPE_SHORT,
-        e_TYPE_LONG,
-    };
-
-    inline DispatchStubType type() const
-    {
-        LIMITED_METHOD_CONTRACT;
-        CONSISTENCY_CHECK(DispatchStubShort::isShortStub(reinterpret_cast<LPCBYTE>(this + 1))
-                          || DispatchStubLong::isLongStub(reinterpret_cast<LPCBYTE>(this + 1)));
-        return DispatchStubShort::isShortStub((BYTE *)(this + 1)) ? e_TYPE_SHORT : e_TYPE_LONG;
-    }
-
-    inline static size_t size(DispatchStubType type)
-    {
-        STATIC_CONTRACT_LEAF;
-        return sizeof(DispatchStub) +
-            ((type == e_TYPE_SHORT) ? sizeof(DispatchStubShort) : sizeof(DispatchStubLong));
-    }
-
-    inline PCODE        entryPoint() const { LIMITED_METHOD_CONTRACT;  return (PCODE)&_entryPoint[0]; }
-    inline size_t       expectedMT() const { LIMITED_METHOD_CONTRACT;  return _expectedMT;     }
-    inline size_t       size()       const { WRAPPER_NO_CONTRACT; return size(type()); }
+    inline PCODE        entryPoint() const { LIMITED_METHOD_CONTRACT;  return (PCODE)((BYTE*)this); }
+    inline size_t       expectedMT() const { LIMITED_METHOD_CONTRACT;  return *(PCODE*)((BYTE*)this + 4096);     }
+    inline size_t       size()       const { WRAPPER_NO_CONTRACT; return sizeof(DispatchStub); }
 
     inline PCODE implTarget() const
     {
         LIMITED_METHOD_CONTRACT;
-        if (type() == e_TYPE_SHORT)
-            return getShortStub()->implTarget();
-        else
-            return getLongStub()->implTarget();
+        return *(PCODE*)((BYTE*)this + 4096 + 8);
     }
 
     inline TADDR implTargetSlot(EntryPointSlots::SlotType *slotTypeRef) const
@@ -261,32 +246,22 @@ struct DispatchStub
         LIMITED_METHOD_CONTRACT;
         _ASSERTE(slotTypeRef != nullptr);
 
-        *slotTypeRef = EntryPointSlots::SlotType_Executable;
-        if (type() == e_TYPE_SHORT)
-            return getShortStub()->implTargetSlot();
-        else
-            return getLongStub()->implTargetSlot();
+        *slotTypeRef = EntryPointSlots::SlotType_Normal;
+        return (TADDR)((BYTE*)this + 4096 + 8);
     }
 
     inline PCODE failTarget() const
     {
-        if (type() == e_TYPE_SHORT)
-            return getShortStub()->failTarget();
-        else
-            return getLongStub()->failTarget();
+        return *(PCODE*)((BYTE*)this + 4096 + 16);
     }
 
 private:
-    inline DispatchStubShort const *getShortStub() const
-        { LIMITED_METHOD_CONTRACT; return reinterpret_cast<DispatchStubShort const *>(this + 1); }
+    BYTE code[24];
 
-    inline DispatchStubLong const *getLongStub() const
-        { LIMITED_METHOD_CONTRACT; return reinterpret_cast<DispatchStubLong const *>(this + 1); }
-
-    BYTE    _entryPoint [2];      // 48 B8                    mov    rax,
-    size_t  _expectedMT;          // xx xx xx xx xx xx xx xx              64-bit address
-    BYTE    part1 [3];            // 48 39 XX                 cmp    [THIS_REG], rax
-    BYTE    nopOp;                // 90                       nop                      ; 1-byte nop to align _implTarget
+    //BYTE    _entryPoint [2];      // 48 B8                    mov    rax,
+    //size_t  _expectedMT;          // xx xx xx xx xx xx xx xx              64-bit address
+    //BYTE    part1 [3];            // 48 39 XX                 cmp    [THIS_REG], rax
+    //BYTE    nopOp;                // 90                       nop                      ; 1-byte nop to align _implTarget
 
     // Followed by either DispatchStubShort or DispatchStubLong, depending
     // on whether we were able to make a rel32 or had to make an abs64 jump
@@ -317,23 +292,15 @@ struct DispatchHolder
 {
     static void InitializeStatic();
 
-    void  Initialize(DispatchHolder* pDispatchHolderRX, PCODE implTarget, PCODE failTarget, size_t expectedMT,
-                     DispatchStub::DispatchStubType type);
+    void  Initialize(DispatchHolder* pDispatchHolderRX, PCODE implTarget, PCODE failTarget, size_t expectedMT);
 
-    static size_t GetHolderSize(DispatchStub::DispatchStubType type)
-        { STATIC_CONTRACT_WRAPPER; return DispatchStub::size(type); }
-
-    static BOOL CanShortJumpDispatchStubReachFailTarget(PCODE failTarget, LPCBYTE stubMemory)
-    {
-        STATIC_CONTRACT_WRAPPER;
-        LPCBYTE pFrom = stubMemory + sizeof(DispatchStub) + DispatchStubShort_offsetof_failDisplBase;
-        size_t cbRelJump = failTarget - (PCODE)pFrom;
-        return FitsInI4(cbRelJump);
-    }
+    static size_t GetHolderSize()
+        { STATIC_CONTRACT_WRAPPER; return sizeof(DispatchStub); }
 
     DispatchStub* stub()      { LIMITED_METHOD_CONTRACT;  return reinterpret_cast<DispatchStub *>(this); }
 
     static DispatchHolder* FromDispatchEntry(PCODE dispatchEntry);
+    static size_t GenerateCodePage(uint8_t* pageBase);
 
 private:
     // DispatchStub follows here. It is dynamically sized on allocation
@@ -562,25 +529,27 @@ void LookupHolder::InitializeStatic()
     // The first instruction of a LookupStub is nop
     // and we use it in order to differentiate the first two bytes
     // of a LookupStub and a ResolveStub
-    lookupInit._entryPoint [0]     = INSTR_NOP;
-    lookupInit._entryPoint [1]     = 0x48;
-    lookupInit._entryPoint [2]     = 0xB8;
-    lookupInit._token              = 0xcccccccccccccccc;
-    lookupInit.part2 [0]           = 0x50;
-    lookupInit.part2 [1]           = 0x48;
-    lookupInit.part2 [2]           = 0xB8;
-    lookupInit._resolveWorkerAddr  = 0xcccccccccccccccc;
-    lookupInit.part3 [0]           = 0xFF;
-    lookupInit.part3 [1]           = 0xE0;
+    //lookupInit._entryPoint [0]     = INSTR_NOP;
+    //lookupInit._entryPoint [1]     = 0x48;
+    //lookupInit._entryPoint [2]     = 0xB8;
+    //lookupInit._token              = 0xcccccccccccccccc;
+    //lookupInit.part2 [0]           = 0x50;
+    //lookupInit.part2 [1]           = 0x48;
+    //lookupInit.part2 [2]           = 0xB8;
+    //lookupInit._resolveWorkerAddr  = 0xcccccccccccccccc;
+    //lookupInit.part3 [0]           = 0xFF;
+    //lookupInit.part3 [1]           = 0xE0;
 }
 
 void  LookupHolder::Initialize(LookupHolder* pLookupHolderRX, PCODE resolveWorkerTarget, size_t dispatchToken)
 {
-    _stub = lookupInit;
+    //_stub = lookupInit;
 
-    //fill in the stub specific fields
-    _stub._token              = dispatchToken;
-    _stub._resolveWorkerAddr  = (size_t) resolveWorkerTarget;
+    ////fill in the stub specific fields
+    //_stub._token              = dispatchToken;
+    //_stub._resolveWorkerAddr  = (size_t) resolveWorkerTarget;
+    *(size_t*)((BYTE*)this + 4096) = dispatchToken;
+    *(size_t*)((BYTE*)this + 4096 + 8) = (size_t)resolveWorkerTarget;
 }
 
 /* Template used to generate the stub.  We generate a stub by allocating a block of
@@ -590,98 +559,164 @@ void  LookupHolder::Initialize(LookupHolder* pLookupHolderRX, PCODE resolveWorke
 
 void DispatchHolder::InitializeStatic()
 {
-    // Check that _implTarget is aligned in the DispatchStub for backpatching
-    static_assert_no_msg(((sizeof(DispatchStub) + offsetof(DispatchStubShort, _implTarget)) % sizeof(void *)) == 0);
-    static_assert_no_msg(((sizeof(DispatchStub) + offsetof(DispatchStubLong, _implTarget)) % sizeof(void *)) == 0);
+    //// Check that _implTarget is aligned in the DispatchStub for backpatching
+    //static_assert_no_msg(((sizeof(DispatchStub) + offsetof(DispatchStubShort, _implTarget)) % sizeof(void *)) == 0);
+    //static_assert_no_msg(((sizeof(DispatchStub) + offsetof(DispatchStubLong, _implTarget)) % sizeof(void *)) == 0);
 
-    static_assert_no_msg(((sizeof(DispatchStub) + sizeof(DispatchStubShort)) % sizeof(void*)) == 0);
-    static_assert_no_msg(((sizeof(DispatchStub) + sizeof(DispatchStubLong)) % sizeof(void*)) == 0);
-    static_assert_no_msg((DispatchStubLong_offsetof_failLabel - DispatchStubLong_offsetof_failDisplBase) < INT8_MAX);
+    //static_assert_no_msg(((sizeof(DispatchStub) + sizeof(DispatchStubShort)) % sizeof(void*)) == 0);
+    //static_assert_no_msg(((sizeof(DispatchStub) + sizeof(DispatchStubLong)) % sizeof(void*)) == 0);
+    //static_assert_no_msg((DispatchStubLong_offsetof_failLabel - DispatchStubLong_offsetof_failDisplBase) < INT8_MAX);
 
-    // Common dispatch stub initialization
-    dispatchInit._entryPoint [0]      = 0x48;
-    dispatchInit._entryPoint [1]      = 0xB8;
-    dispatchInit._expectedMT          = 0xcccccccccccccccc;
-    dispatchInit.part1 [0]            = X64_INSTR_CMP_IND_THIS_REG_RAX & 0xff;
-    dispatchInit.part1 [1]            = (X64_INSTR_CMP_IND_THIS_REG_RAX >> 8) & 0xff;
-    dispatchInit.part1 [2]            = (X64_INSTR_CMP_IND_THIS_REG_RAX >> 16) & 0xff;
-    dispatchInit.nopOp                = 0x90;
+    //// Common dispatch stub initialization
+    //dispatchInit._entryPoint [0]      = 0x48;
+    //dispatchInit._entryPoint [1]      = 0xB8;
+    //dispatchInit._expectedMT          = 0xcccccccccccccccc;
+    //dispatchInit.part1 [0]            = X64_INSTR_CMP_IND_THIS_REG_RAX & 0xff;
+    //dispatchInit.part1 [1]            = (X64_INSTR_CMP_IND_THIS_REG_RAX >> 8) & 0xff;
+    //dispatchInit.part1 [2]            = (X64_INSTR_CMP_IND_THIS_REG_RAX >> 16) & 0xff;
+    //dispatchInit.nopOp                = 0x90;
 
-    // Short dispatch stub initialization
-    dispatchShortInit.part1 [0]       = 0x48;
-    dispatchShortInit.part1 [1]       = 0xb8;
-    dispatchShortInit._implTarget     = 0xcccccccccccccccc;
-    dispatchShortInit.part2 [0]       = 0x0F;
-    dispatchShortInit.part2 [1]       = 0x85;
-    dispatchShortInit._failDispl      = 0xcccccccc;
-    dispatchShortInit.part3 [0]       = 0xFF;
-    dispatchShortInit.part3 [1]       = 0xE0;
+    //// Short dispatch stub initialization
+    //dispatchShortInit.part1 [0]       = 0x48;
+    //dispatchShortInit.part1 [1]       = 0xb8;
+    //dispatchShortInit._implTarget     = 0xcccccccccccccccc;
+    //dispatchShortInit.part2 [0]       = 0x0F;
+    //dispatchShortInit.part2 [1]       = 0x85;
+    //dispatchShortInit._failDispl      = 0xcccccccc;
+    //dispatchShortInit.part3 [0]       = 0xFF;
+    //dispatchShortInit.part3 [1]       = 0xE0;
 
-    // Long dispatch stub initialization
-    dispatchLongInit.part1 [0]        = 0x48;
-    dispatchLongInit.part1 [1]        = 0xb8;
-    dispatchLongInit._implTarget      = 0xcccccccccccccccc;
-    dispatchLongInit.part2 [0]        = 0x75;
-    dispatchLongInit._failDispl       = BYTE(DispatchStubLong_offsetof_failLabel - DispatchStubLong_offsetof_failDisplBase);
-    dispatchLongInit.part3 [0]        = 0xFF;
-    dispatchLongInit.part3 [1]        = 0xE0;
-        // failLabel:
-    dispatchLongInit.part4 [0]        = 0x48;
-    dispatchLongInit.part4 [1]        = 0xb8;
-    dispatchLongInit._failTarget      = 0xcccccccccccccccc;
-    dispatchLongInit.part5 [0]        = 0xFF;
-    dispatchLongInit.part5 [1]        = 0xE0;
+    //// Long dispatch stub initialization
+    //dispatchLongInit.part1 [0]        = 0x48;
+    //dispatchLongInit.part1 [1]        = 0xb8;
+    //dispatchLongInit._implTarget      = 0xcccccccccccccccc;
+    //dispatchLongInit.part2 [0]        = 0x75;
+    //dispatchLongInit._failDispl       = BYTE(DispatchStubLong_offsetof_failLabel - DispatchStubLong_offsetof_failDisplBase);
+    //dispatchLongInit.part3 [0]        = 0xFF;
+    //dispatchLongInit.part3 [1]        = 0xE0;
+    //    // failLabel:
+    //dispatchLongInit.part4 [0]        = 0x48;
+    //dispatchLongInit.part4 [1]        = 0xb8;
+    //dispatchLongInit._failTarget      = 0xcccccccccccccccc;
+    //dispatchLongInit.part5 [0]        = 0xFF;
+    //dispatchLongInit.part5 [1]        = 0xE0;
 };
 
-void  DispatchHolder::Initialize(DispatchHolder* pDispatchHolderRX, PCODE implTarget, PCODE failTarget, size_t expectedMT,
-                               DispatchStub::DispatchStubType type)
+void  DispatchHolder::Initialize(DispatchHolder* pDispatchHolderRX, PCODE implTarget, PCODE failTarget, size_t expectedMT)
 {
     //
     // Initialize the common area
     //
 
     // initialize the static data
-    *stub() = dispatchInit;
+    //*stub() = dispatchInit;
 
     // fill in the dynamic data
-    stub()->_expectedMT  = expectedMT;
-
-    //
-    // Initialize the short/long areas
-    //
-    if (type == DispatchStub::e_TYPE_SHORT)
-    {
-        DispatchStubShort *shortStubRW = const_cast<DispatchStubShort *>(stub()->getShortStub());
-        DispatchStubShort *shortStubRX = const_cast<DispatchStubShort *>(pDispatchHolderRX->stub()->getShortStub());
-
-        // initialize the static data
-        *shortStubRW = dispatchShortInit;
-
-        // fill in the dynamic data
-        size_t displ = (failTarget - ((PCODE) &shortStubRX->_failDispl + sizeof(DISPL)));
-        CONSISTENCY_CHECK(FitsInI4(displ));
-        shortStubRW->_failDispl   = (DISPL) displ;
-        shortStubRW->_implTarget  = (size_t) implTarget;
-        CONSISTENCY_CHECK((PCODE)&shortStubRX->_failDispl + sizeof(DISPL) + shortStubRX->_failDispl == failTarget);
-    }
-    else
-    {
-        CONSISTENCY_CHECK(type == DispatchStub::e_TYPE_LONG);
-        DispatchStubLong *longStub = const_cast<DispatchStubLong *>(stub()->getLongStub());
-
-        // initialize the static data
-        *longStub = dispatchLongInit;
-
-        // fill in the dynamic data
-        longStub->_implTarget = implTarget;
-        longStub->_failTarget = failTarget;
-    }
+    //stub()->_expectedMT  = expectedMT;
+    *(size_t*)((BYTE*)stub() + 4096) = expectedMT;
+    *(PCODE*)((BYTE*)stub() + 4096 + 8) = implTarget;
+    *(PCODE*)((BYTE*)stub() + 4096 + 16) = failTarget;
 }
 
 /* Template used to generate the stub.  We generate a stub by allocating a block of
    memory and copy the template over it and just update the specific fields that need
    to be changed.
 */
+
+#ifndef DACCESS_COMPILE
+size_t LookupHolder::GenerateCodePage(uint8_t* pageBaseRX)
+{
+    /*
+    0:  90                      nop
+    1:  ff 35 f9 0f 00 00       push   QWORD PTR [rip+0xff9]        # 1000 <_main+0x1000>
+    7:  ff 25 fb 0f 00 00       jmp    QWORD PTR [rip+0xffb]        # 1008 <_main+0x1008>
+    */
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, 4096);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
+
+    pageBase[0] = 0x90;
+    pageBase[1] = 0xff;
+    pageBase[2] = 0x35;
+    pageBase[3] = 0xf9;
+    pageBase[4] = 0x0f;
+    pageBase[5] = 0x00;
+    pageBase[6] = 0x00;
+    pageBase[7] = 0xFF;
+    pageBase[8] = 0x25;
+    pageBase[9] = 0xFB;
+    pageBase[10] = 0x0F;
+    pageBase[11] = 0x00;
+    pageBase[12] = 0x00;
+    pageBase[13] = 0x90;
+    pageBase[14] = 0x90;
+    pageBase[15] = 0x90;
+
+    memcpy(pageBase + 16, pageBase, 16);
+    memcpy(pageBase + 32, pageBase, 32);
+    memcpy(pageBase + 64, pageBase, 64);
+    memcpy(pageBase + 128, pageBase, 128);
+    memcpy(pageBase + 256, pageBase, 256);
+    memcpy(pageBase + 512, pageBase, 512);
+    memcpy(pageBase + 1024, pageBase, 1024);
+    memcpy(pageBase + 2048, pageBase, 2048);
+
+    ClrFlushInstructionCache(pageBaseRX, 4096);
+
+    return 0;
+}
+
+size_t DispatchHolder::GenerateCodePage(uint8_t* pageBaseRX)
+{
+    /*
+        0:  48 8b 05 f9 0f 00 00    mov    rax,QWORD PTR [rip+0xff9]        # 1000 <fail+0xfee> <<< _expectedMT
+        7:  48 39 01                cmp    QWORD PTR [rcx],rax
+        a:  75 06                   jne    12 <fail>
+        c:  ff 25 f6 0f 00 00       jmp    QWORD PTR [rip+0xff6]        # 1008 <fail+0xff6> <<< _implTarget
+        0000000000000012 <fail>:
+        12: ff 25 f8 0f 00 00       jmp    QWORD PTR [rip+0xff8]        # 1010 <fail+0xffe> <<< _failTarget
+    */
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, 4096);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
+
+    pageBase[0] = 0x48;
+    pageBase[1] = 0x8b;
+    pageBase[2] = 0x05;
+    pageBase[3] = 0xf9;
+    pageBase[4] = 0x0f;
+    pageBase[5] = 0x00;
+    pageBase[6] = 0x00;
+    pageBase[7] = 0x48;
+    pageBase[8] = 0x39;
+    pageBase[9] = 0x01;
+    pageBase[10] = 0x75;
+    pageBase[11] = 0x06;
+    pageBase[12] = 0xff;
+    pageBase[13] = 0x25;
+    pageBase[14] = 0xf6;
+    pageBase[15] = 0x0f;
+    pageBase[16] = 0x00;
+    pageBase[17] = 0x00;
+    pageBase[18] = 0xff;
+    pageBase[19] = 0x25;
+    pageBase[20] = 0xf8;
+    pageBase[21] = 0x0f;
+    pageBase[22] = 0x00;
+    pageBase[23] = 0x00;
+
+    memcpy(pageBase + 24, pageBase, 24);
+    memcpy(pageBase + 48, pageBase, 48);
+    memcpy(pageBase + 96, pageBase, 96);
+    memcpy(pageBase + 192, pageBase, 192);
+    memcpy(pageBase + 384, pageBase, 384);
+    memcpy(pageBase + 768, pageBase, 768);
+    memcpy(pageBase + 1536, pageBase, 1536);
+    memcpy(pageBase + 3072, pageBase, 1008);
+
+    ClrFlushInstructionCache(pageBaseRX, 4096);
+    return 0;
+}
+
+#endif
 
 void ResolveHolder::InitializeStatic()
 {
@@ -800,8 +835,8 @@ ResolveHolder* ResolveHolder::FromFailEntry(PCODE failEntry)
 LookupHolder* LookupHolder::FromLookupEntry(PCODE lookupEntry)
 {
     LIMITED_METHOD_CONTRACT;
-    LookupHolder* lookupHolder = (LookupHolder*) ( lookupEntry - offsetof(LookupHolder, _stub) - offsetof(LookupStub, _entryPoint)  );
-    _ASSERTE(lookupHolder->_stub._entryPoint[2] == lookupInit._entryPoint[2]);
+    LookupHolder* lookupHolder = (LookupHolder*)lookupEntry; // (lookupEntry - offsetof(LookupHolder, _stub) - offsetof(LookupStub, _entryPoint));
+    //_ASSERTE(lookupHolder->_stub._entryPoint[2] == lookupInit._entryPoint[2]);
     return lookupHolder;
 }
 
@@ -809,8 +844,8 @@ LookupHolder* LookupHolder::FromLookupEntry(PCODE lookupEntry)
 DispatchHolder* DispatchHolder::FromDispatchEntry(PCODE dispatchEntry)
 {
     LIMITED_METHOD_CONTRACT;
-    DispatchHolder* dispatchHolder = (DispatchHolder*) ( dispatchEntry - offsetof(DispatchStub, _entryPoint) );
-    _ASSERTE(dispatchHolder->stub()->_entryPoint[1] == dispatchInit._entryPoint[1]);
+    DispatchHolder* dispatchHolder = (DispatchHolder*)dispatchEntry;
+    //_ASSERTE(dispatchHolder->stub()->_entryPoint[1] == dispatchInit._entryPoint[1]);
     return dispatchHolder;
 }
 
@@ -885,7 +920,7 @@ VirtualCallStubManager::StubKind VirtualCallStubManager::predictStubKind(PCODE s
 
         WORD firstWord = *((WORD*) stubStartAddress);
 
-        if (firstWord == 0xB848)
+        if (firstWord == 0x8B48 && *((WORD*)stubStartAddress + 1) == 0xf905)
         {
             stubKind = SK_DISPATCH;
         }

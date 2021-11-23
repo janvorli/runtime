@@ -4979,50 +4979,10 @@ void FixupPrecode::EnumMemoryRegions(CLRDataEnumMemoryFlags flags)
 
 #ifndef DACCESS_COMPILE
 
-void rel32SetInterlocked(/*PINT32*/ PVOID pRel32, /*PINT32*/ PVOID pRel32RW, TADDR target, MethodDesc* pMD)
-{
-    CONTRACTL
-    {
-        THROWS;         // Creating a JumpStub could throw OutOfMemory
-        GC_NOTRIGGER;
-    }
-    CONTRACTL_END;
-
-    INT32 targetRel32 = rel32UsingJumpStub((INT32*)pRel32, target, pMD);
-
-    _ASSERTE(IS_ALIGNED(pRel32RW, sizeof(INT32)));
-    FastInterlockExchange((LONG*)pRel32RW, (LONG)targetRel32);
-}
-
-BOOL rel32SetInterlocked(/*PINT32*/ PVOID pRel32, /*PINT32*/ PVOID pRel32RW, TADDR target, TADDR expected, MethodDesc* pMD)
-{
-    CONTRACTL
-    {
-        THROWS;         // Creating a JumpStub could throw OutOfMemory
-        GC_NOTRIGGER;
-    }
-    CONTRACTL_END;
-
-    BYTE* callAddrAdj = (BYTE*)pRel32 + 4;
-    INT32 expectedRel32 = static_cast<INT32>((BYTE*)expected - callAddrAdj);
-
-    INT32 targetRel32 = rel32UsingJumpStub((INT32*)pRel32, target, pMD);
-
-    _ASSERTE(IS_ALIGNED(pRel32RW, sizeof(INT32)));
-    return FastInterlockCompareExchange((LONG*)pRel32RW, (LONG)targetRel32, (LONG)expectedRel32) == (LONG)expectedRel32;
-}
-
 void StubPrecode::Init(StubPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator /* = NULL */,
     BYTE type /* = StubPrecode::Type */, TADDR target /* = NULL */)
 {
     WRAPPER_NO_CONTRACT;
-
-    IN_TARGET_64BIT(m_movR10 = X86_INSTR_MOV_R10_IMM64);   // mov r10, pMethodDesc
-    IN_TARGET_32BIT(m_movEAX = X86_INSTR_MOV_EAX_IMM32);   // mov eax, pMethodDesc
-    m_pMethodDesc = (TADDR)pMD;
-    IN_TARGET_32BIT(m_mov_rm_r = X86_INSTR_MOV_RM_R);      // mov reg,reg
-    m_type = type;
-    m_jmp = X86_INSTR_JMP_REL32;        // jmp rel32
 
     if (pLoaderAllocator != NULL)
     {
@@ -5030,8 +4990,76 @@ void StubPrecode::Init(StubPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator
         // that has the same lifetime like as the precode itself
         if (target == NULL)
             target = GetPreStubEntryPoint();
-        m_rel32 = rel32UsingJumpStub(&pPrecodeRX->m_rel32, target, NULL /* pMD */, pLoaderAllocator);
+        *(PCODE*)((BYTE*)this + 4096) = target;
     }
+
+    *(MethodDesc**)((BYTE*)this + 4096 + 8) = pMD;
+    *((BYTE*)this + 4096 + 16) = type;
+
+    //IN_TARGET_64BIT(m_movR10 = X86_INSTR_MOV_R10_IMM64);   // mov r10, pMethodDesc
+    //IN_TARGET_32BIT(m_movEAX = X86_INSTR_MOV_EAX_IMM32);   // mov eax, pMethodDesc
+    //m_pMethodDesc = (TADDR)pMD;
+    //IN_TARGET_32BIT(m_mov_rm_r = X86_INSTR_MOV_RM_R);      // mov reg,reg
+    //m_type = type;
+    //m_jmp = X86_INSTR_JMP_REL32;        // jmp rel32
+
+    //if (pLoaderAllocator != NULL)
+    //{
+    //    // Use pMD == NULL in all precode initialization methods to allocate the initial jump stub in non-dynamic heap
+    //    // that has the same lifetime like as the precode itself
+    //    if (target == NULL)
+    //        target = GetPreStubEntryPoint();
+    //    m_rel32 = rel32UsingJumpStub(&pPrecodeRX->m_rel32, target, NULL /* pMD */, pLoaderAllocator);
+    //}
+}
+
+size_t StubPrecode::GenerateCodePage(uint8_t* pageBaseRX)
+{
+/*
+0:  4c 8b 15 01 10 00 00    mov    r10,QWORD PTR [rip+0x1001]        # 1008 <_main+0x1008>
+7:  ff 25 f3 0f 00 00       jmp    QWORD PTR [rip+0xff3]        # 1000 <_main+0x1000>
+There is a third slot containing the type for now, but I'd like to get rid of it somehow
+*/
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, 4096);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
+
+    pageBase[0] = 0x4C;
+    pageBase[1] = 0x8B;
+    pageBase[2] = 0x15;
+    pageBase[3] = 0x01;
+    pageBase[4] = 0x10;
+    pageBase[5] = 0x00;
+    pageBase[6] = 0x00;
+    pageBase[7] = 0xFF;
+    pageBase[8] = 0x25;
+    pageBase[9] = 0xF3;
+    pageBase[10] = 0x0F;
+    pageBase[11] = 0x00;
+    pageBase[12] = 0x00;
+    pageBase[13] = 0x90;
+    pageBase[14] = 0x90;
+    pageBase[15] = 0x90;
+    pageBase[16] = 0x90;
+    pageBase[17] = 0x90;
+    pageBase[18] = 0x90;
+    pageBase[19] = 0x90;
+    pageBase[20] = 0x90;
+    pageBase[21] = 0x90;
+    pageBase[22] = 0x90;
+    pageBase[23] = 0x90;
+
+    memcpy(pageBase + 24, pageBase, 24);
+    memcpy(pageBase + 48, pageBase, 48);
+    memcpy(pageBase + 96, pageBase, 96);
+    memcpy(pageBase + 192, pageBase, 192);
+    memcpy(pageBase + 384, pageBase, 384);
+    memcpy(pageBase + 768, pageBase, 768);
+    memcpy(pageBase + 1536, pageBase, 1536);
+    memcpy(pageBase + 3072, pageBase, 1008);
+
+    ClrFlushInstructionCache(pageBaseRX, 4096);
+
+    return 0;
 }
 
 #ifdef HAS_NDIRECT_IMPORT_PRECODE
@@ -5080,7 +5108,7 @@ void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocat
 #endif
 }
 
-void FixupPrecode::GenerateCodePage(uint8_t* pageBaseRX)
+size_t FixupPrecode::GenerateCodePage(uint8_t* pageBaseRX)
 {
     /*
         0:  48 8b 05 01 10 00 00    mov    rax,QWORD PTR [rip+0x1001]        # 1008 <_main+0x1008>
@@ -5222,31 +5250,86 @@ Experiment:
 6:  4c 8b 15 fb 0f 00 00    mov    r10,QWORD PTR [rip+0xffb]        # 1008 <_main+0x1008>
 d:  ff 25 fd 0f 00 00       jmp    QWORD PTR [rip+0xffd]        # 1010 <_main+0x1010>
 
+At page start:
+0:  48 b8 ef cd ab 89 67    movabs rax,0x123456789abcdef
+7:  45 23 01
+a:  ff e0                   jmp    rax
+
+Then we have at each slot:
+18: ff 25 fa 0f 00 00       jmp    QWORD PTR [rip+0xffa]        # 1018 <_main+0x1018>
+1e: 4c 8b 15 fb 0f 00 00    mov    r10,QWORD PTR [rip+0xffb]        # 1020 <_main+0x1020>
+25: eb d9                   jmp    0 <_main>
+
+Cool! So this is down to 15 bytes!
+We can store the type in the lowest 2..3 bits of R10, the PrecodeFixupThunk can shave those off!
+
 */
-    pageBase[0] = 0xff;
-    pageBase[1] = 0x25;
-    pageBase[2] = 0xfa;
-    pageBase[3] = 0x0f;
-    pageBase[4] = 0x00;
-    pageBase[5] = 0x00;
-    pageBase[6] = 0x4c;
-    pageBase[7] = 0x8b;
-    pageBase[8] = 0x15;
-    pageBase[9] = 0xfb;
-    pageBase[10] = 0x0f;
-    pageBase[11] = 0x00;
-    pageBase[12] = 0x00;
-    pageBase[13] = 0xff;
-    pageBase[14] = 0x25;
-    pageBase[15] = 0xfd;
-    pageBase[16] = 0x0f;
-    pageBase[17] = 0x00;
-    pageBase[18] = 0x00;
+    size_t target = (size_t)GetEEFuncEntryPoint(PrecodeFixupThunk);
+
+    pageBase[0] = 0x48;
+    pageBase[1] = 0xb8;
+    pageBase[2] = target & 0xff;
+    target >>= 8;
+    pageBase[3] = target & 0xff;
+    target >>= 8;
+    pageBase[4] = target & 0xff;
+    target >>= 8;
+    pageBase[5] = target & 0xff;
+    target >>= 8;
+    pageBase[6] = target & 0xff;
+    target >>= 8;
+    pageBase[7] = target & 0xff;
+    target >>= 8;
+    pageBase[8] = target & 0xff;
+    target >>= 8;
+    pageBase[9] = target & 0xff;
+    pageBase[10] = 0xff;
+    pageBase[11] = 0xe0;
+    pageBase[12] = 0x90;
+    pageBase[13] = 0x90;
+    pageBase[14] = 0x90;
+    pageBase[15] = 0x90;
+    pageBase[16] = 0x90;
+    pageBase[17] = 0x90;
+    pageBase[18] = 0x90;
     pageBase[19] = 0x90;
     pageBase[20] = 0x90;
     pageBase[21] = 0x90;
     pageBase[22] = 0x90;
     pageBase[23] = 0x90;
+
+    for (int i = 24; i < 4096; i += 24)
+    {
+        pageBase[i] = 0xff;
+        pageBase[i + 1] = 0x25;
+        pageBase[i + 2] = 0xfa;
+        pageBase[i + 3] = 0x0f;
+        pageBase[i + 4] = 0x00;
+        pageBase[i + 5] = 0x00;
+        pageBase[i + 6] = 0x4c;
+        pageBase[i + 7] = 0x8b;
+        pageBase[i + 8] = 0x15;
+        pageBase[i + 9] = 0xfb;
+        pageBase[i + 10] = 0x0f;
+        pageBase[i + 11] = 0x00;
+        pageBase[i + 12] = 0x00;
+
+        pageBase[i + 13] = 0xe9;
+        size_t offset = -(i + 18);
+        pageBase[i + 14] = offset & 0xff;
+        offset >>= 8;
+        pageBase[i + 15] = offset & 0xff;
+        offset >>= 8;
+        pageBase[i + 16] = offset & 0xff;
+        offset >>= 8;
+        pageBase[i + 17] = offset & 0xff;
+        pageBase[i + 18] = 0x90;
+        pageBase[i + 19] = 0x90;
+        pageBase[i + 20] = 0x90;
+        pageBase[i + 21] = 0x90;
+        pageBase[i + 22] = 0x90;
+        pageBase[i + 23] = 0x90;
+    }
 #else
   // /*
     pageBase[0] = 0x4C;
@@ -5287,14 +5370,14 @@ d:  ff 25 fd 0f 00 00       jmp    QWORD PTR [rip+0xffd]        # 1010 <_main+0x
 #endif
 
 #ifdef INDIRECTION_SLOT_FROM_JIT
-    memcpy(pageBase + 24, pageBase, 24);
-    memcpy(pageBase + 48, pageBase, 48);
-    memcpy(pageBase + 96, pageBase, 96);
-    memcpy(pageBase + 192, pageBase, 192);
-    memcpy(pageBase + 384, pageBase, 384);
-    memcpy(pageBase + 768, pageBase, 768);
-    memcpy(pageBase + 1536, pageBase, 1536);
-    memcpy(pageBase + 3072, pageBase, 1008);
+    //memcpy(pageBase + 24, pageBase, 24);
+    //memcpy(pageBase + 48, pageBase, 48);
+    //memcpy(pageBase + 96, pageBase, 96);
+    //memcpy(pageBase + 192, pageBase, 192);
+    //memcpy(pageBase + 384, pageBase, 384);
+    //memcpy(pageBase + 768, pageBase, 768);
+    //memcpy(pageBase + 1536, pageBase, 1536);
+    //memcpy(pageBase + 3072, pageBase, 1008);
 #else
 // Copy the same two instructions to the whole page
     memcpy(pageBase + 16, pageBase, 16);
@@ -5307,6 +5390,10 @@ d:  ff 25 fd 0f 00 00       jmp    QWORD PTR [rip+0xffd]        # 1010 <_main+0x
     memcpy(pageBase + 2048, pageBase, 2048);
 #endif
 #endif
+
+    ClrFlushInstructionCache(pageBaseRX, 4096);
+
+    return 24;
 }
 
 

@@ -259,14 +259,21 @@ Precode* Precode::Allocate(PrecodeType t, MethodDesc* pMD,
         pPrecode = (Precode*)pLoaderAllocator->GetFixupPrecodeHeap()->Allocate();
         pPrecode->Init(pPrecode, t, pMD, pLoaderAllocator);
     }
+    else if (t == PRECODE_STUB || t == PRECODE_NDIRECT_IMPORT)
+    {
+        pPrecode = (Precode*)pLoaderAllocator->GetNewStubPrecodeHeap()->Allocate();
+        pPrecode->Init(pPrecode, t, pMD, pLoaderAllocator);
+    }
     else
     {
         pPrecode = (Precode*)pamTracker->Track(pLoaderAllocator->GetPrecodeHeap()->AllocAlignedMem(size, AlignOf(t)));
         ExecutableWriterHolder<Precode> precodeWriterHolder(pPrecode, size);
         precodeWriterHolder.GetRW()->Init(pPrecode, t, pMD, pLoaderAllocator);
+        ClrFlushInstructionCache(pPrecode, size);
+
     }
 
-    ClrFlushInstructionCache(pPrecode, size);
+//    ClrFlushInstructionCache(pPrecode, size);
 
     return pPrecode;
 }
@@ -482,6 +489,20 @@ TADDR Precode::AllocateTemporaryEntryPoints(MethodDescChunk *  pChunk,
             entryPoint += oneSize;
 
             pMD = (MethodDesc *)(dac_cast<TADDR>(pMD) + pMD->SizeOf());
+        }
+    }
+    else if (t == PRECODE_STUB || t == PRECODE_NDIRECT_IMPORT)
+    {
+        temporaryEntryPoints = (TADDR)pLoaderAllocator->GetNewStubPrecodeHeap()->Allocate(count);
+        TADDR entryPoint = temporaryEntryPoints;
+        for (int i = 0; i < count; i++)
+        {
+            ((Precode*)entryPoint)->Init((Precode*)entryPoint, t, pMD, pLoaderAllocator);
+
+            _ASSERTE((Precode*)entryPoint == GetPrecodeForTemporaryEntryPoint(temporaryEntryPoints, i));
+            entryPoint += oneSize;
+
+            pMD = (MethodDesc*)(dac_cast<TADDR>(pMD) + pMD->SizeOf());
         }
     }
     else

@@ -115,8 +115,15 @@ public:
 #endif //  TARGET_X86
 
 #ifdef TARGET_AMD64
+        // TODO: make sure this doesn't collide with FixupPrecode if we change it back!
+        if (type == 0x4c)
+        {
+            type = m_data[4096 + 16];
+        }
+/*
         if (type == (X86_INSTR_MOV_R10_IMM64 & 0xFF))
             type = m_data[OFFSETOF_PRECODE_TYPE_MOV_R10];
+*/
         else if ((type == (X86_INSTR_CALL_REL32 & 0xFF)) || (type == (X86_INSTR_JMP_REL32  & 0xFF)))
             type = m_data[OFFSETOF_PRECODE_TYPE_CALL_OR_JMP];
 #endif // _AMD64

@@ -263,7 +263,7 @@ public:
 
 public:
     BOOL                m_fExplicitControl;  // Am I a LoaderHeap or an ExplicitControlLoaderHeap?
-    void (*m_codePageGenerator)(uint8_t* pageBase);
+    size_t (*m_codePageGenerator)(uint8_t* pageBase);
 
 #ifdef DACCESS_COMPILE
 public:
@@ -286,7 +286,7 @@ protected:
                        RangeList *pRangeList = NULL,
                        BOOL fMakeExecutable = FALSE,
                        BOOL fSeparateRWData = FALSE,
-                       void (*codePageGenerator)(uint8_t* pageBase) = NULL);
+                       size_t (*codePageGenerator)(uint8_t* pageBase) = NULL);
 
     ~UnlockedLoaderHeap();
 #endif
@@ -454,7 +454,7 @@ class StubHeap
     size_t m_thunkSize;
     size_t m_thunkBlockSize;
     //uint8_t* m_codePageTemplate;
-    void (*m_codePageGenerator)(uint8_t* pageBase);
+    size_t (*m_codePageGenerator)(uint8_t* pageBase);
     int m_numBlocks = 0;
 
     // TODO: free list - not needed for UMEntryThunk, it has its own list of free stubs. Maybe all stubs can do that?
@@ -466,7 +466,7 @@ class StubHeap
 #endif
 public:
 #ifndef DACCESS_COMPILE
-    StubHeap(size_t thunkSize, size_t codeSize, size_t dataSize, void (*codePageGenerator)(uint8_t* pageBase))
+    StubHeap(size_t thunkSize, size_t codeSize, size_t dataSize, size_t (*codePageGenerator)(uint8_t* pageBase))
     : m_CriticalSection(CreateLoaderHeapLock()), m_codePageGenerator(codePageGenerator)
     {
         _ASSERTE(dataSize == codeSize);
@@ -543,7 +543,7 @@ public:
                BOOL fMakeExecutable = FALSE,
                BOOL fUnlocked = FALSE,
                BOOL fSeparateRWData = FALSE,
-               void (*codePageGenerator)(uint8_t* pageBase) = NULL
+               size_t (*codePageGenerator)(uint8_t* pageBase) = NULL
                )
       : UnlockedLoaderHeap(dwReserveBlockSize,
                            dwCommitBlockSize,
@@ -567,7 +567,7 @@ public:
                BOOL fMakeExecutable = FALSE,
                BOOL fUnlocked = FALSE,
                BOOL fSeparateRWData = FALSE,
-               void (*codePageGenerator)(uint8_t* pageBase) = NULL
+               size_t (*codePageGenerator)(uint8_t* pageBase) = NULL
                )
       : UnlockedLoaderHeap(dwReserveBlockSize,
                            dwCommitBlockSize,

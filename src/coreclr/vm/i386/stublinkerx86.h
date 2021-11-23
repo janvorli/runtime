@@ -510,13 +510,14 @@ struct StubPrecode {
     // jmp Stub
 #endif // HOST_64BIT
 
-    IN_TARGET_64BIT(USHORT m_movR10;)
-    IN_TARGET_32BIT(BYTE   m_movEAX;)
-    TADDR           m_pMethodDesc;
-    IN_TARGET_32BIT(BYTE   m_mov_rm_r;)
-    BYTE            m_type;
-    BYTE            m_jmp;
-    INT32           m_rel32;
+    BYTE            m_code[24];
+    //IN_TARGET_64BIT(USHORT m_movR10;)
+    //IN_TARGET_32BIT(BYTE   m_movEAX;)
+    //TADDR           m_pMethodDesc;
+    //IN_TARGET_32BIT(BYTE   m_mov_rm_r;)
+    //BYTE            m_type;
+    //BYTE            m_jmp;
+    //INT32           m_rel32;
 
     void Init(StubPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator = NULL, BYTE type = StubPrecode::Type, TADDR target = NULL);
 
@@ -524,14 +525,17 @@ struct StubPrecode {
     {
         LIMITED_METHOD_DAC_CONTRACT;
 
-        return m_pMethodDesc;
+        //return m_pMethodDesc;
+        return *(TADDR*)((BYTE*)this + 4096 + 8);
     }
 
     PCODE GetTarget()
     {
         LIMITED_METHOD_DAC_CONTRACT;
 
-        return rel32Decode(PTR_HOST_MEMBER_TADDR(StubPrecode, this, m_rel32));
+        return *(PCODE*)((BYTE*)this + 4096);
+
+        //return rel32Decode(PTR_HOST_MEMBER_TADDR(StubPrecode, this, m_rel32));
     }
 #ifndef DACCESS_COMPILE
     void ResetTargetInterlocked()
@@ -543,8 +547,9 @@ struct StubPrecode {
         }
         CONTRACTL_END;
 
-        ExecutableWriterHolder<INT32> rel32WriterHolder(&m_rel32, sizeof(INT32));
-        rel32SetInterlocked(&m_rel32, rel32WriterHolder.GetRW(), GetPreStubEntryPoint(), (MethodDesc*)GetMethodDesc());
+        //ExecutableWriterHolder<INT32> rel32WriterHolder(&m_rel32, sizeof(INT32));
+        //rel32SetInterlocked(&m_rel32, rel32WriterHolder.GetRW(), GetPreStubEntryPoint(), (MethodDesc*)GetMethodDesc());
+        FastInterlockExchangeLong((INT64*)((BYTE*)this + 4096), (INT64)GetPreStubEntryPoint());
     }
 
     BOOL SetTargetInterlocked(TADDR target, TADDR expected)
@@ -556,15 +561,21 @@ struct StubPrecode {
         }
         CONTRACTL_END;
 
-        ExecutableWriterHolder<void> rel32Holder(&m_rel32, 4);
-        return rel32SetInterlocked(&m_rel32, rel32Holder.GetRW(), target, expected, (MethodDesc*)GetMethodDesc());
+        //ExecutableWriterHolder<void> rel32Holder(&m_rel32, 4);
+        //return rel32SetInterlocked(&m_rel32, rel32Holder.GetRW(), target, expected, (MethodDesc*)GetMethodDesc());
+        return FastInterlockCompareExchangeLong((INT64*)((BYTE*)this + 4096), target, expected) == expected;
     }
+
+    static size_t GenerateCodePage(uint8_t* pageBase);
+
 #endif // !DACCESS_COMPILE
 };
+/*
 IN_TARGET_64BIT(static_assert_no_msg(offsetof(StubPrecode, m_movR10) == OFFSETOF_PRECODE_TYPE);)
 IN_TARGET_64BIT(static_assert_no_msg(offsetof(StubPrecode, m_type) == OFFSETOF_PRECODE_TYPE_MOV_R10);)
 IN_TARGET_32BIT(static_assert_no_msg(offsetof(StubPrecode, m_mov_rm_r) == OFFSETOF_PRECODE_TYPE);)
 IN_TARGET_32BIT(static_assert_no_msg(offsetof(StubPrecode, m_type) == OFFSETOF_PRECODE_TYPE_MOV_RM_R);)
+*/
 typedef DPTR(StubPrecode) PTR_StubPrecode;
 
 
@@ -631,7 +642,7 @@ struct FixupPrecode {
 
     void Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator);
 
-    static void GenerateCodePage(uint8_t* pageBase);
+    static size_t GenerateCodePage(uint8_t* pageBase);
 
     TADDR GetMethodDesc()
     {

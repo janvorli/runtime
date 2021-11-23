@@ -922,7 +922,7 @@ UnlockedLoaderHeap::UnlockedLoaderHeap(DWORD dwReserveBlockSize,
                                        RangeList *pRangeList,
                                        BOOL fMakeExecutable,
                                        BOOL fSeparateRWData,
-                                       void (*codePageGenerator)(uint8_t* pageBase))
+                                       size_t (*codePageGenerator)(uint8_t* pageBase))
 {
     CONTRACTL
     {
@@ -1206,8 +1206,9 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
             return FALSE;
         }
 
-        ExecutableWriterHolder<BYTE> codeWriterHolder((BYTE*)pData, dwSizeToCommitPart);
-        m_codePageGenerator(codeWriterHolder.GetRW());
+//        ExecutableWriterHolder<BYTE> codeWriterHolder((BYTE*)pData, dwSizeToCommitPart);
+        m_codePageGenerator(pData);// codeWriterHolder.GetRW());
+
         // TODO: flush cache here or in the generator or in the stub creation?
     }
 
@@ -1237,7 +1238,7 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
     SETUP_NEW_BLOCK(pData, dwSizeToCommit, dwSizeToReserve);
     if ((m_Options & LHF_SEPARATE_RW_DATA) && (((TADDR)m_pPtrToEndOfCommittedRegion) & 0x1000) == 0x0000)
     {
-        __debugbreak();
+        //__debugbreak();
     }
 
     return TRUE;
@@ -1306,14 +1307,15 @@ BOOL UnlockedLoaderHeap::GetMoreCommittedPages(size_t dwMinSize)
         {
             if ((((TADDR)m_pPtrToEndOfCommittedRegion) & 0x1000) == 0x0000)
             {
-                __debugbreak();
+                //__debugbreak();
             }
             ExecutableAllocator::Instance()->Commit(m_pPtrToEndOfCommittedRegion, dwSizeToCommitPart, FALSE);
             m_dwTotalAlloc += dwSizeToCommitPart;
 
             //m_pPtrToEndOfCommittedRegion += dwSizeToCommit;
-            ExecutableWriterHolder<BYTE> codeWriterHolder((BYTE*)pData, dwSizeToCommitPart);
-            m_codePageGenerator(codeWriterHolder.GetRW());
+            //ExecutableWriterHolder<BYTE> codeWriterHolder((BYTE*)pData, dwSizeToCommitPart);
+            m_codePageGenerator((BYTE*)pData);// codeWriterHolder.GetRW());
+            //ClrFlushInstructionCache(pData, 4096);
 
             m_pAllocPtr = (BYTE*)pData;
         }
@@ -1723,7 +1725,7 @@ void *UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSiz
     pResult = m_pAllocPtr;
     if ((m_Options & LHF_SEPARATE_RW_DATA) && (((TADDR)pResult) & 0x1000) == 0x1000)
     {
-        __debugbreak();
+        //__debugbreak();
     }
 
     size_t extra = alignment - ((size_t)pResult & ((size_t)alignment - 1));
@@ -2261,34 +2263,32 @@ void StubHeap::AllocateBlock()
         ExecutableAllocator::Instance()->Commit(m_currentBlock + 4096 + 4096, m_thunkBlockSize, false /* isExecutable */);
     }
 
-    {
 //        ExecutableWriterHolder<uint8_t> codePageWriterHolder(m_currentBlock, 4096);
-        m_codePageGenerator(m_currentBlock);
+    size_t offset = m_codePageGenerator(m_currentBlock);
 /*
-        // TODO: generate the code page - need some callback, this is just a quick hack
-        int dataOffset = 8192-7+16;
-        for (uint8_t* code = codePageWriterHolder.GetRW() + m_codeSize; code < codePageWriterHolder.GetRW() + 4096; code += m_codeSize)
-        {
-            code[0] = 0x4C;
-            code[1] = 0x8D;
-            code[2] = 0x15;
-            code[3] = dataOffset & 0xFF;
-            code[4] = dataOffset >> 8;
-            code[5] = 0x00;
-            code[6] = 0x00;
-            code[7] = 0xFF;
-            code[8] = 0x25;
-            code[9] = 0xF3;
-            code[10] = 0x0F;
-            code[11] = 0x00;
-            code[12] = 0x00;
-            code[13] = 0x90;
-            code[14] = 0x90;
-            code[15] = 0x90;
-            dataOffset += 16;
-        }
-*/            
+    // TODO: generate the code page - need some callback, this is just a quick hack
+    int dataOffset = 8192-7+16;
+    for (uint8_t* code = codePageWriterHolder.GetRW() + m_codeSize; code < codePageWriterHolder.GetRW() + 4096; code += m_codeSize)
+    {
+        code[0] = 0x4C;
+        code[1] = 0x8D;
+        code[2] = 0x15;
+        code[3] = dataOffset & 0xFF;
+        code[4] = dataOffset >> 8;
+        code[5] = 0x00;
+        code[6] = 0x00;
+        code[7] = 0xFF;
+        code[8] = 0x25;
+        code[9] = 0xF3;
+        code[10] = 0x0F;
+        code[11] = 0x00;
+        code[12] = 0x00;
+        code[13] = 0x90;
+        code[14] = 0x90;
+        code[15] = 0x90;
+        dataOffset += 16;
     }
+*/            
 
     StubHeapBlockHeader* pBlockHeader = (StubHeapBlockHeader*)(m_currentBlock + 4096);
     new (pBlockHeader) StubHeapBlockHeader();
@@ -2296,7 +2296,7 @@ void StubHeap::AllocateBlock()
 
     _ASSERTE(sizeof(StubHeapBlockHeader) <= m_dataSize);
 
-    m_freeLoc = m_currentBlock + m_codeSize;
+    m_freeLoc = m_currentBlock + m_codeSize + offset;
 }
 
 AllocMemTracker::AllocMemTracker()

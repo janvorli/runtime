@@ -1049,7 +1049,7 @@ void LoaderAllocator::ActivateManagedTracking()
 #define COLLECTIBLE_HIGH_FREQUENCY_HEAP_SIZE       (3 * GetOsPageSize())
 #define COLLECTIBLE_STUB_HEAP_SIZE                 GetOsPageSize()
 #define COLLECTIBLE_CODEHEAP_SIZE                  (7 * GetOsPageSize())
-#define COLLECTIBLE_VIRTUALSTUBDISPATCH_HEAP_SPACE (5 * GetOsPageSize())
+#define COLLECTIBLE_VIRTUALSTUBDISPATCH_HEAP_SPACE (7 * GetOsPageSize())
 
 void LoaderAllocator::Init(BaseDomain *pDomain, BYTE *pExecutableHeapMemory)
 {
@@ -1193,6 +1193,9 @@ void LoaderAllocator::Init(BaseDomain *pDomain, BYTE *pExecutableHeapMemory)
 #endif
 
     m_pPrecodeHeap = new (&m_PrecodeHeapInstance) CodeFragmentHeap(this, STUB_CODE_BLOCK_PRECODE);
+
+    // NOTE: use StubHeap for the StubPrecode for now. Figure out how to migrate the CodeFragmentHeap to a model that can use the dual alloc
+    m_pNewStubPrecodeHeap = new (&m_NewStubPrecodeHeapInstance) StubHeap(0, sizeof(StubPrecode), 24, StubPrecode::GenerateCodePage);
 
 #if defined(INDIRECT_JUMP_PERF_TEST) || defined(INDIRECTION_SLOT_FROM_JIT)
     m_pFixupPrecodeHeap = new (&m_FixupPrecodeHeapInstance) StubHeap(0, sizeof(FixupPrecode), 24, FixupPrecode::GenerateCodePage);

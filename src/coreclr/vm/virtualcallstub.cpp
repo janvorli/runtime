@@ -564,9 +564,9 @@ void VirtualCallStubManager::Init(BaseDomain *pDomain, LoaderAllocator *pLoaderA
     lookup_heap_commit_size         *= sizeof(LookupHolder);
 
     DWORD dispatchHolderSize        = sizeof(DispatchHolder);
-#ifdef TARGET_AMD64
-    dispatchHolderSize               = static_cast<DWORD>(DispatchHolder::GetHolderSize(DispatchStub::e_TYPE_SHORT));
-#endif
+//#ifdef TARGET_AMD64
+//    dispatchHolderSize               = static_cast<DWORD>(DispatchHolder::GetHolderSize(DispatchStub::e_TYPE_SHORT));
+//#endif
 
     dispatch_heap_reserve_size      *= dispatchHolderSize;
     dispatch_heap_commit_size       *= dispatchHolderSize;
@@ -586,11 +586,11 @@ void VirtualCallStubManager::Init(BaseDomain *pDomain, LoaderAllocator *pLoaderA
     cache_entry_heap_reserve_size    = (DWORD) ALIGN_UP(cache_entry_heap_reserve_size, GetOsPageSize());
     cache_entry_heap_commit_size     = (DWORD) ALIGN_UP(cache_entry_heap_commit_size,  GetOsPageSize());
 
-    lookup_heap_reserve_size         = (DWORD) ALIGN_UP(lookup_heap_reserve_size,      GetOsPageSize());
-    lookup_heap_commit_size          = (DWORD) ALIGN_UP(lookup_heap_commit_size,       GetOsPageSize());
+    lookup_heap_reserve_size         = (DWORD) ALIGN_UP(lookup_heap_reserve_size,      2 * GetOsPageSize());
+    lookup_heap_commit_size          = (DWORD) ALIGN_UP(lookup_heap_commit_size,       2 * GetOsPageSize());
 
-    dispatch_heap_reserve_size       = (DWORD) ALIGN_UP(dispatch_heap_reserve_size,    GetOsPageSize());
-    dispatch_heap_commit_size        = (DWORD) ALIGN_UP(dispatch_heap_commit_size,     GetOsPageSize());
+    dispatch_heap_reserve_size       = (DWORD) ALIGN_UP(dispatch_heap_reserve_size,    2 * GetOsPageSize());
+    dispatch_heap_commit_size        = (DWORD) ALIGN_UP(dispatch_heap_commit_size,     2 * GetOsPageSize());
 
     resolve_heap_reserve_size        = (DWORD) ALIGN_UP(resolve_heap_reserve_size,     GetOsPageSize());
     resolve_heap_commit_size         = (DWORD) ALIGN_UP(resolve_heap_commit_size,      GetOsPageSize());
@@ -617,13 +617,13 @@ void VirtualCallStubManager::Init(BaseDomain *pDomain, LoaderAllocator *pLoaderA
             if (dwWastedReserveMemSize != 0)
             {
                 DWORD cWastedPages = dwWastedReserveMemSize / GetOsPageSize();
-                DWORD cPagesPerHeap = cWastedPages / 6;
-                DWORD cPagesRemainder = cWastedPages % 6; // We'll throw this at the resolve heap
+                DWORD cPagesPerHeap = cWastedPages / 8;
+                DWORD cPagesRemainder = cWastedPages % 8; // We'll throw this at the resolve heap
 
                 indcell_heap_reserve_size += cPagesPerHeap * GetOsPageSize();
                 cache_entry_heap_reserve_size += cPagesPerHeap * GetOsPageSize();
-                lookup_heap_reserve_size += cPagesPerHeap * GetOsPageSize();
-                dispatch_heap_reserve_size += cPagesPerHeap * GetOsPageSize();
+                lookup_heap_reserve_size += 2 * cPagesPerHeap * GetOsPageSize();
+                dispatch_heap_reserve_size += 2 * cPagesPerHeap * GetOsPageSize();
                 vtable_heap_reserve_size += cPagesPerHeap * GetOsPageSize();
                 resolve_heap_reserve_size += cPagesPerHeap * GetOsPageSize();
                 resolve_heap_reserve_size += cPagesRemainder * GetOsPageSize();
@@ -653,11 +653,11 @@ void VirtualCallStubManager::Init(BaseDomain *pDomain, LoaderAllocator *pLoaderA
         cache_entry_heap_reserve_size    = GetOsPageSize();
         cache_entry_heap_commit_size     = GetOsPageSize();
 
-        lookup_heap_reserve_size         = GetOsPageSize();
-        lookup_heap_commit_size          = GetOsPageSize();
+        lookup_heap_reserve_size         = 4 * GetOsPageSize();
+        lookup_heap_commit_size          = 2 * GetOsPageSize();
 
-        dispatch_heap_reserve_size       = GetOsPageSize();
-        dispatch_heap_commit_size        = GetOsPageSize();
+        dispatch_heap_reserve_size       = 4 * GetOsPageSize();
+        dispatch_heap_commit_size        = 2 * GetOsPageSize();
 
         resolve_heap_reserve_size        = GetOsPageSize();
         resolve_heap_commit_size         = GetOsPageSize();
@@ -709,7 +709,7 @@ void VirtualCallStubManager::Init(BaseDomain *pDomain, LoaderAllocator *pLoaderA
     NewHolder<LoaderHeap> lookup_heap_holder(
                                new LoaderHeap(lookup_heap_reserve_size, lookup_heap_commit_size,
                                               initReservedMem, lookup_heap_reserve_size,
-                                              &lookup_rangeList, TRUE));
+                                              &lookup_rangeList, TRUE, FALSE, TRUE, LookupHolder::GenerateCodePage));
 
     initReservedMem += lookup_heap_reserve_size;
 
@@ -717,7 +717,7 @@ void VirtualCallStubManager::Init(BaseDomain *pDomain, LoaderAllocator *pLoaderA
     NewHolder<LoaderHeap> dispatch_heap_holder(
                                new LoaderHeap(dispatch_heap_reserve_size, dispatch_heap_commit_size,
                                               initReservedMem, dispatch_heap_reserve_size,
-                                              &dispatch_rangeList, TRUE));
+                                              &dispatch_rangeList, TRUE, FALSE, TRUE, DispatchHolder::GenerateCodePage));
 
     initReservedMem += dispatch_heap_reserve_size;
 
@@ -2581,42 +2581,43 @@ DispatchHolder *VirtualCallStubManager::GenerateDispatchStub(PCODE            ad
         POSTCONDITION(CheckPointer(RETVAL));
     } CONTRACT_END;
 
-    size_t dispatchHolderSize = sizeof(DispatchHolder);
+    size_t dispatchHolderSize = DispatchHolder::GetHolderSize();
 
 #ifdef TARGET_AMD64
-    // See comment around m_fShouldAllocateLongJumpDispatchStubs for explanation.
-    if (m_fShouldAllocateLongJumpDispatchStubs
-        INDEBUG(|| g_pConfig->ShouldGenerateLongJumpDispatchStub()))
-    {
-        RETURN GenerateDispatchStubLong(addrOfCode,
-                                        addrOfFail,
-                                        pMTExpected,
-                                        dispatchToken,
-                                        pMayHaveReenteredCooperativeGCMode);
-    }
+    //// See comment around m_fShouldAllocateLongJumpDispatchStubs for explanation.
+    //if (m_fShouldAllocateLongJumpDispatchStubs
+    //    INDEBUG(|| g_pConfig->ShouldGenerateLongJumpDispatchStub()))
+    //{
+    //    RETURN GenerateDispatchStubLong(addrOfCode,
+    //                                    addrOfFail,
+    //                                    pMTExpected,
+    //                                    dispatchToken,
+    //                                    pMayHaveReenteredCooperativeGCMode);
+    //}
 
-    dispatchHolderSize = DispatchHolder::GetHolderSize(DispatchStub::e_TYPE_SHORT);
+    //dispatchHolderSize = DispatchHolder::GetHolderSize(DispatchStub::e_TYPE_SHORT);
 #endif
 
     //allocate from the requisite heap and copy the template over it.
     DispatchHolder * holder = (DispatchHolder*) (void*)
-        dispatch_heap->AllocAlignedMem(dispatchHolderSize, CODE_SIZE_ALIGN);
+        dispatch_heap->AllocAlignedMem(dispatchHolderSize, 1);// CODE_SIZE_ALIGN);
 
-#ifdef TARGET_AMD64
-    if (!DispatchHolder::CanShortJumpDispatchStubReachFailTarget(addrOfFail, (LPCBYTE)holder))
-    {
-        m_fShouldAllocateLongJumpDispatchStubs = TRUE;
-        RETURN GenerateDispatchStub(addrOfCode, addrOfFail, pMTExpected, dispatchToken, pMayHaveReenteredCooperativeGCMode);
-    }
-#endif
+//#ifdef TARGET_AMD64
+//    if (!DispatchHolder::CanShortJumpDispatchStubReachFailTarget(addrOfFail, (LPCBYTE)holder))
+//    {
+//        m_fShouldAllocateLongJumpDispatchStubs = TRUE;
+//        RETURN GenerateDispatchStub(addrOfCode, addrOfFail, pMTExpected, dispatchToken, pMayHaveReenteredCooperativeGCMode);
+//    }
+//#endif
 
-    ExecutableWriterHolder<DispatchHolder> dispatchWriterHolder(holder, dispatchHolderSize);
-    dispatchWriterHolder.GetRW()->Initialize(holder, addrOfCode,
+    //ExecutableWriterHolder<DispatchHolder> dispatchWriterHolder(holder, dispatchHolderSize);
+    //dispatchWriterHolder.GetRW()->Initialize(holder, addrOfCode,
+    holder->Initialize(holder, addrOfCode,
                        addrOfFail,
                        (size_t)pMTExpected
-#ifdef TARGET_AMD64
-                       , DispatchStub::e_TYPE_SHORT
-#endif
+//#ifdef TARGET_AMD64
+//                       , DispatchStub::e_TYPE_SHORT
+//#endif
                        );
 
 #ifdef FEATURE_CODE_VERSIONING
@@ -2632,7 +2633,7 @@ DispatchHolder *VirtualCallStubManager::GenerateDispatchStub(PCODE            ad
     }
 #endif
 
-    ClrFlushInstructionCache(holder->stub(), holder->stub()->size());
+    //ClrFlushInstructionCache(holder->stub(), holder->stub()->size());
 
     AddToCollectibleVSDRangeList(holder);
 
@@ -2649,69 +2650,69 @@ DispatchHolder *VirtualCallStubManager::GenerateDispatchStub(PCODE            ad
     RETURN (holder);
 }
 
-#ifdef TARGET_AMD64
-//----------------------------------------------------------------------------
-/* Generate a dispatcher stub, pMTExpected is the method table to burn in the stub, and the two addrOf's
-are the addresses the stub is to transfer to depending on the test with pMTExpected
-*/
-DispatchHolder *VirtualCallStubManager::GenerateDispatchStubLong(PCODE            addrOfCode,
-                                                                 PCODE            addrOfFail,
-                                                                 void *           pMTExpected,
-                                                                 size_t           dispatchToken,
-                                                                 bool *           pMayHaveReenteredCooperativeGCMode)
-{
-    CONTRACT (DispatchHolder*) {
-        THROWS;
-        GC_TRIGGERS;
-        INJECT_FAULT(COMPlusThrowOM(););
-        PRECONDITION(addrOfCode != NULL);
-        PRECONDITION(addrOfFail != NULL);
-        PRECONDITION(CheckPointer(pMTExpected));
-        PRECONDITION(pMayHaveReenteredCooperativeGCMode != nullptr);
-        PRECONDITION(!*pMayHaveReenteredCooperativeGCMode);
-        POSTCONDITION(CheckPointer(RETVAL));
-    } CONTRACT_END;
-
-    //allocate from the requisite heap and copy the template over it.
-    size_t dispatchHolderSize = DispatchHolder::GetHolderSize(DispatchStub::e_TYPE_LONG);
-    DispatchHolder * holder = (DispatchHolder*) (void*)dispatch_heap->AllocAlignedMem(dispatchHolderSize, CODE_SIZE_ALIGN);
-    ExecutableWriterHolder<DispatchHolder> dispatchWriterHolder(holder, dispatchHolderSize);
-
-    dispatchWriterHolder.GetRW()->Initialize(holder, addrOfCode,
-                       addrOfFail,
-                       (size_t)pMTExpected,
-                       DispatchStub::e_TYPE_LONG);
-
-#ifdef FEATURE_CODE_VERSIONING
-    MethodDesc *pMD = MethodTable::GetMethodDescForSlotAddress(addrOfCode);
-    if (pMD->IsVersionableWithVtableSlotBackpatch())
-    {
-        EntryPointSlots::SlotType slotType;
-        TADDR slot = holder->stub()->implTargetSlot(&slotType);
-        pMD->RecordAndBackpatchEntryPointSlot(m_loaderAllocator, slot, slotType);
-
-        // RecordAndBackpatchEntryPointSlot() may exit and reenter cooperative GC mode
-        *pMayHaveReenteredCooperativeGCMode = true;
-    }
-#endif
-
-    ClrFlushInstructionCache(holder->stub(), holder->stub()->size());
-
-    AddToCollectibleVSDRangeList(holder);
-
-    //incr our counters
-    stats.stub_mono_counter++;
-    stats.stub_space += static_cast<UINT32>(DispatchHolder::GetHolderSize(DispatchStub::e_TYPE_LONG));
-    LOG((LF_STUBS, LL_INFO10000, "GenerateDispatchStub for token" FMT_ADDR "and pMT" FMT_ADDR "at" FMT_ADDR "\n",
-                                 DBG_ADDR(dispatchToken), DBG_ADDR(pMTExpected), DBG_ADDR(holder->stub())));
-
-#ifdef FEATURE_PERFMAP
-    PerfMap::LogStubs(__FUNCTION__, "GenerateDispatchStub", (PCODE)holder->stub(), holder->stub()->size());
-#endif
-
-    RETURN (holder);
-}
-#endif
+//#ifdef TARGET_AMD64
+////----------------------------------------------------------------------------
+///* Generate a dispatcher stub, pMTExpected is the method table to burn in the stub, and the two addrOf's
+//are the addresses the stub is to transfer to depending on the test with pMTExpected
+//*/
+//DispatchHolder *VirtualCallStubManager::GenerateDispatchStubLong(PCODE            addrOfCode,
+//                                                                 PCODE            addrOfFail,
+//                                                                 void *           pMTExpected,
+//                                                                 size_t           dispatchToken,
+//                                                                 bool *           pMayHaveReenteredCooperativeGCMode)
+//{
+//    CONTRACT (DispatchHolder*) {
+//        THROWS;
+//        GC_TRIGGERS;
+//        INJECT_FAULT(COMPlusThrowOM(););
+//        PRECONDITION(addrOfCode != NULL);
+//        PRECONDITION(addrOfFail != NULL);
+//        PRECONDITION(CheckPointer(pMTExpected));
+//        PRECONDITION(pMayHaveReenteredCooperativeGCMode != nullptr);
+//        PRECONDITION(!*pMayHaveReenteredCooperativeGCMode);
+//        POSTCONDITION(CheckPointer(RETVAL));
+//    } CONTRACT_END;
+//
+//    //allocate from the requisite heap and copy the template over it.
+//    size_t dispatchHolderSize = DispatchHolder::GetHolderSize(DispatchStub::e_TYPE_LONG);
+//    DispatchHolder * holder = (DispatchHolder*) (void*)dispatch_heap->AllocAlignedMem(dispatchHolderSize, CODE_SIZE_ALIGN);
+//    ExecutableWriterHolder<DispatchHolder> dispatchWriterHolder(holder, dispatchHolderSize);
+//
+//    dispatchWriterHolder.GetRW()->Initialize(holder, addrOfCode,
+//                       addrOfFail,
+//                       (size_t)pMTExpected,
+//                       DispatchStub::e_TYPE_LONG);
+//
+//#ifdef FEATURE_CODE_VERSIONING
+//    MethodDesc *pMD = MethodTable::GetMethodDescForSlotAddress(addrOfCode);
+//    if (pMD->IsVersionableWithVtableSlotBackpatch())
+//    {
+//        EntryPointSlots::SlotType slotType;
+//        TADDR slot = holder->stub()->implTargetSlot(&slotType);
+//        pMD->RecordAndBackpatchEntryPointSlot(m_loaderAllocator, slot, slotType);
+//
+//        // RecordAndBackpatchEntryPointSlot() may exit and reenter cooperative GC mode
+//        *pMayHaveReenteredCooperativeGCMode = true;
+//    }
+//#endif
+//
+//    ClrFlushInstructionCache(holder->stub(), holder->stub()->size());
+//
+//    AddToCollectibleVSDRangeList(holder);
+//
+//    //incr our counters
+//    stats.stub_mono_counter++;
+//    stats.stub_space += static_cast<UINT32>(DispatchHolder::GetHolderSize(DispatchStub::e_TYPE_LONG));
+//    LOG((LF_STUBS, LL_INFO10000, "GenerateDispatchStub for token" FMT_ADDR "and pMT" FMT_ADDR "at" FMT_ADDR "\n",
+//                                 DBG_ADDR(dispatchToken), DBG_ADDR(pMTExpected), DBG_ADDR(holder->stub())));
+//
+//#ifdef FEATURE_PERFMAP
+//    PerfMap::LogStubs(__FUNCTION__, "GenerateDispatchStub", (PCODE)holder->stub(), holder->stub()->size());
+//#endif
+//
+//    RETURN (holder);
+//}
+//#endif
 
 //----------------------------------------------------------------------------
 /* Generate a resolve stub for the given dispatchToken.
@@ -2826,10 +2827,10 @@ LookupHolder *VirtualCallStubManager::GenerateLookupStub(PCODE addrOfResolver, s
     } CONTRACT_END;
 
     //allocate from the requisite heap and copy the template over it.
-    LookupHolder * holder     = (LookupHolder*) (void*) lookup_heap->AllocAlignedMem(sizeof(LookupHolder), CODE_SIZE_ALIGN);
-    ExecutableWriterHolder<LookupHolder> lookupWriterHolder(holder, sizeof(LookupHolder));
-
-    lookupWriterHolder.GetRW()->Initialize(holder, addrOfResolver, dispatchToken);
+    LookupHolder* holder = (LookupHolder*)(void*)lookup_heap->AllocAlignedMem(sizeof(LookupHolder), 1); // CODE_SIZE_ALIGN);
+    //ExecutableWriterHolder<LookupHolder> lookupWriterHolder(holder, sizeof(LookupHolder));
+    holder->Initialize(holder, addrOfResolver, dispatchToken);
+    //lookupWriterHolder.GetRW()->Initialize(holder, addrOfResolver, dispatchToken);
     ClrFlushInstructionCache(holder->stub(), holder->stub()->size());
 
     AddToCollectibleVSDRangeList(holder);

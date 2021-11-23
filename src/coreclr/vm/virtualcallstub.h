@@ -280,9 +280,9 @@ public:
           lookup_heap(NULL),
           dispatch_heap(NULL),
           resolve_heap(NULL),
-#ifdef TARGET_AMD64
-          m_fShouldAllocateLongJumpDispatchStubs(FALSE),
-#endif
+//#ifdef TARGET_AMD64
+//          m_fShouldAllocateLongJumpDispatchStubs(FALSE),
+//#endif
           lookups(NULL),
           cache_entries(NULL),
           dispatchers(NULL),
@@ -729,20 +729,20 @@ private:
     PTR_LoaderHeap  resolve_heap;       // resolve stubs go here
     PTR_LoaderHeap  vtable_heap;        // vtable-based jump stubs go here
 
-#ifdef TARGET_AMD64
-    // When we layout the stub heaps, we put them close together in a sequential order
-    // so that we maximize performance with respect to branch predictions. On AMD64,
-    // dispatch stubs use a rel32 jump on failure to the resolve stub. This works for
-    // a while because of the ordering, but as soon as we have to start allocating more
-    // memory for either the dispatch or resolve heaps we have a chance that we'll be
-    // further away than a rel32 jump can reach, because we're in a 64-bit address
-    // space. As such, this flag will indicate when we allocate the first dispatch stub
-    // that cannot reach a resolve stub, and when this happens we'll switch over to
-    // allocating the larger version of the dispatch stub which contains an abs64 jump.
-    //@TODO: This is a bit of a workaround, but the limitations of LoaderHeap require that we
-    //@TODO: take this approach. Hopefully in Orcas we'll have a chance to rewrite LoaderHeap.
-    BOOL            m_fShouldAllocateLongJumpDispatchStubs; // Defaults to FALSE.
-#endif
+//#ifdef TARGET_AMD64
+//    // When we layout the stub heaps, we put them close together in a sequential order
+//    // so that we maximize performance with respect to branch predictions. On AMD64,
+//    // dispatch stubs use a rel32 jump on failure to the resolve stub. This works for
+//    // a while because of the ordering, but as soon as we have to start allocating more
+//    // memory for either the dispatch or resolve heaps we have a chance that we'll be
+//    // further away than a rel32 jump can reach, because we're in a 64-bit address
+//    // space. As such, this flag will indicate when we allocate the first dispatch stub
+//    // that cannot reach a resolve stub, and when this happens we'll switch over to
+//    // allocating the larger version of the dispatch stub which contains an abs64 jump.
+//    //@TODO: This is a bit of a workaround, but the limitations of LoaderHeap require that we
+//    //@TODO: take this approach. Hopefully in Orcas we'll have a chance to rewrite LoaderHeap.
+//    BOOL            m_fShouldAllocateLongJumpDispatchStubs; // Defaults to FALSE.
+//#endif
 
     BucketTable *   lookups;            // hash table of lookups keyed by tokens
     BucketTable *   cache_entries;      // hash table of dispatch token/target structs for dispatch cache
