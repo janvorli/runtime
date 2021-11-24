@@ -592,8 +592,8 @@ void VirtualCallStubManager::Init(BaseDomain *pDomain, LoaderAllocator *pLoaderA
     dispatch_heap_reserve_size       = (DWORD) ALIGN_UP(dispatch_heap_reserve_size,    2 * GetOsPageSize());
     dispatch_heap_commit_size        = (DWORD) ALIGN_UP(dispatch_heap_commit_size,     2 * GetOsPageSize());
 
-    resolve_heap_reserve_size        = (DWORD) ALIGN_UP(resolve_heap_reserve_size,     GetOsPageSize());
-    resolve_heap_commit_size         = (DWORD) ALIGN_UP(resolve_heap_commit_size,      GetOsPageSize());
+    resolve_heap_reserve_size        = (DWORD) ALIGN_UP(resolve_heap_reserve_size,     2 * GetOsPageSize());
+    resolve_heap_commit_size         = (DWORD) ALIGN_UP(resolve_heap_commit_size,      2 * GetOsPageSize());
 
     vtable_heap_reserve_size         = (DWORD) ALIGN_UP(vtable_heap_reserve_size,      GetOsPageSize());
     vtable_heap_commit_size          = (DWORD) ALIGN_UP(vtable_heap_commit_size,       GetOsPageSize());
@@ -617,16 +617,17 @@ void VirtualCallStubManager::Init(BaseDomain *pDomain, LoaderAllocator *pLoaderA
             if (dwWastedReserveMemSize != 0)
             {
                 DWORD cWastedPages = dwWastedReserveMemSize / GetOsPageSize();
-                DWORD cPagesPerHeap = cWastedPages / 8;
-                DWORD cPagesRemainder = cWastedPages % 8; // We'll throw this at the resolve heap
+                DWORD cPagesPerHeap = cWastedPages / 9;
+                DWORD cPagesRemainder = cWastedPages % 9; // We'll throw this at the resolve heap
 
                 indcell_heap_reserve_size += cPagesPerHeap * GetOsPageSize();
                 cache_entry_heap_reserve_size += cPagesPerHeap * GetOsPageSize();
                 lookup_heap_reserve_size += 2 * cPagesPerHeap * GetOsPageSize();
                 dispatch_heap_reserve_size += 2 * cPagesPerHeap * GetOsPageSize();
                 vtable_heap_reserve_size += cPagesPerHeap * GetOsPageSize();
-                resolve_heap_reserve_size += cPagesPerHeap * GetOsPageSize();
-                resolve_heap_reserve_size += cPagesRemainder * GetOsPageSize();
+                resolve_heap_reserve_size += 2 * cPagesPerHeap * GetOsPageSize();
+                resolve_heap_reserve_size += (cPagesRemainder & 0xFFFFFFFE) * GetOsPageSize();
+                indcell_heap_reserve_size += (cPagesRemainder & 1) * GetOsPageSize();
             }
 
             CONSISTENCY_CHECK((indcell_heap_reserve_size     +
@@ -659,8 +660,8 @@ void VirtualCallStubManager::Init(BaseDomain *pDomain, LoaderAllocator *pLoaderA
         dispatch_heap_reserve_size       = 4 * GetOsPageSize();
         dispatch_heap_commit_size        = 2 * GetOsPageSize();
 
-        resolve_heap_reserve_size        = GetOsPageSize();
-        resolve_heap_commit_size         = GetOsPageSize();
+        resolve_heap_reserve_size        = 4 * GetOsPageSize();
+        resolve_heap_commit_size         = 2 * GetOsPageSize();
 
         // Heap for the collectible case is carefully tuned to sum up to 16 pages. Today, we only use the
         // vtable jump stubs in the R2R scenario, which is unlikely to be loaded in the collectible context,
@@ -725,7 +726,7 @@ void VirtualCallStubManager::Init(BaseDomain *pDomain, LoaderAllocator *pLoaderA
     NewHolder<LoaderHeap> resolve_heap_holder(
                                new LoaderHeap(resolve_heap_reserve_size, resolve_heap_commit_size,
                                               initReservedMem, resolve_heap_reserve_size,
-                                              &resolve_rangeList, TRUE));
+                                              &resolve_rangeList, TRUE, FALSE, TRUE, ResolveHolder::GenerateCodePage));
 
     initReservedMem += resolve_heap_reserve_size;
 
@@ -2786,9 +2787,10 @@ ResolveHolder *VirtualCallStubManager::GenerateResolveStub(PCODE            addr
     //allocate from the requisite heap and copy the templates for each piece over it.
     ResolveHolder * holder = (ResolveHolder*) (void*)
         resolve_heap->AllocAlignedMem(sizeof(ResolveHolder), CODE_SIZE_ALIGN);
-    ExecutableWriterHolder<ResolveHolder> resolveWriterHolder(holder, sizeof(ResolveHolder));
+    //ExecutableWriterHolder<ResolveHolder> resolveWriterHolder(holder, sizeof(ResolveHolder));
 
-    resolveWriterHolder.GetRW()->Initialize(holder,
+//    resolveWriterHolder.GetRW()->Initialize(holder,
+        holder->Initialize(holder,
                        addrOfResolver, addrOfPatcher,
                        dispatchToken, DispatchCache::HashToken(dispatchToken),
                        g_resolveCache->GetCacheBaseAddr(), counterAddr
@@ -2796,7 +2798,7 @@ ResolveHolder *VirtualCallStubManager::GenerateResolveStub(PCODE            addr
                        , stackArgumentsSize
 #endif
                        );
-    ClrFlushInstructionCache(holder->stub(), holder->stub()->size());
+    //ClrFlushInstructionCache(holder->stub(), holder->stub()->size());
 
     AddToCollectibleVSDRangeList(holder);
 

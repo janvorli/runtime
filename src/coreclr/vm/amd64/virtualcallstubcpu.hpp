@@ -352,62 +352,64 @@ is important. */
 
 struct ResolveStub
 {
-    inline PCODE failEntryPoint()       { LIMITED_METHOD_CONTRACT; return (PCODE)&_failEntryPoint[0];    }
-    inline PCODE resolveEntryPoint()    { LIMITED_METHOD_CONTRACT; return (PCODE)&_resolveEntryPoint[0]; }
-    inline PCODE slowEntryPoint()       { LIMITED_METHOD_CONTRACT; return (PCODE)&_slowEntryPoint[0]; }
+    inline PCODE failEntryPoint()       { LIMITED_METHOD_CONTRACT; return (PCODE)((BYTE*)this + 0x3c); }
+    inline PCODE resolveEntryPoint()    { LIMITED_METHOD_CONTRACT; return (PCODE)((BYTE*)this); }
+    inline PCODE slowEntryPoint()       { LIMITED_METHOD_CONTRACT; return (PCODE)((BYTE*)this + 0x4c); }
 
-    inline INT32* pCounter()            { LIMITED_METHOD_CONTRACT; return _pCounter; }
-    inline UINT32 hashedToken()         { LIMITED_METHOD_CONTRACT; return _hashedToken >> LOG2_PTRSIZE;    }
-    inline size_t cacheAddress()        { LIMITED_METHOD_CONTRACT; return _cacheAddress;   }
-    inline size_t token()               { LIMITED_METHOD_CONTRACT; return _token;          }
-    inline size_t size()                { LIMITED_METHOD_CONTRACT; return sizeof(LookupStub); }
+    inline INT32* pCounter()            { LIMITED_METHOD_CONTRACT; return *(INT32**)((BYTE*)this + 4096 + 24); }
+    inline UINT32 hashedToken()         { LIMITED_METHOD_CONTRACT; return (*(INT32*)((BYTE*)this + 4096 + 8)) >> LOG2_PTRSIZE;    }
+    inline size_t cacheAddress()        { LIMITED_METHOD_CONTRACT; return *(size_t*)((BYTE*)this + 4096);   }
+    inline size_t token()               { LIMITED_METHOD_CONTRACT; return *(size_t*)((BYTE*)this + 4096 + 16);          }
+    inline size_t size()                { LIMITED_METHOD_CONTRACT; return sizeof(ResolveStub); }
 
 private:
     friend struct ResolveHolder;
 
-    BYTE    _resolveEntryPoint[3];//                resolveStub:
-                                  // 52                       push   rdx
-                                  // 49 BA                    mov    r10,
-    size_t  _cacheAddress;        // xx xx xx xx xx xx xx xx              64-bit address
-    BYTE    part1 [15];           // 48 8B XX                 mov    rax, [THIS_REG]     ; Compute hash = ((MT + MT>>12) ^ prehash)
-                                  // 48 8B D0                 mov    rdx, rax            ; rdx <- current MethodTable
-                                  // 48 C1 E8 0C              shr    rax, 12
-                                  // 48 03 C2                 add    rax, rdx
-                                  // 48 35                    xor    rax,
-    UINT32  _hashedToken;         // xx xx xx xx                          hashedtoken    ; xor with pre-hashed token
-    BYTE    part2 [2];            // 48 25                    and    rax,
-    UINT32  mask;                 // xx xx xx xx                          cache_mask     ; and with cache mask
-    BYTE    part3 [6];            // 4A 8B 04 10              mov    rax, [r10 + rax]    ; get cache entry address
-                                  // 49 BA                    mov    r10,
-    size_t  _token;               // xx xx xx xx xx xx xx xx              64-bit address
-    BYTE    part4 [3];            // 48 3B 50                 cmp    rdx, [rax+          ; compare our MT vs. cache MT
-    BYTE    mtOffset;             // xx                                        ResolverCacheElem.pMT]
-    BYTE    part5 [1];            // 75                       jne
-    BYTE    toMiss1;              // xx                              miss                ; must be forward jump, for perf reasons
-    BYTE    part6 [3];            // 4C 3B 50                 cmp    r10, [rax+          ; compare our token vs. cache token
-    BYTE    tokenOffset;          // xx                                        ResolverCacheElem.token]
-    BYTE    part7 [1];            // 75                       jne
-    BYTE    toMiss2;              // xx                              miss                ; must be forward jump, for perf reasons
-    BYTE    part8 [3];            // 48 8B 40                 mov    rax, [rax+          ; setup rax with method impl address
-    BYTE    targetOffset;         // xx                                        ResolverCacheElem.target]
-    BYTE    part9 [3];            // 5A                       pop    rdx
-                                  // FF E0                    jmp    rax
-                                  //                failStub:
-    BYTE    _failEntryPoint [2];  // 48 B8                    mov    rax,
-    INT32*  _pCounter;            // xx xx xx xx xx xx xx xx              64-bit address
-    BYTE    part11 [4];           // 83 00 FF                 add    dword ptr [rax], -1
-                                  // 7d                       jnl
-    BYTE    toResolveStub1;       // xx                              resolveStub
-    BYTE    part12 [4];           // 49 83 CB 01              or     r11, 1
-    BYTE    _slowEntryPoint [3];  // 52             slow:     push   rdx
-                                  // 49 BA                    mov    r10,
-    size_t  _tokenSlow;           // xx xx xx xx xx xx xx xx              64-bit address
-//  BYTE    miss [5];             // 5A             miss:     pop    rdx                 ; don't pop rdx
-//                                // 41 52                    push   r10                 ; don't push r10 leave it setup with token
-    BYTE    miss [3];             // 50                       push   rax                 ; push ptr to cache elem
-                                  // 48 B8                    mov    rax,
-    size_t  _resolveWorker;       // xx xx xx xx xx xx xx xx              64-bit address
-    BYTE    part10 [2];           // FF E0                    jmp    rax
+    BYTE code[96];
+//
+//    BYTE    _resolveEntryPoint[3];//                resolveStub:
+//                                  // 52                       push   rdx
+//                                  // 49 BA                    mov    r10,
+//    size_t  _cacheAddress;        // xx xx xx xx xx xx xx xx              64-bit address
+//    BYTE    part1 [15];           // 48 8B XX                 mov    rax, [THIS_REG]     ; Compute hash = ((MT + MT>>12) ^ prehash)
+//                                  // 48 8B D0                 mov    rdx, rax            ; rdx <- current MethodTable
+//                                  // 48 C1 E8 0C              shr    rax, 12
+//                                  // 48 03 C2                 add    rax, rdx
+//                                  // 48 35                    xor    rax,
+//    UINT32  _hashedToken;         // xx xx xx xx                          hashedtoken    ; xor with pre-hashed token
+//    BYTE    part2 [2];            // 48 25                    and    rax,
+//    UINT32  mask;                 // xx xx xx xx                          cache_mask     ; and with cache mask
+//    BYTE    part3 [6];            // 4A 8B 04 10              mov    rax, [r10 + rax]    ; get cache entry address
+//                                  // 49 BA                    mov    r10,
+//    size_t  _token;               // xx xx xx xx xx xx xx xx              64-bit address
+//    BYTE    part4 [3];            // 48 3B 50                 cmp    rdx, [rax+          ; compare our MT vs. cache MT
+//    BYTE    mtOffset;             // xx                                        ResolverCacheElem.pMT]
+//    BYTE    part5 [1];            // 75                       jne
+//    BYTE    toMiss1;              // xx                              miss                ; must be forward jump, for perf reasons
+//    BYTE    part6 [3];            // 4C 3B 50                 cmp    r10, [rax+          ; compare our token vs. cache token
+//    BYTE    tokenOffset;          // xx                                        ResolverCacheElem.token]
+//    BYTE    part7 [1];            // 75                       jne
+//    BYTE    toMiss2;              // xx                              miss                ; must be forward jump, for perf reasons
+//    BYTE    part8 [3];            // 48 8B 40                 mov    rax, [rax+          ; setup rax with method impl address
+//    BYTE    targetOffset;         // xx                                        ResolverCacheElem.target]
+//    BYTE    part9 [3];            // 5A                       pop    rdx
+//                                  // FF E0                    jmp    rax
+//                                  //                failStub:
+//    BYTE    _failEntryPoint [2];  // 48 B8                    mov    rax,
+//    INT32*  _pCounter;            // xx xx xx xx xx xx xx xx              64-bit address
+//    BYTE    part11 [4];           // 83 00 FF                 add    dword ptr [rax], -1
+//                                  // 7d                       jnl
+//    BYTE    toResolveStub1;       // xx                              resolveStub
+//    BYTE    part12 [4];           // 49 83 CB 01              or     r11, 1
+//    BYTE    _slowEntryPoint [3];  // 52             slow:     push   rdx
+//                                  // 49 BA                    mov    r10,
+//    size_t  _tokenSlow;           // xx xx xx xx xx xx xx xx              64-bit address
+////  BYTE    miss [5];             // 5A             miss:     pop    rdx                 ; don't pop rdx
+////                                // 41 52                    push   r10                 ; don't push r10 leave it setup with token
+//    BYTE    miss [3];             // 50                       push   rax                 ; push ptr to cache elem
+//                                  // 48 B8                    mov    rax,
+//    size_t  _resolveWorker;       // xx xx xx xx xx xx xx xx              64-bit address
+//    BYTE    part10 [2];           // FF E0                    jmp    rax
 };
 
 /* ResolveHolders are the containers for ResolveStubs,  They provide
@@ -429,6 +431,8 @@ struct ResolveHolder
 
     static ResolveHolder* FromFailEntry(PCODE resolveEntry);
     static ResolveHolder* FromResolveEntry(PCODE resolveEntry);
+
+    static size_t GenerateCodePage(uint8_t* pageBase);
 
 private:
     ResolveStub _stub;
@@ -716,94 +720,243 @@ size_t DispatchHolder::GenerateCodePage(uint8_t* pageBaseRX)
     return 0;
 }
 
+size_t ResolveHolder::GenerateCodePage(uint8_t* pageBaseRX)
+{
+/*
+resolveStub:
+0:  52                      push   rdx
+1:  4c 8b 15 f8 0f 00 00    mov    r10,QWORD PTR [rip+0xff8]        # 1000 <miss+0xfac>
+8:  48 8b 01                mov    rax,QWORD PTR [rcx]
+b:  48 89 c2                mov    rdx,rax
+e:  48 c1 e8 0c             shr    rax,0xc
+12: 48 01 d0                add    rax,rdx
+15: 33 05 ed 0f 00 00       xor    eax,DWORD PTR [rip+0xfed]        # 1008 <miss+0xfb4>
+1b: 23 05 eb 0f 00 00       and    eax,DWORD PTR [rip+0xfeb]        # 100c <miss+0xfb8>
+21: 49 8b 04 02             mov    rax,QWORD PTR [r10+rax*1]
+25: 4c 8b 15 e4 0f 00 00    mov    r10,QWORD PTR [rip+0xfe4]        # 1010 <miss+0xfbc>
+2c: 48 3b 50 00             cmp    rdx,QWORD PTR [rax+0x00]
+30: 75 22                   jne    54 <miss>
+32: 4c 3b 50 08             cmp    r10,QWORD PTR [rax+0x08]
+36: 75 1c                   jne    54 <miss>
+38: 5a                      pop    rdx
+39: ff 60 10                jmp    QWORD PTR [rax+0x10]
+000000000000003c <failStub>:
+3c: 48 8b 05 d5 0f 00 00    mov    rax,QWORD PTR [rip+0xfd5]        # 1018 <miss+0xfc4>
+43: 83 00 ff                add    DWORD PTR [rax],0xffffffff
+46: 7d b8                   jge    0 <resolveStub>
+48: 49 83 cb 01             or     r11,0x1
+000000000000004c <slow>:
+4c: 52                      push   rdx
+4d: 4c 8b 15 bc 0f 00 00    mov    r10,QWORD PTR [rip+0xfbc]        # 1010 <miss+0xfcc>
+0000000000000054 <miss>:
+54: 50                      push   rax
+55: ff 25 c5 0f 00 00       jmp    QWORD PTR [rip+0xfc5]        # 1020 <miss+0xfd4>
+*/
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, 4096);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
+
+    pageBase[0] = 0x52;
+    pageBase[1] = 0x4C;
+    pageBase[2] = 0x8B;
+    pageBase[3] = 0x15;
+    pageBase[4] = 0xF8;
+    pageBase[5] = 0x0F;
+    pageBase[6] = 0x00;
+    pageBase[7] = 0x00;
+    pageBase[8] = 0x48;
+    pageBase[9] = 0x8B;
+    pageBase[10] = 0x01;
+    pageBase[11] = 0x48;
+    pageBase[12] = 0x89;
+    pageBase[13] = 0xC2;
+    pageBase[14] = 0x48;
+    pageBase[15] = 0xC1;
+    pageBase[16] = 0xE8;
+    pageBase[17] = 0x0C;
+    pageBase[18] = 0x48;
+    pageBase[19] = 0x01;
+    pageBase[20] = 0xD0;
+    pageBase[21] = 0x33;
+    pageBase[22] = 0x05;
+    pageBase[23] = 0xED;
+    pageBase[24] = 0x0F;
+    pageBase[25] = 0x00;
+    pageBase[26] = 0x00;
+    pageBase[27] = 0x23;
+    pageBase[28] = 0x05;
+    pageBase[29] = 0xEB;
+    pageBase[30] = 0x0F;
+    pageBase[31] = 0x00;
+    pageBase[32] = 0x00;
+    pageBase[33] = 0x49;
+    pageBase[34] = 0x8B;
+    pageBase[35] = 0x04;
+    pageBase[36] = 0x02;
+    pageBase[37] = 0x4C;
+    pageBase[38] = 0x8B;
+    pageBase[39] = 0x15;
+    pageBase[40] = 0xE4;
+    pageBase[41] = 0x0F;
+    pageBase[42] = 0x00;
+    pageBase[43] = 0x00;
+    pageBase[44] = 0x48;
+    pageBase[45] = 0x3B;
+    pageBase[46] = 0x50;
+    pageBase[47] = 0x00;
+    pageBase[48] = 0x75;
+    pageBase[49] = 0x22;
+    pageBase[50] = 0x4C;
+    pageBase[51] = 0x3B;
+    pageBase[52] = 0x50;
+    pageBase[53] = 0x08;
+    pageBase[54] = 0x75;
+    pageBase[55] = 0x1C;
+    pageBase[56] = 0x5A;
+    pageBase[57] = 0xFF;
+    pageBase[58] = 0x60;
+    pageBase[59] = 0x10;
+    pageBase[60] = 0x48;
+    pageBase[61] = 0x8B;
+    pageBase[62] = 0x05;
+    pageBase[63] = 0xD5;
+    pageBase[64] = 0x0F;
+    pageBase[65] = 0x00;
+    pageBase[66] = 0x00;
+    pageBase[67] = 0x83;
+    pageBase[68] = 0x00;
+    pageBase[69] = 0xFF;
+    pageBase[70] = 0x7D;
+    pageBase[71] = 0xB8;
+    pageBase[72] = 0x49;
+    pageBase[73] = 0x83;
+    pageBase[74] = 0xCB;
+    pageBase[75] = 0x01;
+    pageBase[76] = 0x52;
+    pageBase[77] = 0x4C;
+    pageBase[78] = 0x8B;
+    pageBase[79] = 0x15;
+    pageBase[80] = 0xBC;
+    pageBase[81] = 0x0F;
+    pageBase[82] = 0x00;
+    pageBase[83] = 0x00;
+    pageBase[84] = 0x50;
+    pageBase[85] = 0xFF;
+    pageBase[86] = 0x25;
+    pageBase[87] = 0xC5;
+    pageBase[88] = 0x0F;
+    pageBase[89] = 0x00;
+    pageBase[90] = 0x00;
+    pageBase[91] = 0x90;
+    pageBase[92] = 0x90;
+    pageBase[93] = 0x90;
+    pageBase[94] = 0x90;
+    pageBase[95] = 0x90;
+
+    memcpy(pageBase + 96, pageBase, 96);
+    memcpy(pageBase + 192, pageBase, 192);
+    memcpy(pageBase + 384, pageBase, 384);
+    memcpy(pageBase + 768, pageBase, 768);
+    memcpy(pageBase + 1536, pageBase, 1536);
+    memcpy(pageBase + 3072, pageBase, 960);
+    for (int i = 0; i < 64; i++)
+    {
+        pageBase[4032 + i] = 0xcc;
+    }
+
+    // TODO: do we correctly support crossing the page boundary in the allocator?
+
+    ClrFlushInstructionCache(pageBaseRX, 4096);
+    return 0;
+}
+
 #endif
 
 void ResolveHolder::InitializeStatic()
 {
-    static_assert_no_msg((sizeof(ResolveHolder) % sizeof(void*)) == 0);
-
-    resolveInit._resolveEntryPoint [0] = 0x52;
-    resolveInit._resolveEntryPoint [1] = 0x49;
-    resolveInit._resolveEntryPoint [2] = 0xBA;
-    resolveInit._cacheAddress          = 0xcccccccccccccccc;
-    resolveInit.part1 [ 0]             = X64_INSTR_MOV_RAX_IND_THIS_REG & 0xff;
-    resolveInit.part1 [ 1]             = (X64_INSTR_MOV_RAX_IND_THIS_REG >> 8) & 0xff;
-    resolveInit.part1 [ 2]             = (X64_INSTR_MOV_RAX_IND_THIS_REG >> 16) & 0xff;
-    resolveInit.part1 [ 3]             = 0x48;
-    resolveInit.part1 [ 4]             = 0x8B;
-    resolveInit.part1 [ 5]             = 0xD0;
-    resolveInit.part1 [ 6]             = 0x48;
-    resolveInit.part1 [ 7]             = 0xC1;
-    resolveInit.part1 [ 8]             = 0xE8;
-    resolveInit.part1 [ 9]             = CALL_STUB_CACHE_NUM_BITS;
-    resolveInit.part1 [10]             = 0x48;
-    resolveInit.part1 [11]             = 0x03;
-    resolveInit.part1 [12]             = 0xC2;
-    resolveInit.part1 [13]             = 0x48;
-    resolveInit.part1 [14]             = 0x35;
-// Review truncation from unsigned __int64 to UINT32 of a constant value.
-#if defined(_MSC_VER)
-#pragma warning(push)
-#pragma warning(disable:4305 4309)
-#endif // defined(_MSC_VER)
-
-    resolveInit._hashedToken           = 0xcccccccc;
-
-#if defined(_MSC_VER)
-#pragma warning(pop)
-#endif // defined(_MSC_VER)
-
-    resolveInit.part2 [ 0]             = 0x48;
-    resolveInit.part2 [ 1]             = 0x25;
-    resolveInit.mask                   = CALL_STUB_CACHE_MASK*sizeof(void *);
-    resolveInit.part3 [0]              = 0x4A;
-    resolveInit.part3 [1]              = 0x8B;
-    resolveInit.part3 [2]              = 0x04;
-    resolveInit.part3 [3]              = 0x10;
-    resolveInit.part3 [4]              = 0x49;
-    resolveInit.part3 [5]              = 0xBA;
-    resolveInit._token                 = 0xcccccccccccccccc;
-    resolveInit.part4 [0]              = 0x48;
-    resolveInit.part4 [1]              = 0x3B;
-    resolveInit.part4 [2]              = 0x50;
-    resolveInit.mtOffset               = offsetof(ResolveCacheElem,pMT) & 0xFF;
-    resolveInit.part5 [0]              = 0x75;
-    resolveInit.toMiss1                = (offsetof(ResolveStub,miss)-(offsetof(ResolveStub,toMiss1)+1)) & 0xFF;
-    resolveInit.part6 [0]              = 0x4C;
-    resolveInit.part6 [1]              = 0x3B;
-    resolveInit.part6 [2]              = 0x50;
-    resolveInit.tokenOffset            = offsetof(ResolveCacheElem,token) & 0xFF;
-    resolveInit.part7 [0]              = 0x75;
-    resolveInit.toMiss2                = (offsetof(ResolveStub,miss)-(offsetof(ResolveStub,toMiss2)+1)) & 0xFF;
-    resolveInit.part8 [0]              = 0x48;
-    resolveInit.part8 [1]              = 0x8B;
-    resolveInit.part8 [2]              = 0x40;
-    resolveInit.targetOffset           = offsetof(ResolveCacheElem,target) & 0xFF;
-    resolveInit.part9 [0]              = 0x5A;
-    resolveInit.part9 [1]              = 0xFF;
-    resolveInit.part9 [2]              = 0xE0;
-    resolveInit._failEntryPoint [0]    = 0x48;
-    resolveInit._failEntryPoint [1]    = 0xB8;
-    resolveInit._pCounter              = (INT32*) (size_t) 0xcccccccccccccccc;
-    resolveInit.part11 [0]             = 0x83;
-    resolveInit.part11 [1]             = 0x00;
-    resolveInit.part11 [2]             = 0xFF;
-    resolveInit.part11 [3]             = 0x7D;
-    resolveInit.toResolveStub1         = (offsetof(ResolveStub, _resolveEntryPoint) - (offsetof(ResolveStub, toResolveStub1)+1)) & 0xFF;
-    resolveInit.part12 [0]             = 0x49;
-    resolveInit.part12 [1]             = 0x83;
-    resolveInit.part12 [2]             = 0xCB;
-    resolveInit.part12 [3]             = 0x01;
-    resolveInit._slowEntryPoint [0]    = 0x52;
-    resolveInit._slowEntryPoint [1]    = 0x49;
-    resolveInit._slowEntryPoint [2]    = 0xBA;
-    resolveInit._tokenSlow             = 0xcccccccccccccccc;
-    resolveInit.miss [0]               = 0x50;
-    resolveInit.miss [1]               = 0x48;
-    resolveInit.miss [2]               = 0xB8;
-    resolveInit._resolveWorker         = 0xcccccccccccccccc;
-    resolveInit.part10 [0]             = 0xFF;
-    resolveInit.part10 [1]             = 0xE0;
+//    static_assert_no_msg((sizeof(ResolveHolder) % sizeof(void*)) == 0);
+//
+//    resolveInit._resolveEntryPoint [0] = 0x52;
+//    resolveInit._resolveEntryPoint [1] = 0x49;
+//    resolveInit._resolveEntryPoint [2] = 0xBA;
+//    resolveInit._cacheAddress          = 0xcccccccccccccccc;
+//    resolveInit.part1 [ 0]             = X64_INSTR_MOV_RAX_IND_THIS_REG & 0xff;
+//    resolveInit.part1 [ 1]             = (X64_INSTR_MOV_RAX_IND_THIS_REG >> 8) & 0xff;
+//    resolveInit.part1 [ 2]             = (X64_INSTR_MOV_RAX_IND_THIS_REG >> 16) & 0xff;
+//    resolveInit.part1 [ 3]             = 0x48;
+//    resolveInit.part1 [ 4]             = 0x8B;
+//    resolveInit.part1 [ 5]             = 0xD0;
+//    resolveInit.part1 [ 6]             = 0x48;
+//    resolveInit.part1 [ 7]             = 0xC1;
+//    resolveInit.part1 [ 8]             = 0xE8;
+//    resolveInit.part1 [ 9]             = CALL_STUB_CACHE_NUM_BITS;
+//    resolveInit.part1 [10]             = 0x48;
+//    resolveInit.part1 [11]             = 0x03;
+//    resolveInit.part1 [12]             = 0xC2;
+//    resolveInit.part1 [13]             = 0x48;
+//    resolveInit.part1 [14]             = 0x35;
+//// Review truncation from unsigned __int64 to UINT32 of a constant value.
+//#if defined(_MSC_VER)
+//#pragma warning(push)
+//#pragma warning(disable:4305 4309)
+//#endif // defined(_MSC_VER)
+//
+//    resolveInit._hashedToken           = 0xcccccccc;
+//
+//#if defined(_MSC_VER)
+//#pragma warning(pop)
+//#endif // defined(_MSC_VER)
+//
+//    resolveInit.part2 [ 0]             = 0x48;
+//    resolveInit.part2 [ 1]             = 0x25;
+//    resolveInit.mask                   = CALL_STUB_CACHE_MASK*sizeof(void *);
+//    resolveInit.part3 [0]              = 0x4A;
+//    resolveInit.part3 [1]              = 0x8B;
+//    resolveInit.part3 [2]              = 0x04;
+//    resolveInit.part3 [3]              = 0x10;
+//    resolveInit.part3 [4]              = 0x49;
+//    resolveInit.part3 [5]              = 0xBA;
+//    resolveInit._token                 = 0xcccccccccccccccc;
+//    resolveInit.part4 [0]              = 0x48;
+//    resolveInit.part4 [1]              = 0x3B;
+//    resolveInit.part4 [2]              = 0x50;
+//    resolveInit.mtOffset               = offsetof(ResolveCacheElem,pMT) & 0xFF;
+//    resolveInit.part5 [0]              = 0x75;
+//    resolveInit.toMiss1                = (offsetof(ResolveStub,miss)-(offsetof(ResolveStub,toMiss1)+1)) & 0xFF;
+//    resolveInit.part6 [0]              = 0x4C;
+//    resolveInit.part6 [1]              = 0x3B;
+//    resolveInit.part6 [2]              = 0x50;
+//    resolveInit.tokenOffset            = offsetof(ResolveCacheElem,token) & 0xFF;
+//    resolveInit.part7 [0]              = 0x75;
+//    resolveInit.toMiss2                = (offsetof(ResolveStub,miss)-(offsetof(ResolveStub,toMiss2)+1)) & 0xFF;
+//    resolveInit.part8 [0]              = 0x48;
+//    resolveInit.part8 [1]              = 0x8B;
+//    resolveInit.part8 [2]              = 0x40;
+//    resolveInit.targetOffset           = offsetof(ResolveCacheElem,target) & 0xFF;
+//    resolveInit.part9 [0]              = 0x5A;
+//    resolveInit.part9 [1]              = 0xFF;
+//    resolveInit.part9 [2]              = 0xE0;
+//    resolveInit._failEntryPoint [0]    = 0x48;
+//    resolveInit._failEntryPoint [1]    = 0xB8;
+//    resolveInit._pCounter              = (INT32*) (size_t) 0xcccccccccccccccc;
+//    resolveInit.part11 [0]             = 0x83;
+//    resolveInit.part11 [1]             = 0x00;
+//    resolveInit.part11 [2]             = 0xFF;
+//    resolveInit.part11 [3]             = 0x7D;
+//    resolveInit.toResolveStub1         = (offsetof(ResolveStub, _resolveEntryPoint) - (offsetof(ResolveStub, toResolveStub1)+1)) & 0xFF;
+//    resolveInit.part12 [0]             = 0x49;
+//    resolveInit.part12 [1]             = 0x83;
+//    resolveInit.part12 [2]             = 0xCB;
+//    resolveInit.part12 [3]             = 0x01;
+//    resolveInit._slowEntryPoint [0]    = 0x52;
+//    resolveInit._slowEntryPoint [1]    = 0x49;
+//    resolveInit._slowEntryPoint [2]    = 0xBA;
+//    resolveInit._tokenSlow             = 0xcccccccccccccccc;
+//    resolveInit.miss [0]               = 0x50;
+//    resolveInit.miss [1]               = 0x48;
+//    resolveInit.miss [2]               = 0xB8;
+//    resolveInit._resolveWorker         = 0xcccccccccccccccc;
+//    resolveInit.part10 [0]             = 0xFF;
+//    resolveInit.part10 [1]             = 0xE0;
 };
 
 void  ResolveHolder::Initialize(ResolveHolder* pResolveHolderRX, 
@@ -811,22 +964,28 @@ void  ResolveHolder::Initialize(ResolveHolder* pResolveHolderRX,
                                 size_t dispatchToken, UINT32 hashedToken,
                                 void * cacheAddr, INT32* counterAddr)
 {
-    _stub = resolveInit;
+    //_stub = resolveInit;
 
-    //fill in the stub specific fields
-    _stub._cacheAddress       = (size_t) cacheAddr;
-    _stub._hashedToken        = hashedToken << LOG2_PTRSIZE;
-    _stub._token              = dispatchToken;
-    _stub._tokenSlow          = dispatchToken;
-    _stub._resolveWorker      = (size_t) resolveWorkerTarget;
-    _stub._pCounter           = counterAddr;
+    ////fill in the stub specific fields
+    //_stub._cacheAddress       = (size_t) cacheAddr;
+    //_stub._hashedToken        = hashedToken << LOG2_PTRSIZE;
+    //_stub._token              = dispatchToken;
+    //_stub._tokenSlow          = dispatchToken;
+    //_stub._resolveWorker      = (size_t) resolveWorkerTarget;
+    //_stub._pCounter           = counterAddr;
+    *(void**)((BYTE*)this + 4096) = cacheAddr;
+    *(UINT32*)((BYTE*)this + 4096 + 8) = hashedToken << LOG2_PTRSIZE;
+    *(UINT32*)((BYTE*)this + 4096 + 12) = CALL_STUB_CACHE_MASK * sizeof(void*); // TODO: Move this to code
+    *(size_t*)((BYTE*)this + 4096 + 16) = dispatchToken;
+    *(INT32**)((BYTE*)this + 4096 + 24) = counterAddr; // TODO: make it the counter itself?
+    *(size_t*)((BYTE*)this + 4096 + 32) = (size_t)resolveWorkerTarget;
 }
 
 ResolveHolder* ResolveHolder::FromFailEntry(PCODE failEntry)
 {
     LIMITED_METHOD_CONTRACT;
-    ResolveHolder* resolveHolder = (ResolveHolder*) ( failEntry - offsetof(ResolveHolder, _stub) - offsetof(ResolveStub, _failEntryPoint) );
-    _ASSERTE(resolveHolder->_stub._resolveEntryPoint[1] == resolveInit._resolveEntryPoint[1]);
+    ResolveHolder* resolveHolder = (ResolveHolder*) ( failEntry - 0x3c );
+    //_ASSERTE(resolveHolder->_stub._resolveEntryPoint[1] == resolveInit._resolveEntryPoint[1]);
     return resolveHolder;
 }
 
@@ -853,8 +1012,8 @@ DispatchHolder* DispatchHolder::FromDispatchEntry(PCODE dispatchEntry)
 ResolveHolder* ResolveHolder::FromResolveEntry(PCODE resolveEntry)
 {
     LIMITED_METHOD_CONTRACT;
-    ResolveHolder* resolveHolder = (ResolveHolder*) ( resolveEntry - offsetof(ResolveHolder, _stub) - offsetof(ResolveStub, _resolveEntryPoint) );
-    _ASSERTE(resolveHolder->_stub._resolveEntryPoint[1] == resolveInit._resolveEntryPoint[1]);
+    ResolveHolder* resolveHolder = (ResolveHolder*)resolveEntry;
+    //_ASSERTE(resolveHolder->_stub._resolveEntryPoint[1] == resolveInit._resolveEntryPoint[1]);
     return resolveHolder;
 }
 
@@ -924,11 +1083,11 @@ VirtualCallStubManager::StubKind VirtualCallStubManager::predictStubKind(PCODE s
         {
             stubKind = SK_DISPATCH;
         }
-        else if (firstWord == 0x4890)
+        else if (firstWord == 0xFF90)
         {
             stubKind = SK_LOOKUP;
         }
-        else if (firstWord == 0x4952)
+        else if (firstWord == 0x4C52)
         {
             stubKind = SK_RESOLVE;
         }
