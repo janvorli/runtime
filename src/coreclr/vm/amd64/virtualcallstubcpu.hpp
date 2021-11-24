@@ -673,7 +673,7 @@ size_t DispatchHolder::GenerateCodePage(uint8_t* pageBaseRX)
 {
     /*
         0:  48 8b 05 f9 0f 00 00    mov    rax,QWORD PTR [rip+0xff9]        # 1000 <fail+0xfee> <<< _expectedMT
-        7:  48 39 01                cmp    QWORD PTR [rcx],rax
+        7:  48 39 01                cmp    QWORD PTR [rcx],rax; // Unix: cmp    QWORD PTR [rdi],rax
         a:  75 06                   jne    12 <fail>
         c:  ff 25 f6 0f 00 00       jmp    QWORD PTR [rip+0xff6]        # 1008 <fail+0xff6> <<< _implTarget
         0000000000000012 <fail>:
@@ -691,7 +691,11 @@ size_t DispatchHolder::GenerateCodePage(uint8_t* pageBaseRX)
     pageBase[6] = 0x00;
     pageBase[7] = 0x48;
     pageBase[8] = 0x39;
+#ifdef UNIX_AMD64_ABI
+    pageBase[9] = 0x07;
+#else
     pageBase[9] = 0x01;
+#endif
     pageBase[10] = 0x75;
     pageBase[11] = 0x06;
     pageBase[12] = 0xff;
@@ -726,7 +730,7 @@ size_t ResolveHolder::GenerateCodePage(uint8_t* pageBaseRX)
 resolveStub:
 0:  52                      push   rdx
 1:  4c 8b 15 f8 0f 00 00    mov    r10,QWORD PTR [rip+0xff8]        # 1000 <miss+0xfac>
-8:  48 8b 01                mov    rax,QWORD PTR [rcx]
+8:  48 8b 01                mov    rax,QWORD PTR [rcx]; // Unix: mov rax, QWORD PTR [rdi]
 b:  48 89 c2                mov    rdx,rax
 e:  48 c1 e8 0c             shr    rax,0xc
 12: 48 01 d0                add    rax,rdx
@@ -765,7 +769,11 @@ e:  48 c1 e8 0c             shr    rax,0xc
     pageBase[7] = 0x00;
     pageBase[8] = 0x48;
     pageBase[9] = 0x8B;
+#ifdef UNIX_AMD64_ABI
+    pageBase[10] = 0x07;
+#else
     pageBase[10] = 0x01;
+#endif
     pageBase[11] = 0x48;
     pageBase[12] = 0x89;
     pageBase[13] = 0xC2;

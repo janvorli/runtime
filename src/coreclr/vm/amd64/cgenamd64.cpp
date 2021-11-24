@@ -718,30 +718,46 @@ BOOL DoesSlotCallPrestub(PCODE pCode)
     }
 
 #ifdef HAS_FIXUP_PRECODE
-    if (*PTR_BYTE(pCode) == X86_INSTR_CALL_REL32)
+    if (*PTR_WORD(pCode) == X86_INSTR_JMP_IND)
     {
-        // Note that call could have been patched to jmp in the meantime
-        pCode = rel32Decode(pCode+1);
-
-        // JumpStub
-        if (isJumpRel64(pCode)) {
-            pCode = decodeJump64(pCode);
-        }
-
-        return pCode == (TADDR)PrecodeFixupThunk;
+        PCODE pTargetCode = (PCODE) *PTR_SIZE_T(pCode + 6 + *PTR_DWORD(pCode + 2));
+        return pTargetCode == pCode + 6;
     }
+    //if (*PTR_BYTE(pCode) == X86_INSTR_CALL_REL32)
+    //{
+    //    // Note that call could have been patched to jmp in the meantime
+    //    pCode = rel32Decode(pCode+1);
+
+    //    // JumpStub
+    //    if (isJumpRel64(pCode)) {
+    //        pCode = decodeJump64(pCode);
+    //    }
+
+    //    return pCode == (TADDR)PrecodeFixupThunk;
+    //}
 #endif
 
-    if (*PTR_USHORT(pCode) != X86_INSTR_MOV_R10_IMM64 || // mov rax,XXXX
-        *PTR_BYTE(pCode+10) != X86_INSTR_NOP || // nop
-        *PTR_BYTE(pCode+11) != X86_INSTR_JMP_REL32) // jmp rel32
+    if (*PTR_USHORT(pCode) == 0x8b4c &&
+        *PTR_BYTE(pCode + 2) == 0x15 &&
+        *PTR_BYTE(pCode + 7) == X86_INSTR_JMP_IND)
     {
-        return FALSE;
+        pCode = (PCODE)*PTR_SIZE_T(pCode + 13 + *PTR_DWORD(pCode + 9));
     }
-    pCode = rel32Decode(pCode+12);
+    else
+    {
+        if (*PTR_USHORT(pCode) != X86_INSTR_MOV_R10_IMM64 || // mov rax,XXXX
+            *PTR_BYTE(pCode + 10) != X86_INSTR_NOP || // nop
+            *PTR_BYTE(pCode + 11) != X86_INSTR_JMP_REL32) // jmp rel32
+        {
+            return FALSE;
+        }
+        pCode = rel32Decode(pCode + 12);
+
+    }
 
     // JumpStub
     if (isJumpRel64(pCode)) {
+        __debugbreak();
         pCode = decodeJump64(pCode);
     }
 
