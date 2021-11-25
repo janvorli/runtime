@@ -5100,9 +5100,6 @@ void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocat
     PCODE target = (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk);
 #endif
     *(PCODE*)((BYTE*)this + 4096) = target;
-#ifdef INDIRECT_JUMP_PERF_TEST
-    *(PCODE*)((BYTE*)this + 4096 + 16) = (PCODE)((BYTE*)this + 0x0d);
-#endif
 #ifdef INDIRECTION_SLOT_FROM_JIT
     * (PCODE*)((BYTE*)this + 4096 + 16) = (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk);
 #endif
@@ -5147,69 +5144,6 @@ Experiment:
     ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, 4096);
     uint8_t* pageBase = codePageWriterHolder.GetRW();
 
-#ifdef INDIRECT_JUMP_PERF_TEST
-
-    pageBase[0] = 0x4C;
-    pageBase[1] = 0x8B;
-    pageBase[2] = 0x15;
-    pageBase[3] = 0x01;
-    pageBase[4] = 0x10;
-    pageBase[5] = 0x00;
-    pageBase[6] = 0x00;
-    pageBase[7] = 0x48;
-    pageBase[8] = 0x8b;
-    pageBase[9] = 0x05;
-    pageBase[10] = 0xf2;
-    pageBase[11] = 0x0f;
-    pageBase[12] = 0x00;
-    pageBase[13] = 0x00;
-    pageBase[14] = 0xff;
-    pageBase[15] = 0xe0;
-    pageBase[16] = 0x90;
-    pageBase[17] = 0x90;
-    pageBase[18] = 0x90;
-    pageBase[19] = 0x90;
-    pageBase[20] = 0x90;
-    pageBase[21] = 0x90;
-    pageBase[22] = 0x90;
-    pageBase[23] = 0x90;
-
-/*
-    pageBase[0] = 0x4C;
-    pageBase[1] = 0x8B;
-    pageBase[2] = 0x15;
-    pageBase[3] = 0x01;
-    pageBase[4] = 0x10;
-    pageBase[5] = 0x00;
-    pageBase[6] = 0x00;
-    pageBase[7] = 0xff;
-    pageBase[8] = 0x25;
-    pageBase[9] = 0x03;
-    pageBase[10] = 0x10;
-    pageBase[11] = 0x00;
-    pageBase[12] = 0x00;
-    pageBase[13] = 0xFF;
-    pageBase[14] = 0x25;
-    pageBase[15] = 0xED;
-    pageBase[16] = 0x0F;
-    pageBase[17] = 0x00;
-    pageBase[18] = 0x00;
-    pageBase[19] = 0x90;
-    pageBase[20] = 0x90;
-    pageBase[21] = 0x90;
-    pageBase[22] = 0x90;
-    pageBase[23] = 0x90;
-*/
-
-    memcpy(pageBase + 24, pageBase, 24);
-    memcpy(pageBase + 48, pageBase, 48);
-    memcpy(pageBase + 96, pageBase, 96);
-    memcpy(pageBase + 192, pageBase, 192);
-    memcpy(pageBase + 384, pageBase, 384);
-    memcpy(pageBase + 768, pageBase, 768);
-    memcpy(pageBase + 1536, pageBase, 1536);
-    memcpy(pageBase + 3072, pageBase, 1008);
-#else
 /*
     for (int i = 0; i < 4096; i += 16)
     {
@@ -5388,7 +5322,6 @@ We can store the type in the lowest 2..3 bits of R10, the PrecodeFixupThunk can 
     memcpy(pageBase + 512, pageBase, 512);
     memcpy(pageBase + 1024, pageBase, 1024);
     memcpy(pageBase + 2048, pageBase, 2048);
-#endif
 #endif
 
     ClrFlushInstructionCache(pageBaseRX, 4096);

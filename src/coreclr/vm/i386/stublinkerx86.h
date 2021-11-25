@@ -612,7 +612,6 @@ typedef DPTR(NDirectImportPrecode) PTR_NDirectImportPrecode;
 
 #ifdef HAS_FIXUP_PRECODE
 
-//#define INDIRECT_JUMP_PERF_TEST
 #define INDIRECTION_SLOT_FROM_JIT
 
 // Fixup precode is used in ngen images when the prestub does just one time fixup.
@@ -631,7 +630,7 @@ struct FixupPrecode {
     // jmp NativeCode
     // db Type (pop edi)
 
-#if defined(INDIRECT_JUMP_PERF_TEST) || defined(INDIRECTION_SLOT_FROM_JIT)
+#if defined(INDIRECTION_SLOT_FROM_JIT)
     BYTE            m_code[24];
 #else
     BYTE            m_code[16];

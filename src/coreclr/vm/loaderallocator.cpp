@@ -1197,7 +1197,7 @@ void LoaderAllocator::Init(BaseDomain *pDomain, BYTE *pExecutableHeapMemory)
     // NOTE: use StubHeap for the StubPrecode for now. Figure out how to migrate the CodeFragmentHeap to a model that can use the dual alloc
     m_pNewStubPrecodeHeap = new (&m_NewStubPrecodeHeapInstance) StubHeap(0, sizeof(StubPrecode), 24, StubPrecode::GenerateCodePage);
 
-#if defined(INDIRECT_JUMP_PERF_TEST) || defined(INDIRECTION_SLOT_FROM_JIT)
+#if defined(INDIRECTION_SLOT_FROM_JIT)
     m_pFixupPrecodeHeap = new (&m_FixupPrecodeHeapInstance) StubHeap(0, sizeof(FixupPrecode), 24, FixupPrecode::GenerateCodePage);
 #else
     m_pFixupPrecodeHeap = new (&m_FixupPrecodeHeapInstance) StubHeap(0, sizeof(FixupPrecode), 16, FixupPrecode::GenerateCodePage);
