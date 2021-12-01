@@ -531,7 +531,7 @@ typedef DPTR(const CallCountingStub) PTR_CallCountingStub;
 
 class CallCountingStub
 {
-    const UINT8 m_code[24];
+    UINT8 m_code[24];
 
 public:
     static const SIZE_T Alignment = sizeof(void *);

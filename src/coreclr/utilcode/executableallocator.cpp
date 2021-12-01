@@ -52,7 +52,7 @@ public:
         LARGE_INTEGER end;
         QueryPerformanceCounter(&end);
 
-        InterlockedAdd64(m_accumulator, end.QuadPart - m_start.QuadPart);
+        InterlockedExchangeAdd64(m_accumulator, end.QuadPart - m_start.QuadPart);
     }
 };
 
@@ -299,7 +299,11 @@ void* ExecutableAllocator::FindRWBlock(void* baseRX, size_t size)
     {
         if (pBlock->baseRX <= baseRX && ((size_t)baseRX + size) <= ((size_t)pBlock->baseRX + pBlock->size))
         {
-            InterlockedIncrementSizeT(&pBlock->refCount);
+#ifdef TARGET_64BIT
+            InterlockedIncrement64((LONG64*)& pBlock->refCount);
+#else
+            InterlockedIncrement((LONG*)&pBlock->refCount);
+#endif
             UpdateCachedMapping(pBlock);
 
             return (BYTE*)pBlock->baseRW + ((size_t)baseRX - (size_t)pBlock->baseRX);

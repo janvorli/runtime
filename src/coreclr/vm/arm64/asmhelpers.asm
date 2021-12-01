@@ -214,18 +214,7 @@ Done
 ; The pupose of this function is to load the MethodDesc and forward the call to prestub.
         NESTED_ENTRY PrecodeFixupThunk
 
-        ; x12 = FixupPrecode *
-        ; On Exit
-        ; x12 = MethodDesc*
-        ; x13, x14 Trashed
-        ; Inline computation done by FixupPrecode::GetMethodDesc()
-        ldrb    w13, [x12, #Offset_PrecodeChunkIndex]              ; m_PrecodeChunkIndex
-        ldrb    w14, [x12, #Offset_MethodDescChunkIndex]           ; m_MethodDescChunkIndex
-
-        add     x12,x12,w13,uxtw #FixupPrecode_ALIGNMENT_SHIFT_1
-        add     x13,x12,w13,uxtw #FixupPrecode_ALIGNMENT_SHIFT_2
-        ldr     x13, [x13,#SIZEOF__FixupPrecode]
-        add     x12,x13,w14,uxtw #MethodDesc_ALIGNMENT_SHIFT
+        ; x12 = MethodDesc *
 
         b ThePreStub
 

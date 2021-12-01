@@ -15,14 +15,6 @@
 // EXTERN_C VOID __stdcall PrecodeFixupThunk()
 LEAF_ENTRY PrecodeFixupThunk, _TEXT
 
-        pop     rax         // Pop the return address. It points right after the call instruction in the precode.
-
-        // Inline computation done by FixupPrecode::GetMethodDesc()
-        movzx   r10,byte ptr [rax+2]    // m_PrecodeChunkIndex
-        movzx   r11,byte ptr [rax+1]    // m_MethodDescChunkIndex
-        mov     rax,qword ptr [rax+r10*8+3]
-        lea     METHODDESC_REGISTER,[rax+r11*8]
-
         // Tail call to prestub
         jmp C_FUNC(ThePreStub)
 

@@ -270,7 +270,8 @@ const CallCountingStub *CallCountingManager::CallCountingStubAllocator::Allocate
 
 size_t CallCountingStub::GenerateCodePage(uint8_t* pageBaseRX)
 {
-/*
+#if TARGET_AMD64
+    /*
     0:  66 ff 0d f9 0f 00 00    dec    WORD PTR [rip+0xff9]        # 1000 <l0+0xff1>
     7:  74 06                   je     f <l0>
     9:  ff 25 f9 0f 00 00       jmp    QWORD PTR [rip+0xff9]        # 1008 <l0+0xff9>
@@ -350,10 +351,51 @@ size_t CallCountingStub::GenerateCodePage(uint8_t* pageBaseRX)
     memcpy(pageBase + 1536, pageBase, 1536);
     memcpy(pageBase + 3072, pageBase, 1008);
 
+#elif TARGET_ARM64
+    ExecutableWriterHolder<uint32_t> codePageWriterHolder((uint32_t*)pageBaseRX, 4096 / 4);
+    uint32_t* pageBase = codePageWriterHolder.GetRW();
+
+/*
+0x0000000000000000:  09 80 00 58    ldr  x9, #0x1000
+0x0000000000000004:  2A 01 40 79    ldrh w10, [x9]
+0x0000000000000008:  4A 05 00 71    subs w10, w10, #1
+0x000000000000000c:  2A 01 00 79    strh w10, [x9]
+0x0000000000000010:  60 00 00 54    b.eq #0x1c
+0x0000000000000014:  A9 7F 00 58    ldr  x9, #0x1008
+0x0000000000000018:  20 01 1F D6    br   x9
+0x000000000000001c:  2A FF FF 10    adr  x10, #0
+0x0000000000000020:  89 7F 00 58    ldr  x9, #0x1010
+0x0000000000000024:  20 01 1F D6    br   x9
+*/
+
+    pageBase[0] = 0x58008009;
+    pageBase[1] = 0x7940012a;
+    pageBase[2] = 0x7100054a;
+    pageBase[3] = 0x7900012a;
+    pageBase[4] = 0x54000060;
+    pageBase[5] = 0x58007fa9;
+    pageBase[6] = 0xd61f0120;
+    pageBase[7] = 0x10ffff2a;
+    pageBase[8] = 0x58007f89;
+    pageBase[9] = 0xd61f0120;
+
+    memcpy(pageBase + 10, pageBase, 40);
+    memcpy(pageBase + 20, pageBase, 80);
+    memcpy(pageBase + 40, pageBase, 160);
+    memcpy(pageBase + 80, pageBase, 320);
+    memcpy(pageBase + 160, pageBase, 640);
+    memcpy(pageBase + 320, pageBase, 1280);
+    memcpy(pageBase + 640, pageBase, 1520);
+
+#else
+#error Not implemented yet
+#endif
+
     ClrFlushInstructionCache(pageBaseRX, 4096);
 
     return 0;
 }
+
 
 NOINLINE LoaderHeap *CallCountingManager::CallCountingStubAllocator::AllocateHeap()
 {

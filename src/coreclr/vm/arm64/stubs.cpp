@@ -543,24 +543,24 @@ void HelperMethodFrame::UpdateRegDisplay(const PREGDISPLAY pRD)
     ClearRegDisplayArgumentAndScratchRegisters(pRD);
 }
 
-TADDR FixupPrecode::GetMethodDesc()
-{
-    LIMITED_METHOD_DAC_CONTRACT;
-
-    // This lookup is also manually inlined in PrecodeFixupThunk assembly code
-    TADDR base = *PTR_TADDR(GetBase());
-    if (base == NULL)
-        return NULL;
-    return base + (m_MethodDescChunkIndex * MethodDesc::ALIGNMENT);
-}
-
+//TADDR FixupPrecode::GetMethodDesc()
+//{
+//    LIMITED_METHOD_DAC_CONTRACT;
+//
+//    // This lookup is also manually inlined in PrecodeFixupThunk assembly code
+//    TADDR base = *PTR_TADDR(GetBase());
+//    if (base == NULL)
+//        return NULL;
+//    return base + (m_MethodDescChunkIndex * MethodDesc::ALIGNMENT);
+//}
+//
 #ifdef DACCESS_COMPILE
 void FixupPrecode::EnumMemoryRegions(CLRDataEnumMemoryFlags flags)
 {
 	SUPPORTS_DAC;
 	DacEnumMemoryRegion(dac_cast<TADDR>(this), sizeof(FixupPrecode));
 
-	DacEnumMemoryRegion(GetBase(), sizeof(TADDR));
+	//DacEnumMemoryRegion(GetBase(), sizeof(TADDR));
 }
 #endif // DACCESS_COMPILE
 
@@ -569,66 +569,143 @@ void StubPrecode::Init(StubPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator
 {
     WRAPPER_NO_CONTRACT;
 
-    int n = 0;
+    *(PCODE*)((BYTE*)this + 4096) = GetPreStubEntryPoint();;
+    *(MethodDesc**)((BYTE*)this + 4096 + 8) = pMD;
+    *((BYTE*)this + 4096 + 16) = StubPrecode::Type;
+}
 
-    m_rgCode[n++] = 0x10000089; // adr x9, #16
-    m_rgCode[n++] = 0xA940312A; // ldp x10,x12,[x9]
-    m_rgCode[n++] = 0xD61F0140; // br x10
+size_t StubPrecode::GenerateCodePage(uint8_t* pageBaseRX)
+{
+    /*
+    ldr x10, #4096
+    ldr x12, #4096+4
+    br x10
+    */
+    ExecutableWriterHolder<uint32_t> codePageWriterHolder((uint32_t*)pageBaseRX, 4096 / 4);
+    uint32_t* pageBase = codePageWriterHolder.GetRW();
 
-    _ASSERTE(n+1 == ARRAY_SIZE(m_rgCode));
+    pageBase[0] = 0x5800800A;
+    pageBase[1] = 0x5800800C;
+    pageBase[2] = 0xD61F0140;
+    pageBase[3] = 0xD503201F; // nop
+    pageBase[4] = 0xD503201F; // nop
+    pageBase[5] = 0xD503201F; // nop
 
-    m_pTarget = GetPreStubEntryPoint();
-    m_pMethodDesc = (TADDR)pMD;
+    memcpy(pageBase + 6, pageBase, 24);
+    memcpy(pageBase + 12, pageBase, 48);
+    memcpy(pageBase + 24, pageBase, 96);
+    memcpy(pageBase + 48, pageBase, 192);
+    memcpy(pageBase + 96, pageBase, 384);
+    memcpy(pageBase + 192, pageBase, 768);
+    memcpy(pageBase + 384, pageBase, 1536);
+    memcpy(pageBase + 768, pageBase, 1008);
+
+    ClrFlushInstructionCache(pageBaseRX, 4096);
+
+    return 0;
 }
 
 void NDirectImportPrecode::Init(NDirectImportPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator)
 {
     WRAPPER_NO_CONTRACT;
 
-    int n = 0;
-
-    m_rgCode[n++] = 0x1000008B; // adr x11, #16
-    m_rgCode[n++] = 0xA940316A; // ldp x10,x12,[x11]
-    m_rgCode[n++] = 0xD61F0140; // br x10
-
-    _ASSERTE(n+1 == ARRAY_SIZE(m_rgCode));
-
-    m_pTarget = GetEEFuncEntryPoint(NDirectImportThunk);
-    m_pMethodDesc = (TADDR)pMD;
+    *(PCODE*)((BYTE*)this + 4096) = GetPreStubEntryPoint();;
+    *(MethodDesc**)((BYTE*)this + 4096 + 8) = pMD;
+    *((BYTE*)this + 4096 + 16) = NDirectImportPrecode::Type;
 }
 
-void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator, int iMethodDescChunkIndex /*=0*/, int iPrecodeChunkIndex /*=0*/)
+#ifdef HAS_FIXUP_PRECODE
+void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator* pLoaderAllocator)
 {
     WRAPPER_NO_CONTRACT;
 
-    InitCommon();
+    _ASSERTE(pPrecodeRX == this);
 
-    // Initialize chunk indices only if they are not initialized yet. This is necessary to make MethodDesc::Reset work.
-    if (m_PrecodeChunkIndex == 0)
-    {
-        _ASSERTE(FitsInU1(iPrecodeChunkIndex));
-        m_PrecodeChunkIndex = static_cast<BYTE>(iPrecodeChunkIndex);
-    }
+    * (MethodDesc**)((BYTE*)this + 4096 + 8) = pMD;
 
-    if (iMethodDescChunkIndex != -1)
-    {
-        if (m_MethodDescChunkIndex == 0)
-        {
-            _ASSERTE(FitsInU1(iMethodDescChunkIndex));
-            m_MethodDescChunkIndex = static_cast<BYTE>(iMethodDescChunkIndex);
-        }
+    _ASSERTE(GetMethodDesc() == (TADDR)pMD);
 
-        if (*(void**)GetBase() == NULL)
-            *(void**)GetBase() = (BYTE*)pMD - (iMethodDescChunkIndex * MethodDesc::ALIGNMENT);
-    }
-
-    _ASSERTE(pPrecodeRX->GetMethodDesc() == (TADDR)pMD);
-
-    if (pLoaderAllocator != NULL)
-    {
-        m_pTarget = GetEEFuncEntryPoint(PrecodeFixupThunk);
-    }
+    PCODE target = (PCODE)pPrecodeRX + 8;
+    * (PCODE*)((BYTE*)this + 4096) = target;
+    * (PCODE*)((BYTE*)this + 4096 + 16) = (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk);
 }
+
+size_t FixupPrecode::GenerateCodePage(uint8_t* pageBaseRX)
+{
+    ExecutableWriterHolder<uint32_t> codePageWriterHolder((uint32_t*)pageBaseRX, 4096 / 4);
+    uint32_t* pageBase = codePageWriterHolder.GetRW();
+
+    pageBase[0] = 0x5800800b;
+    pageBase[1] = 0xd61f0160;
+    pageBase[2] = 0x5800800c;
+    pageBase[3] = 0x5800802b;
+    pageBase[4] = 0xd61f0160;
+    pageBase[5] = 0xD503201F; // nop
+
+    memcpy(pageBase + 6, pageBase, 24);
+    memcpy(pageBase + 12, pageBase, 48);
+    memcpy(pageBase + 24, pageBase, 96);
+    memcpy(pageBase + 48, pageBase, 192);
+    memcpy(pageBase + 96, pageBase, 384);
+    memcpy(pageBase + 192, pageBase, 768);
+    memcpy(pageBase + 384, pageBase, 1536);
+    memcpy(pageBase + 768, pageBase, 1008);
+
+    ClrFlushInstructionCache(pageBaseRX, 4096);
+
+    return 0;
+}
+
+
+void FixupPrecode::ResetTargetInterlocked()
+{
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_NOTRIGGER;
+    }
+    CONTRACTL_END;
+
+#ifdef INDIRECTION_SLOT_FROM_JIT
+    PCODE target = (PCODE)this + 8;
+#else
+    PCODE target = (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk);
+#endif
+    _ASSERTE(IS_ALIGNED(this, sizeof(INT64)));
+
+    FastInterlockExchangeLong((INT64*)((BYTE*)this + 4096), (INT64)target);
+}
+
+BOOL FixupPrecode::SetTargetInterlocked(TADDR target, TADDR expected)
+{
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_NOTRIGGER;
+    }
+    CONTRACTL_END;
+
+    INT64 oldTarget = *(INT64*)((BYTE*)this + 4096);
+#ifdef INDIRECTION_SLOT_FROM_JIT
+    if (oldTarget != ((PCODE)this + 8))
+#else
+    if (oldTarget != (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk))
+#endif
+    {
+#ifdef FEATURE_CODE_VERSIONING
+        // No change needed, jmp is already in place
+#else
+        // Setting the target more than once is unexpected
+        return FALSE;
+#endif
+    }
+
+    _ASSERTE(IS_ALIGNED(this, sizeof(INT64)));
+
+    return FastInterlockCompareExchangeLong((INT64*)((BYTE*)this + 4096), (INT64)target, oldTarget) == oldTarget;
+}
+
+#endif // HAS_FIXUP_PRECODE
 
 void ThisPtrRetBufPrecode::Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocator)
 {
@@ -660,7 +737,7 @@ BOOL DoesSlotCallPrestub(PCODE pCode)
 #if defined(HAS_FIXUP_PRECODE)
     if (FixupPrecode::IsFixupPrecodeByASM(pCode))
     {
-        PCODE pTarget = dac_cast<PTR_FixupPrecode>(pInstr)->m_pTarget;
+        PCODE pTarget = dac_cast<PTR_FixupPrecode>(pInstr)->GetTarget();
 
         if (isJump(pTarget))
         {
@@ -672,11 +749,9 @@ BOOL DoesSlotCallPrestub(PCODE pCode)
 #endif
 
     // StubPrecode
-    if (pInstr[0] == 0x10000089 && // adr x9, #16
-        pInstr[1] == 0xA940312A && // ldp x10,x12,[x9]
-        pInstr[2] == 0xD61F0140) // br x10
+    if (StubPrecode::IsStubPrecodeByASM(pCode))
     {
-        PCODE pTarget = dac_cast<PTR_StubPrecode>(pInstr)->m_pTarget;
+        PCODE pTarget = dac_cast<PTR_StubPrecode>(pInstr)->GetTarget();
 
         if (isJump(pTarget))
         {

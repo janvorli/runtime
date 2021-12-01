@@ -561,7 +561,7 @@ struct InvalidPrecode {
 
 struct StubPrecode {
 
-    static const int Type = 0x89;
+    static const int Type = 0x58; // assumes the two ldr version
 
     // adr x9, #16
     // ldp x10,x12,[x9]      ; =m_pTarget,m_pMethodDesc
@@ -569,22 +569,48 @@ struct StubPrecode {
     // 4 byte padding for 8 byte allignement
     // dcd pTarget
     // dcd pMethodDesc
-    DWORD   m_rgCode[4];
-    TADDR   m_pTarget;
-    TADDR   m_pMethodDesc;
+
+/*
+    New:
+    adr x9, #4096
+    ldp x10, x12, [x9]
+    br x10
+09800010
+2A3140A9
+40011FD6
+    or
+    ldr x10, #4096
+    ldr x12, #4096+4
+    br x10
+0A800058
+0C800058
+40011FD6
+*/
+    DWORD   m_rgCode[6]; // to align with data size. The need for the type storage is unfortunate. We could remedy it only by using a separate heap
 
     void Init(StubPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator);
 
     TADDR GetMethodDesc()
     {
         LIMITED_METHOD_DAC_CONTRACT;
-        return m_pMethodDesc;
+
+        return *(TADDR*)((BYTE*)this + 4096 + 8);
     }
 
     PCODE GetTarget()
     {
         LIMITED_METHOD_DAC_CONTRACT;
-        return m_pTarget;
+
+        return *(PCODE*)((BYTE*)this + 4096);
+    }
+
+    static BOOL IsStubPrecodeByASM(PCODE addr)
+    {
+        PTR_DWORD pInstr = dac_cast<PTR_DWORD>(PCODEToPINSTR(addr));
+        return
+            (pInstr[0] == 0x0A800058) &&
+            (pInstr[1] == 0x0C800058) &&
+            (pInstr[2] == 0x40011FD6);
     }
 
 #ifndef DACCESS_COMPILE
@@ -597,8 +623,7 @@ struct StubPrecode {
         }
         CONTRACTL_END;
 
-        ExecutableWriterHolder<StubPrecode> precodeWriterHolder(this, sizeof(StubPrecode));
-        InterlockedExchange64((LONGLONG*)&precodeWriterHolder.GetRW()->m_pTarget, (TADDR)GetPreStubEntryPoint());
+        FastInterlockExchangeLong((INT64*)((BYTE*)this + 4096), (INT64)GetPreStubEntryPoint());
     }
 
     BOOL SetTargetInterlocked(TADDR target, TADDR expected)
@@ -610,19 +635,19 @@ struct StubPrecode {
         }
         CONTRACTL_END;
 
-        ExecutableWriterHolder<StubPrecode> precodeWriterHolder(this, sizeof(StubPrecode));
-        return (TADDR)InterlockedCompareExchange64(
-            (LONGLONG*)&precodeWriterHolder.GetRW()->m_pTarget, (TADDR)target, (TADDR)expected) == expected;
+        return FastInterlockCompareExchangeLong((INT64*)((BYTE*)this + 4096), target, expected) == expected;
     }
+
+    static size_t GenerateCodePage(uint8_t* pageBase);
 #endif // !DACCESS_COMPILE
 
 };
 typedef DPTR(StubPrecode) PTR_StubPrecode;
 
 
-struct NDirectImportPrecode {
+struct NDirectImportPrecode : StubPrecode {
 
-    static const int Type = 0x8B;
+    static const int Type = 0x8B; // Any random value would do as long as it doesn't collide with other stubs
 
     // adr x11, #16             ; Notice that x11 register is used to differentiate the stub from StubPrecode which uses x9
     // ldp x10,x12,[x11]      ; =m_pTarget,m_pMethodDesc
@@ -630,23 +655,23 @@ struct NDirectImportPrecode {
     // 4 byte padding for 8 byte allignement
     // dcd pTarget
     // dcd pMethodDesc
-    DWORD    m_rgCode[4];
-    TADDR   m_pTarget;
-    TADDR   m_pMethodDesc;
+    //DWORD    m_rgCode[4];
+    //TADDR   m_pTarget;
+    //TADDR   m_pMethodDesc;
 
     void Init(NDirectImportPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator);
 
-    TADDR GetMethodDesc()
-    {
-        LIMITED_METHOD_DAC_CONTRACT;
-        return m_pMethodDesc;
-    }
+    //TADDR GetMethodDesc()
+    //{
+    //    LIMITED_METHOD_DAC_CONTRACT;
+    //    return m_pMethodDesc;
+    //}
 
-    PCODE GetTarget()
-    {
-        LIMITED_METHOD_DAC_CONTRACT;
-        return m_pTarget;
-    }
+    //PCODE GetTarget()
+    //{
+    //    LIMITED_METHOD_DAC_CONTRACT;
+    //    return m_pTarget;
+    //}
 
     LPVOID GetEntrypoint()
     {
@@ -670,91 +695,59 @@ struct FixupPrecode {
     // 2 byte padding
     // dcd m_pTarget
 
+/*
+ldr x11, [pc, #4096]; target or PrecodeFixupThunk
+ldr x12, [pc, #4096 + 4]; MethodDesc
+br x11
 
-    UINT32  m_rgCode[3];
-    BYTE    padding[2];
-    BYTE    m_MethodDescChunkIndex;
-    BYTE    m_PrecodeChunkIndex;
-    TADDR   m_pTarget;
+or for the case of indirection from JIT:
+ldr x11, [pc, #4096]; target or the ldr x12 address below
+br x11
+ldr x12, [pc, #4096]; MethodDesc
+ldr x11, [pc, #4096+4]
+br x11
+0x0000000000000000:  0B 80 00 58    ldr x11, #0x1000
+0x0000000000000004:  60 01 1F D6    br  x11
+0x0000000000000008:  0C 80 00 58    ldr x12, #0x1008
+0x000000000000000c:  2B 80 00 58    ldr x11, #0x1010
+0x0000000000000010:  60 01 1F D6    br  x11
+*/
 
-    void Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator, int iMethodDescChunkIndex = 0, int iPrecodeChunkIndex = 0);
-    void InitCommon()
-    {
-        WRAPPER_NO_CONTRACT;
-        int n = 0;
 
-        m_rgCode[n++] = 0x1000000C;   // adr x12, #0
-        m_rgCode[n++] = 0x5800006B;   // ldr x11, [pc, #12]     ; =m_pTarget
+    UINT32  m_rgCode[6];
 
-        _ASSERTE((UINT32*)&m_pTarget == &m_rgCode[n + 2]);
+    void Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator* pLoaderAllocator);
 
-        m_rgCode[n++] = 0xD61F0160;   // br  x11
+    static size_t GenerateCodePage(uint8_t* pageBase);
 
-        _ASSERTE(n == ARRAY_SIZE(m_rgCode));
-    }
-
-    TADDR GetBase()
-    {
-        LIMITED_METHOD_CONTRACT;
-        SUPPORTS_DAC;
-
-        return dac_cast<TADDR>(this) + (m_PrecodeChunkIndex + 1) * sizeof(FixupPrecode);
-    }
-
-    size_t GetSizeRW()
+    TADDR GetMethodDesc()
     {
         LIMITED_METHOD_CONTRACT;
-
-        return GetBase() + sizeof(void*) - dac_cast<TADDR>(this);
+        return *(TADDR*)((BYTE*)this + 4096 + 8);
     }
-
-    TADDR GetMethodDesc();
 
     PCODE GetTarget()
     {
         LIMITED_METHOD_DAC_CONTRACT;
-        return m_pTarget;
+
+        return *(PCODE*)((BYTE*)this + 4096);
     }
-
-#ifndef DACCESS_COMPILE
-    void ResetTargetInterlocked()
-    {
-        CONTRACTL
-        {
-            THROWS;
-            GC_NOTRIGGER;
-        }
-        CONTRACTL_END;
-
-        ExecutableWriterHolder<FixupPrecode> precodeWriterHolder(this, sizeof(FixupPrecode));
-        InterlockedExchange64((LONGLONG*)&precodeWriterHolder.GetRW()->m_pTarget, (TADDR)GetEEFuncEntryPoint(PrecodeFixupThunk));
-    }
-
-    BOOL SetTargetInterlocked(TADDR target, TADDR expected)
-    {
-        CONTRACTL
-        {
-            THROWS;
-            GC_NOTRIGGER;
-        }
-        CONTRACTL_END;
-
-        ExecutableWriterHolder<FixupPrecode> precodeWriterHolder(this, sizeof(FixupPrecode));
-        return (TADDR)InterlockedCompareExchange64(
-            (LONGLONG*)&precodeWriterHolder.GetRW()->m_pTarget, (TADDR)target, (TADDR)expected) == expected;
-    }
-#endif // !DACCESS_COMPILE
 
     static BOOL IsFixupPrecodeByASM(PCODE addr)
     {
         PTR_DWORD pInstr = dac_cast<PTR_DWORD>(PCODEToPINSTR(addr));
         return
-            (pInstr[0] == 0x1000000C) &&
-            (pInstr[1] == 0x5800006B) &&
-            (pInstr[2] == 0xD61F0160);
+            (pInstr[0] == 0x5800800b) &&
+            (pInstr[1] == 0xd61f0160) &&
+            (pInstr[2] == 0x5800800c) &&
+            (pInstr[3] == 0x5800802b) &&
+            (pInstr[4] == 0xd61f0160);
     }
 
-#ifdef DACCESS_COMPILE
+#ifndef DACCESS_COMPILE
+    void ResetTargetInterlocked();
+    BOOL SetTargetInterlocked(TADDR target, TADDR expected);
+#else
     void EnumMemoryRegions(CLRDataEnumMemoryFlags flags);
 #endif
 };
@@ -823,6 +816,8 @@ typedef DPTR(const CallCountingStub) PTR_CallCountingStub;
 
 class CallCountingStub
 {
+    UINT32 m_code[10];
+
 public:
     static const SIZE_T Alignment = sizeof(void *);
 
@@ -840,6 +835,16 @@ public:
         WRAPPER_NO_CONTRACT;
         return PINSTRToPCODE((TADDR)this);
     }
+
+    void Initialize(PCODE targetForMethod, CallCount* remainingCallCountCell)
+    {
+        *(CallCount**)((BYTE*)this + 4096) = remainingCallCountCell;
+        *(PCODE*)((BYTE*)this + 4096 + 8) = targetForMethod;
+        *(PCODE*)((BYTE*)this + 4096 + 16) = CallCountingStub::TargetForThresholdReached;
+    }
+
+    static size_t GenerateCodePage(uint8_t* pageBase);
+
 #endif // !DACCESS_COMPILE
 
 public:
@@ -850,88 +855,6 @@ public:
 };
 
 ////////////////////////////////////////////////////////////////
-// CallCountingStubShort
-
-class CallCountingStubShort;
-typedef DPTR(const CallCountingStubShort) PTR_CallCountingStubShort;
-
-#pragma pack(push, 1)
-class CallCountingStubShort : public CallCountingStub
-{
-private:
-    const UINT32 m_part0[10];
-    CallCount *const m_remainingCallCountCell;
-    const PCODE m_targetForMethod;
-    const PCODE m_targetForThresholdReached;
-
-#ifndef DACCESS_COMPILE
-public:
-    CallCountingStubShort(CallCountingStubShort* stubRX, CallCount *remainingCallCountCell, PCODE targetForMethod)
-        : m_part0{  0x58000149,             //     ldr  x9, [pc, #(m_remainingCallCountCell)]
-                    0x7940012a,             //     ldrh w10, [x9]
-                    0x7100054a,             //     subs w10, w10, #1
-                    0x7900012a,             //     strh w10, [x9]
-                    0x54000060,             //     beq  L0
-                    0x580000e9,             //     ldr  x9, [pc, #(m_targetForMethod)]
-                    0xd61f0120,             //     br   x9
-                    0x10ffff2a,             // L0: adr  x10, #(this)
-                                            // (x10 == stub-identifying token == this)
-                    0x580000c9,             //     ldr  x9, [pc, #(m_targetForThresholdReached)]
-                    0xd61f0120},            //     br   x9
-        m_remainingCallCountCell(remainingCallCountCell),
-        m_targetForMethod(targetForMethod),
-        m_targetForThresholdReached(TargetForThresholdReached)
-    {
-        WRAPPER_NO_CONTRACT;
-        static_assert_no_msg(sizeof(CallCountingStubShort) % Alignment == 0);
-        _ASSERTE(remainingCallCountCell != nullptr);
-        _ASSERTE(PCODEToPINSTR(targetForMethod) != NULL);
-    }
-
-    static bool Is(TADDR stubIdentifyingToken)
-    {
-        WRAPPER_NO_CONTRACT;
-        return true;
-    }
-
-    static const CallCountingStubShort *From(TADDR stubIdentifyingToken)
-    {
-        WRAPPER_NO_CONTRACT;
-        _ASSERTE(Is(stubIdentifyingToken));
-
-        const CallCountingStubShort *stub = (const CallCountingStubShort *)stubIdentifyingToken;
-        _ASSERTE(IS_ALIGNED(stub, Alignment));
-        return stub;
-    }
-#endif // !DACCESS_COMPILE
-
-public:
-    static bool Is(PTR_CallCountingStub callCountingStub)
-    {
-        WRAPPER_NO_CONTRACT;
-        return true;
-    }
-
-    static PTR_CallCountingStubShort From(PTR_CallCountingStub callCountingStub)
-    {
-        WRAPPER_NO_CONTRACT;
-        _ASSERTE(Is(callCountingStub));
-
-        return dac_cast<PTR_CallCountingStubShort>(callCountingStub);
-    }
-
-    PCODE GetTargetForMethod() const
-    {
-        WRAPPER_NO_CONTRACT;
-        return m_targetForMethod;
-    }
-
-    friend CallCountingStub;
-    DISABLE_COPY(CallCountingStubShort);
-};
-#pragma pack(pop)
-
-////////////////////////////////////////////////////////////////
 // CallCountingStub definitions
 
 #ifndef DACCESS_COMPILE
@@ -940,20 +863,24 @@ inline const CallCountingStub *CallCountingStub::From(TADDR stubIdentifyingToken
     WRAPPER_NO_CONTRACT;
     _ASSERTE(stubIdentifyingToken != NULL);
 
-    return CallCountingStubShort::From(stubIdentifyingToken);
+    const CallCountingStub* stub = (const CallCountingStub*)stubIdentifyingToken;
+    _ASSERTE(IS_ALIGNED(stub, Alignment));
+    return stub;
 }
 #endif
 
 inline PTR_CallCount CallCountingStub::GetRemainingCallCountCell() const
 {
     WRAPPER_NO_CONTRACT;
-    return PTR_CallCount(dac_cast<PTR_CallCountingStubShort>(this)->m_remainingCallCountCell);
+    PTR_PTR_VOID cc = dac_cast<PTR_PTR_VOID>((UINT8*)this + 4096);
+    return dac_cast<PTR_CallCount>(*cc);
 }
 
 inline PCODE CallCountingStub::GetTargetForMethod() const
 {
     WRAPPER_NO_CONTRACT;
-    return CallCountingStubShort::From(PTR_CallCountingStub(this))->GetTargetForMethod();
+
+    return *dac_cast<PTR_PCODE>((UINT8*)this + 4096 + 8);
 }
 
 ////////////////////////////////////////////////////////////////

@@ -5192,11 +5192,15 @@ a:  ff e0                   jmp    rax
 Then we have at each slot:
 18: ff 25 fa 0f 00 00       jmp    QWORD PTR [rip+0xffa]        # 1018 <_main+0x1018>
 1e: 4c 8b 15 fb 0f 00 00    mov    r10,QWORD PTR [rip+0xffb]        # 1020 <_main+0x1020>
-25: eb d9                   jmp    0 <_main>
+25: e9 xx xx xx xx          jmp    0 <_main>
 
 Cool! So this is down to 15 bytes!
 We can store the type in the lowest 2..3 bits of R10, the PrecodeFixupThunk can shave those off!
+Unfortunately, this doesn't work as the relative jump needs to reach
+We could use call instead of the mov r10, jmp and use the return address to find out the r10 slot, but that would be
+bad for the shadow stack.
 
+So we can move back to the original schema without the page start trick
 */
     size_t target = (size_t)GetEEFuncEntryPoint(PrecodeFixupThunk);
 
@@ -5232,7 +5236,7 @@ We can store the type in the lowest 2..3 bits of R10, the PrecodeFixupThunk can 
     pageBase[22] = 0x90;
     pageBase[23] = 0x90;
 
-    for (int i = 24; i < 4096; i += 24)
+    for (int i = 24; i <= ALIGN_DOWN(4096, 24); i += 24)
     {
         pageBase[i] = 0xff;
         pageBase[i + 1] = 0x25;

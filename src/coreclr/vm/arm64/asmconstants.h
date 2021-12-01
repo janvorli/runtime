@@ -165,17 +165,17 @@ ASMCONSTANTS_C_ASSERT(SIZEOF__FaultingExceptionFrame        == sizeof(FaultingEx
 ASMCONSTANTS_C_ASSERT(FaultingExceptionFrame__m_fFilterExecuted == offsetof(FaultingExceptionFrame, m_fFilterExecuted));
 
 #define SIZEOF__FixupPrecode                 24
-#define Offset_PrecodeChunkIndex             15
-#define Offset_MethodDescChunkIndex          14
+//#define Offset_PrecodeChunkIndex             15
+//#define Offset_MethodDescChunkIndex          14
 #define MethodDesc_ALIGNMENT_SHIFT           3
-#define FixupPrecode_ALIGNMENT_SHIFT_1       3
-#define FixupPrecode_ALIGNMENT_SHIFT_2       4
+//#define FixupPrecode_ALIGNMENT_SHIFT_1       3
+//#define FixupPrecode_ALIGNMENT_SHIFT_2       4
 
 ASMCONSTANTS_C_ASSERT(SIZEOF__FixupPrecode == sizeof(FixupPrecode));
-ASMCONSTANTS_C_ASSERT(Offset_PrecodeChunkIndex == offsetof(FixupPrecode, m_PrecodeChunkIndex));
-ASMCONSTANTS_C_ASSERT(Offset_MethodDescChunkIndex == offsetof(FixupPrecode, m_MethodDescChunkIndex));
+//ASMCONSTANTS_C_ASSERT(Offset_PrecodeChunkIndex == offsetof(FixupPrecode, m_PrecodeChunkIndex));
+//ASMCONSTANTS_C_ASSERT(Offset_MethodDescChunkIndex == offsetof(FixupPrecode, m_MethodDescChunkIndex));
 ASMCONSTANTS_C_ASSERT(MethodDesc_ALIGNMENT_SHIFT == MethodDesc::ALIGNMENT_SHIFT);
-ASMCONSTANTS_C_ASSERT((1<<FixupPrecode_ALIGNMENT_SHIFT_1) + (1<<FixupPrecode_ALIGNMENT_SHIFT_2)  == sizeof(FixupPrecode));
+//ASMCONSTANTS_C_ASSERT((1<<FixupPrecode_ALIGNMENT_SHIFT_1) + (1<<FixupPrecode_ALIGNMENT_SHIFT_2)  == sizeof(FixupPrecode));
 
 #define ResolveCacheElem__target      0x10
 #define ResolveCacheElem__pNext       0x18

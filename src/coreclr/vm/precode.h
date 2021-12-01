@@ -118,7 +118,7 @@ public:
         // TODO: make sure this doesn't collide with FixupPrecode if we change it back!
         if (type == 0x4c)
         {
-            type = m_data[4096 + 16];
+            type = *(m_data + 4096 + 16);
         }
 /*
         if (type == (X86_INSTR_MOV_R10_IMM64 & 0xFF))
