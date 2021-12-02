@@ -585,7 +585,7 @@ size_t StubPrecode::GenerateCodePage(uint8_t* pageBaseRX)
     uint32_t* pageBase = codePageWriterHolder.GetRW();
 
     pageBase[0] = 0x5800800A;
-    pageBase[1] = 0x5800800C;
+    pageBase[1] = 0x5800802C;
     pageBase[2] = 0xD61F0140;
     pageBase[3] = 0xD503201F; // nop
     pageBase[4] = 0xD503201F; // nop

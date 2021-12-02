@@ -561,7 +561,7 @@ struct InvalidPrecode {
 
 struct StubPrecode {
 
-    static const int Type = 0x58; // assumes the two ldr version
+    static const int Type = 0x0A; // assumes the two ldr version
 
     // adr x9, #16
     // ldp x10,x12,[x9]      ; =m_pTarget,m_pMethodDesc
@@ -608,9 +608,9 @@ struct StubPrecode {
     {
         PTR_DWORD pInstr = dac_cast<PTR_DWORD>(PCODEToPINSTR(addr));
         return
-            (pInstr[0] == 0x0A800058) &&
-            (pInstr[1] == 0x0C800058) &&
-            (pInstr[2] == 0x40011FD6);
+            (pInstr[0] == 0x5800800A) &&
+            (pInstr[1] == 0x5800802C) &&
+            (pInstr[2] == 0xD61F0140);
     }
 
 #ifndef DACCESS_COMPILE
@@ -682,10 +682,10 @@ struct NDirectImportPrecode : StubPrecode {
 };
 typedef DPTR(NDirectImportPrecode) PTR_NDirectImportPrecode;
 
-
+#define INDIRECTION_SLOT_FROM_JIT
 struct FixupPrecode {
 
-    static const int Type = 0x0C;
+    static const int Type = 0x0b;
 
     // adr x12, #0
     // ldr x11, [pc, #12]     ; =m_pTarget

@@ -187,7 +187,11 @@ BOOL Precode::IsPointingToPrestub(PCODE target)
 
 #ifdef HAS_FIXUP_PRECODE
 #ifdef INDIRECTION_SLOT_FROM_JIT
+#ifdef TARGET_ARM64
+    if (IsPointingTo(target, ((PCODE)this + 8)))
+#else
     if (IsPointingTo(target, ((PCODE)this + 6)))
+#endif
         return TRUE;
 #else
     if (IsPointingTo(target, GetEEFuncEntryPoint(PrecodeFixupThunk)))
