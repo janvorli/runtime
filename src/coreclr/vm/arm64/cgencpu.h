@@ -604,6 +604,12 @@ struct StubPrecode {
         return *(PCODE*)((BYTE*)this + 4096);
     }
 
+    BYTE GetType()
+    {
+        LIMITED_METHOD_DAC_CONTRACT;
+        return *((BYTE*)this + 4096 + 16);
+    }
+
     static BOOL IsStubPrecodeByASM(PCODE addr)
     {
         PTR_DWORD pInstr = dac_cast<PTR_DWORD>(PCODEToPINSTR(addr));

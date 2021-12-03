@@ -4103,6 +4103,7 @@ size_t DispatchHolder::GenerateCodePage(uint8_t* pageBaseRX)
     // _failTarget
 
     pageBase[0] = 0xf940000d;
+    _ASSERTE(pageBase[0] == DISPATCH_STUB_FIRST_DWORD);
     pageBase[1] = 0x10007fe9;
     pageBase[2] = 0xa940312a;
     pageBase[3] = 0xeb0a01bf;
@@ -4204,6 +4205,7 @@ failEntryPoint :
 */
     
     pageBase[0] = 0xF940000C;
+    _ASSERTE(pageBase[0] == RESOLVE_STUB_FIRST_DWORD);
     pageBase[1] = 0x8B4C3189;
     pageBase[2] = 0x10007FCA;
     pageBase[3] = 0xB940094D;

@@ -392,7 +392,7 @@ VirtualCallStubManager::StubKind VirtualCallStubManager::predictStubKind(PCODE s
         {
             stubKind = SK_VTABLECALL;
         }
-        else if (firstDword == 0x10000089) // assembly of first instruction of LookupStub : adr x9, _resolveWorkerTarget
+        else if (firstDword == 0x5800800C) // assembly of first instruction of LookupStub : xxxxxxxxxxxxxxxx
         {
             stubKind = SK_LOOKUP;
         }

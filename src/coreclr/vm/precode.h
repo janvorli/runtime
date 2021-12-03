@@ -145,6 +145,10 @@ public:
             type = NDirectImportPrecode::Type;
 #endif
 
+#ifdef TARGET_ARM64
+        if (type == StubPrecode::Type)
+            type = AsStubPrecode()->GetType();
+#endif
         return (PrecodeType)type;
 
 #else // OFFSETOF_PRECODE_TYPE
