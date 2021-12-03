@@ -63,28 +63,37 @@ struct DispatchStub
 {
     inline PCODE entryPoint()         { LIMITED_METHOD_CONTRACT; return (PCODE)&_entryPoint[0]; }
 
-    inline size_t expectedMT()  { LIMITED_METHOD_CONTRACT; return _expectedMT; }
-    inline PCODE implTarget()  { LIMITED_METHOD_CONTRACT; return _implTarget; }
+    inline size_t expectedMT() const { LIMITED_METHOD_CONTRACT;  return *(PCODE*)((BYTE*)this + 4096);     }
+
+    inline PCODE implTarget() const
+    {
+        LIMITED_METHOD_CONTRACT;
+        return *(PCODE*)((BYTE*)this + 4096 + 8);
+    }
 
     inline TADDR implTargetSlot(EntryPointSlots::SlotType *slotTypeRef) const
     {
         LIMITED_METHOD_CONTRACT;
         _ASSERTE(slotTypeRef != nullptr);
 
-        *slotTypeRef = EntryPointSlots::SlotType_Executable;
-        return (TADDR)&_implTarget;
+        *slotTypeRef = EntryPointSlots::SlotType_Normal;
+        return (TADDR)((BYTE*)this + 4096 + 8);
     }
 
-    inline PCODE failTarget()  { LIMITED_METHOD_CONTRACT; return _failTarget; }
+    inline PCODE failTarget() const
+    {
+        return *(PCODE*)((BYTE*)this + 4096 + 16);
+    }
+
     inline size_t size()        { LIMITED_METHOD_CONTRACT; return sizeof(DispatchStub); }
 
 private:
     friend struct DispatchHolder;
 
     DWORD _entryPoint[8];
-    size_t  _expectedMT;
-    PCODE _implTarget;
-    PCODE _failTarget;
+    //size_t  _expectedMT;
+    //PCODE _implTarget;
+    //PCODE _failTarget;
 };
 
 struct DispatchHolder
@@ -94,7 +103,7 @@ struct DispatchHolder
         LIMITED_METHOD_CONTRACT;
 
         // Check that _implTarget is aligned in the DispatchHolder for backpatching
-        static_assert_no_msg(((offsetof(DispatchHolder, _stub) + offsetof(DispatchStub, _implTarget)) % sizeof(void *)) == 0);
+        //static_assert_no_msg(((offsetof(DispatchHolder, _stub) + offsetof(DispatchStub, _implTarget)) % sizeof(void *)) == 0);
     }
 
     void  Initialize(DispatchHolder* pDispatchHolderRX, PCODE implTarget, PCODE failTarget, size_t expectedMT)
