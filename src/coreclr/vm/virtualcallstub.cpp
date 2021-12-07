@@ -2786,7 +2786,7 @@ ResolveHolder *VirtualCallStubManager::GenerateResolveStub(PCODE            addr
 
     //allocate from the requisite heap and copy the templates for each piece over it.
     ResolveHolder * holder = (ResolveHolder*) (void*)
-        resolve_heap->AllocAlignedMem(sizeof(ResolveHolder), CODE_SIZE_ALIGN);
+        resolve_heap->AllocAlignedMem(sizeof(ResolveHolder), 1);// CODE_SIZE_ALIGN);
     //ExecutableWriterHolder<ResolveHolder> resolveWriterHolder(holder, sizeof(ResolveHolder));
 
 //    resolveWriterHolder.GetRW()->Initialize(holder,
@@ -4066,7 +4066,7 @@ size_t LookupHolder::GenerateCodePage(uint8_t* pageBaseRX)
     pageBase[0] = 0x5800800C;
     pageBase[1] = 0x5800802A;
     pageBase[2] = 0xd61f0140;
-    pageBase[4] = 0xD503201F; // nop
+    pageBase[3] = 0xD503201F; // nop
 
     memcpy(pageBase + 4, pageBase, 16);
     memcpy(pageBase + 8, pageBase, 32);

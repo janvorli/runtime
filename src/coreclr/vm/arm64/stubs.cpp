@@ -609,7 +609,7 @@ void NDirectImportPrecode::Init(NDirectImportPrecode* pPrecodeRX, MethodDesc* pM
 {
     WRAPPER_NO_CONTRACT;
 
-    *(PCODE*)((BYTE*)this + 4096) = GetPreStubEntryPoint();;
+    *(PCODE*)((BYTE*)this + 4096) = GetEEFuncEntryPoint(NDirectImportThunk);
     *(MethodDesc**)((BYTE*)this + 4096 + 8) = pMD;
     *((BYTE*)this + 4096 + 16) = NDirectImportPrecode::Type;
 }
@@ -744,7 +744,8 @@ BOOL DoesSlotCallPrestub(PCODE pCode)
             pTarget = decodeJump(pTarget);
         }
 
-        return pTarget == (TADDR)PrecodeFixupThunk;
+        //return pTarget == (TADDR)PrecodeFixupThunk;
+        return pTarget == (TADDR)pCode + 8;
     }
 #endif
 

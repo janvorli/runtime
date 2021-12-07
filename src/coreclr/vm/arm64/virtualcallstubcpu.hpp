@@ -154,6 +154,7 @@ private:
     DWORD _resolveEntryPoint[resolveEntryPointLen];
     DWORD _slowEntryPoint[slowEntryPointLen];
     DWORD _failEntryPoint[failEntryPointLen];
+    DWORD _align[3];
     //INT32*  _pCounter;               //Base of the Data Region
     //size_t  _cacheAddress;           // lookupCache
     //size_t  _token;

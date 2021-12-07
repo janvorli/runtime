@@ -396,6 +396,7 @@ HRESULT CorHost2::ExecuteAssembly(DWORD dwAppDomainId,
 
 #ifdef LOG_STATISTICS
     ExecutableAllocator::DumpHolderUsage();
+    ExecutionManager::DumpExecutionManagerUsage();
 #endif
 
 ErrExit:
