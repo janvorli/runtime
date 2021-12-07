@@ -945,9 +945,7 @@ FORCEINLINE void StubRelease(TYPE* value)
 {
     if (value)
     {
-#ifndef TARGET_UNIX
-        ExecutableAllocator::LogUsage(__FILE__, __LINE__, __FUNCTION__);
-#endif
+//        ExecutableAllocator::LogUsage(__FILE__, __LINE__, __FUNCTION__);
         ExecutableWriterHolderC<TYPE> stubWriterHolder(value, sizeof(TYPE));
         stubWriterHolder.GetRW()->DecRef();
     }

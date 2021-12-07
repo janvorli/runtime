@@ -5201,6 +5201,13 @@ We could use call instead of the mov r10, jmp and use the return address to find
 bad for the shadow stack.
 
 So we can move back to the original schema without the page start trick
+
+Without indirections:
+0:  4c 8b 15 01 10 00 00    mov    r10,QWORD PTR [rip+0x1001]        # 0x1008
+7:  ff 25 f3 0f 00 00       jmp    QWORD PTR [rip+0xff3]        # 0x1000
+d:  90                      nop
+e:  90                      nop
+f:  90                      nop
 */
     size_t target = (size_t)GetEEFuncEntryPoint(PrecodeFixupThunk);
 
@@ -5236,7 +5243,7 @@ So we can move back to the original schema without the page start trick
     pageBase[22] = 0x90;
     pageBase[23] = 0x90;
 
-    for (int i = 24; i <= ALIGN_DOWN(4096, 24); i += 24)
+    for (int i = 24; i <= 4096 - 24; i += 24)
     {
         pageBase[i] = 0xff;
         pageBase[i + 1] = 0x25;
@@ -5269,7 +5276,6 @@ So we can move back to the original schema without the page start trick
         pageBase[i + 23] = 0x90;
     }
 #else
-  // /*
     pageBase[0] = 0x4C;
     pageBase[1] = 0x8B;
     pageBase[2] = 0x15;
@@ -5283,40 +5289,12 @@ So we can move back to the original schema without the page start trick
     pageBase[10] = 0x0F;
     pageBase[11] = 0x00;
     pageBase[12] = 0x00;
-    pageBase[13] = 0x90;
+    pageBase[13] = 0xCC;
     pageBase[14] = 0x90;
     pageBase[15] = 0x90;
-//    */
-/*
-    pageBase[0] = 0x48;
-    pageBase[1] = 0x8D;
-    pageBase[2] = 0x05;
-    pageBase[3] = 0xF9;
-    pageBase[4] = 0x0F;
-    pageBase[5] = 0x00;
-    pageBase[6] = 0x00;
-    pageBase[7] = 0xff;
-    pageBase[8] = 0x20;
-    pageBase[9] = 0x90;
-    pageBase[10] = 0x90;
-    pageBase[11] = 0x90;
-    pageBase[12] = 0x90;
-    pageBase[13] = 0x90;
-    pageBase[14] = 0x90;
-    pageBase[15] = 0x90;
-*/
 #endif
 
-#ifdef INDIRECTION_SLOT_FROM_JIT
-    //memcpy(pageBase + 24, pageBase, 24);
-    //memcpy(pageBase + 48, pageBase, 48);
-    //memcpy(pageBase + 96, pageBase, 96);
-    //memcpy(pageBase + 192, pageBase, 192);
-    //memcpy(pageBase + 384, pageBase, 384);
-    //memcpy(pageBase + 768, pageBase, 768);
-    //memcpy(pageBase + 1536, pageBase, 1536);
-    //memcpy(pageBase + 3072, pageBase, 1008);
-#else
+#ifndef INDIRECTION_SLOT_FROM_JIT
 // Copy the same two instructions to the whole page
     memcpy(pageBase + 16, pageBase, 16);
     memcpy(pageBase + 32, pageBase, 32);
@@ -5330,7 +5308,11 @@ So we can move back to the original schema without the page start trick
 
     ClrFlushInstructionCache(pageBaseRX, 4096);
 
+#ifndef INDIRECTION_SLOT_FROM_JIT
+    return 0;
+#else
     return 24;
+#endif
 }
 
 

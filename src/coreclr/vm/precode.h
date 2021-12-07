@@ -116,7 +116,7 @@ public:
 
 #ifdef TARGET_AMD64
         // TODO: make sure this doesn't collide with FixupPrecode if we change it back!
-        if (type == 0x4c)
+        if (type == 0x4c && m_data[13] != 0xcc)
         {
             type = *((BYTE*)m_data + 4096 + 16);
         }
