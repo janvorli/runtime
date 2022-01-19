@@ -5013,6 +5013,8 @@ void StubPrecode::Init(StubPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator
     //}
 }
 
+extern "C" void StubPrecodeCode();
+
 size_t StubPrecode::GenerateCodePage(uint8_t* pageBaseRX)
 {
 /*
@@ -5023,6 +5025,8 @@ There is a third slot containing the type for now, but I'd like to get rid of it
     ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, 4096);
     uint8_t* pageBase = codePageWriterHolder.GetRW();
 
+    memcpy(pageBase, &StubPrecodeCode, 24);
+    /*
     pageBase[0] = 0x4C;
     pageBase[1] = 0x8B;
     pageBase[2] = 0x15;
@@ -5047,7 +5051,7 @@ There is a third slot containing the type for now, but I'd like to get rid of it
     pageBase[21] = 0x90;
     pageBase[22] = 0x90;
     pageBase[23] = 0x90;
-
+*/
     memcpy(pageBase + 24, pageBase, 24);
     memcpy(pageBase + 48, pageBase, 48);
     memcpy(pageBase + 96, pageBase, 96);
@@ -5090,20 +5094,22 @@ void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocat
     m_jmpRax[1] = 0x20;
 */
 
-    *(MethodDesc**)((BYTE*)this + 4096 + 8) = pMD;
+    FixupPrecodeData *pData = GetData();
+    pData->MethodDesc = pMD;
 
     _ASSERTE(GetMethodDesc() == (TADDR)pMD);
 
 #ifdef INDIRECTION_SLOT_FROM_JIT
-    PCODE target = (PCODE)pPrecodeRX + 6;
+    pData->Target = (PCODE)pPrecodeRX + 6;
 #else
-    PCODE target = (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk);
+    pData->Target = (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk);
 #endif
-    *(PCODE*)((BYTE*)this + 4096) = target;
 #ifdef INDIRECTION_SLOT_FROM_JIT
-    * (PCODE*)((BYTE*)this + 4096 + 16) = (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk);
+    pData->PrecodeFixupThunk = (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk);;
 #endif
 }
+
+extern "C" void FixupPrecodeCode();
 
 size_t FixupPrecode::GenerateCodePage(uint8_t* pageBaseRX)
 {
@@ -5209,72 +5215,82 @@ d:  90                      nop
 e:  90                      nop
 f:  90                      nop
 */
-    size_t target = (size_t)GetEEFuncEntryPoint(PrecodeFixupThunk);
+    memcpy(pageBase, &FixupPrecodeCode, 24);
+    memcpy(pageBase + 24, pageBase, 24);
+    memcpy(pageBase + 48, pageBase, 48);
+    memcpy(pageBase + 96, pageBase, 96);
+    memcpy(pageBase + 192, pageBase, 192);
+    memcpy(pageBase + 384, pageBase, 384);
+    memcpy(pageBase + 768, pageBase, 768);
+    memcpy(pageBase + 1536, pageBase, 1536);
+    memcpy(pageBase + 3072, pageBase, 1008);
 
-    pageBase[0] = 0x48;
-    pageBase[1] = 0xb8;
-    pageBase[2] = target & 0xff;
-    target >>= 8;
-    pageBase[3] = target & 0xff;
-    target >>= 8;
-    pageBase[4] = target & 0xff;
-    target >>= 8;
-    pageBase[5] = target & 0xff;
-    target >>= 8;
-    pageBase[6] = target & 0xff;
-    target >>= 8;
-    pageBase[7] = target & 0xff;
-    target >>= 8;
-    pageBase[8] = target & 0xff;
-    target >>= 8;
-    pageBase[9] = target & 0xff;
-    pageBase[10] = 0xff;
-    pageBase[11] = 0xe0;
-    pageBase[12] = 0x90;
-    pageBase[13] = 0x90;
-    pageBase[14] = 0x90;
-    pageBase[15] = 0x90;
-    pageBase[16] = 0x90;
-    pageBase[17] = 0x90;
-    pageBase[18] = 0x90;
-    pageBase[19] = 0x90;
-    pageBase[20] = 0x90;
-    pageBase[21] = 0x90;
-    pageBase[22] = 0x90;
-    pageBase[23] = 0x90;
+    //size_t target = (size_t)GetEEFuncEntryPoint(PrecodeFixupThunk);
 
-    for (int i = 24; i <= 4096 - 24; i += 24)
-    {
-        pageBase[i] = 0xff;
-        pageBase[i + 1] = 0x25;
-        pageBase[i + 2] = 0xfa;
-        pageBase[i + 3] = 0x0f;
-        pageBase[i + 4] = 0x00;
-        pageBase[i + 5] = 0x00;
-        pageBase[i + 6] = 0x4c;
-        pageBase[i + 7] = 0x8b;
-        pageBase[i + 8] = 0x15;
-        pageBase[i + 9] = 0xfb;
-        pageBase[i + 10] = 0x0f;
-        pageBase[i + 11] = 0x00;
-        pageBase[i + 12] = 0x00;
+    // pageBase[0] = 0x48;
+    // pageBase[1] = 0xb8;
+    // pageBase[2] = target & 0xff;
+    // target >>= 8;
+    // pageBase[3] = target & 0xff;
+    // target >>= 8;
+    // pageBase[4] = target & 0xff;
+    // target >>= 8;
+    // pageBase[5] = target & 0xff;
+    // target >>= 8;
+    // pageBase[6] = target & 0xff;
+    // target >>= 8;
+    // pageBase[7] = target & 0xff;
+    // target >>= 8;
+    // pageBase[8] = target & 0xff;
+    // target >>= 8;
+    // pageBase[9] = target & 0xff;
+    // pageBase[10] = 0xff;
+    // pageBase[11] = 0xe0;
+    // pageBase[12] = 0x90;
+    // pageBase[13] = 0x90;
+    // pageBase[14] = 0x90;
+    // pageBase[15] = 0x90;
+    // pageBase[16] = 0x90;
+    // pageBase[17] = 0x90;
+    // pageBase[18] = 0x90;
+    // pageBase[19] = 0x90;
+    // pageBase[20] = 0x90;
+    // pageBase[21] = 0x90;
+    // pageBase[22] = 0x90;
+    // pageBase[23] = 0x90;
 
-        pageBase[i + 13] = 0xe9;
-        size_t offset = -(i + 18);
-        pageBase[i + 14] = offset & 0xff;
-        offset >>= 8;
-        pageBase[i + 15] = offset & 0xff;
-        offset >>= 8;
-        pageBase[i + 16] = offset & 0xff;
-        offset >>= 8;
-        pageBase[i + 17] = offset & 0xff;
-        pageBase[i + 18] = 0x90;
-        pageBase[i + 19] = 0x90;
-        pageBase[i + 20] = 0x90;
-        pageBase[i + 21] = 0x90;
-        pageBase[i + 22] = 0x90;
-        pageBase[i + 23] = 0x90;
-    }
+    // for (int i = 24; i <= 4096 - 24; i += 24)
+    // {
+    //     pageBase[i] = 0xff;
+    //     pageBase[i + 1] = 0x25;
+    //     pageBase[i + 2] = 0xfa;
+    //     pageBase[i + 3] = 0x0f;
+    //     pageBase[i + 4] = 0x00;
+    //     pageBase[i + 5] = 0x00;
+    //     pageBase[i + 6] = 0x4c;
+    //     pageBase[i + 7] = 0x8b;
+    //     pageBase[i + 8] = 0x15;
+    //     pageBase[i + 9] = 0xfb;
+    //     pageBase[i + 10] = 0x0f;
+    //     pageBase[i + 11] = 0x00;
+    //     pageBase[i + 12] = 0x00;
+
+    //     pageBase[i + 13] = 0xe9;
+    //     size_t offset = -(i + 18);
+    //     pageBase[i + 14] = offset & 0xff;
+    //     offset >>= 8;
+    //     pageBase[i + 15] = offset & 0xff;
+    //     offset >>= 8;
+    //     pageBase[i + 16] = offset & 0xff;
+    //     offset >>= 8;
+    //     pageBase[i + 17] = offset & 0xff;
+    //     pageBase[i + 18] = 0x90;
+    //     pageBase[i + 19] = 0x90;
+    //     pageBase[i + 20] = 0x90;
+    //     pageBase[i + 21] = 0x90;
+    //     pageBase[i + 22] = 0x90;
+    //     pageBase[i + 23] = 0x90;
+    // }
 #else
     pageBase[0] = 0x4C;
     pageBase[1] = 0x8B;
@@ -5308,11 +5324,12 @@ f:  90                      nop
 
     ClrFlushInstructionCache(pageBaseRX, 4096);
 
-#ifndef INDIRECTION_SLOT_FROM_JIT
     return 0;
-#else
-    return 24;
-#endif
+// #ifndef INDIRECTION_SLOT_FROM_JIT
+//     return 0;
+// #else
+//     return 24;
+// #endif
 }
 
 

@@ -2126,9 +2126,13 @@ MethodDesc* NonVirtualEntry2MethodDesc(PCODE entryPoint)
     {
         // TODO: this is a hack, probably need to update the ExecutionManager to track the new precodes
         Precode* pPrecode = (Precode*)entryPoint;
-        if (pPrecode->GetType() == PRECODE_FIXUP)
+
+        switch (pPrecode->GetType())
         {
-            return pPrecode->GetMethodDesc();
+            case PRECODE_FIXUP:
+            case PRECODE_STUB:
+            case PRECODE_NDIRECT_IMPORT:
+                return pPrecode->GetMethodDesc();
         }
 
         return NULL;

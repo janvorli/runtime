@@ -720,7 +720,7 @@ BOOL DoesSlotCallPrestub(PCODE pCode)
 #ifdef HAS_FIXUP_PRECODE
     if (*PTR_WORD(pCode) == X86_INSTR_JMP_IND)
     {
-        PCODE pTargetCode = (PCODE) *PTR_SIZE_T(pCode + 6 + *PTR_DWORD(pCode + 2));
+        PCODE pTargetCode = (PCODE) *PTR_SIZE_T(pCode + 6 + *PTR_INT32(pCode + 2));
         return pTargetCode == pCode + 6;
     }
     //if (*PTR_BYTE(pCode) == X86_INSTR_CALL_REL32)
@@ -741,7 +741,7 @@ BOOL DoesSlotCallPrestub(PCODE pCode)
         *PTR_BYTE(pCode + 2) == 0x15 &&
         *PTR_BYTE(pCode + 7) == X86_INSTR_JMP_IND)
     {
-        pCode = (PCODE)*PTR_SIZE_T(pCode + 13 + *PTR_DWORD(pCode + 9));
+        pCode = (PCODE)*PTR_SIZE_T(pCode + 13 + *PTR_INT32(pCode + 9));
     }
     else
     {

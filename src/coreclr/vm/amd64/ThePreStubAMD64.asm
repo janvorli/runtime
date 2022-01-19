@@ -30,6 +30,30 @@ PATCH_LABEL ThePreStubPatchLabel
         ret
 LEAF_END ThePreStubPatch, _TEXT
 
+LEAF_ENTRY StubPrecodeCode, _TEXT
 
+TargetSlot EQU StubPrecodeCode + 1000h
+MethodDescSlot EQU StubPrecodeCode + 1008h
+
+        mov    r10, QWORD PTR [MethodDescSlot]
+        jmp    QWORD PTR [TargetSlot]
+        REPEAT 11
+        nop
+        ENDM
+LEAF_END StubPrecodeCode, _TEXT
+
+LEAF_ENTRY FixupPrecodeCode, _TEXT
+
+FixupPrecodeCode_TargetSlot EQU FixupPrecodeCode + 1000h
+FixupPrecodeCode_MethodDescSlot EQU FixupPrecodeCode + 1008h
+PrecodeFixupThunkSlot EQU FixupPrecodeCode + 1010h
+
+        jmp QWORD PTR [FixupPrecodeCode_TargetSlot]
+        mov    r10, QWORD PTR [FixupPrecodeCode_MethodDescSlot]       
+        jmp    QWORD PTR [PrecodeFixupThunkSlot]
+        REPEAT 5
+        nop
+        ENDM
+LEAF_END FixupPrecodeCode, _TEXT
 
 end

@@ -614,6 +614,13 @@ typedef DPTR(NDirectImportPrecode) PTR_NDirectImportPrecode;
 
 #define INDIRECTION_SLOT_FROM_JIT
 
+struct FixupPrecodeData
+{
+    PCODE Target;
+    MethodDesc *MethodDesc;
+    PCODE PrecodeFixupThunk;
+};
+
 // Fixup precode is used in ngen images when the prestub does just one time fixup.
 // The fixup precode is simple jump once patched. It does not have the two instruction overhead of regular precode.
 struct FixupPrecode {
@@ -643,17 +650,23 @@ struct FixupPrecode {
 
     static size_t GenerateCodePage(uint8_t* pageBase);
 
+    FixupPrecodeData* GetData()
+    {
+        LIMITED_METHOD_CONTRACT;
+        return (FixupPrecodeData*)((BYTE*)this + 4096);
+    }
+
     TADDR GetMethodDesc()
     {
         LIMITED_METHOD_CONTRACT;
-        return *(TADDR*)((BYTE*)this + 4096 + 8);
+        return (TADDR)GetData()->MethodDesc;
     }
 
     PCODE GetTarget()
     {
         LIMITED_METHOD_DAC_CONTRACT;
 
-        return *(PCODE*)((BYTE*)this + 4096);
+        return GetData()->Target;
     }
 
     void ResetTargetInterlocked();

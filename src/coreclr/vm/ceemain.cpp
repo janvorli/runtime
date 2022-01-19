@@ -672,14 +672,16 @@ void EEStartupHelper()
         CallCountingManager::StaticInitialize();
         OnStackReplacementManager::StaticInitialize();
 
-#ifndef TARGET_UNIX
+#ifdef TARGET_UNIX
+        ExecutableAllocator::InitPreferredRange();
+#else
         {
-            // Record mscorwks geometry
+            // Record coreclr.dll geometry
             PEDecoder pe(GetClrModuleBase());
 
             g_runtimeLoadedBaseAddress = (SIZE_T)pe.GetBase();
             g_runtimeVirtualSize = (SIZE_T)pe.GetVirtualSize();
-            ExecutableAllocator::InitCodeAllocHint(g_runtimeLoadedBaseAddress, g_runtimeVirtualSize, GetRandomInt(64));
+            ExecutableAllocator::InitLazyPreferredRange(g_runtimeLoadedBaseAddress, g_runtimeVirtualSize, GetRandomInt(64));
         }
 #endif // !TARGET_UNIX
 
@@ -817,20 +819,6 @@ void EEStartupHelper()
 #endif // FEATURE_INTERPRETER
 
         StubManager::InitializeStubManagers();
-
-#ifdef TARGET_UNIX
-        ExecutableAllocator::InitPreferredRange();
-#else
-        {
-            // Record coreclr.dll geometry
-            PEDecoder pe(GetClrModuleBase());
-
-            g_runtimeLoadedBaseAddress = (SIZE_T)pe.GetBase();
-            g_runtimeVirtualSize = (SIZE_T)pe.GetVirtualSize();
-            ExecutableAllocator::InitLazyPreferredRange(g_runtimeLoadedBaseAddress, g_runtimeVirtualSize, GetRandomInt(64));
-        }
-#endif // !TARGET_UNIX
-
 
         // Set up the cor handle map. This map is used to load assemblies in
         // memory instead of using the normal system load
