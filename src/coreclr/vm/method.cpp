@@ -2133,9 +2133,9 @@ MethodDesc* NonVirtualEntry2MethodDesc(PCODE entryPoint)
             case PRECODE_STUB:
             case PRECODE_NDIRECT_IMPORT:
                 return pPrecode->GetMethodDesc();
+            default:
+                return NULL;
         }
-
-        return NULL;
     }
 
     MethodDesc* pMD;

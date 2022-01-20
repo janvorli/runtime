@@ -5025,7 +5025,7 @@ There is a third slot containing the type for now, but I'd like to get rid of it
     ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, 4096);
     uint8_t* pageBase = codePageWriterHolder.GetRW();
 
-    memcpy(pageBase, &StubPrecodeCode, 24);
+    memcpy(pageBase, (const void*)&StubPrecodeCode, 24);
     /*
     pageBase[0] = 0x4C;
     pageBase[1] = 0x8B;
@@ -5215,7 +5215,7 @@ d:  90                      nop
 e:  90                      nop
 f:  90                      nop
 */
-    memcpy(pageBase, &FixupPrecodeCode, 24);
+    memcpy(pageBase, (const void*)&FixupPrecodeCode, 24);
     memcpy(pageBase + 24, pageBase, 24);
     memcpy(pageBase + 48, pageBase, 48);
     memcpy(pageBase + 96, pageBase, 96);
