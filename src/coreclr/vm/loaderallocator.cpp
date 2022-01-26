@@ -1118,7 +1118,8 @@ void LoaderAllocator::Init(BaseDomain *pDomain, BYTE *pExecutableHeapMemory)
 
 #if !defined(HOST_64BIT)
     // Make sure that we reserve as little as possible on 32-bit to save address space
-    _ASSERTE(dwTotalReserveMemSize <= VIRTUAL_ALLOC_RESERVE_GRANULARITY);
+    // We cannot reserve less than needed
+    //_ASSERTE(dwTotalReserveMemSize <= VIRTUAL_ALLOC_RESERVE_GRANULARITY);
 #endif
 
     BYTE * initReservedMem = (BYTE*)ExecutableAllocator::Instance()->Reserve(dwTotalReserveMemSize);
@@ -1197,11 +1198,8 @@ void LoaderAllocator::Init(BaseDomain *pDomain, BYTE *pExecutableHeapMemory)
     // NOTE: use StubHeap for the StubPrecode for now. Figure out how to migrate the CodeFragmentHeap to a model that can use the dual alloc
     m_pNewStubPrecodeHeap = new (&m_NewStubPrecodeHeapInstance) StubHeap(0, sizeof(StubPrecode), 24, StubPrecode::GenerateCodePage);
 
-#if defined(INDIRECTION_SLOT_FROM_JIT)
     m_pFixupPrecodeHeap = new (&m_FixupPrecodeHeapInstance) StubHeap(0, sizeof(FixupPrecode), 24, FixupPrecode::GenerateCodePage);
-#else
-    m_pFixupPrecodeHeap = new (&m_FixupPrecodeHeapInstance) StubHeap(0, sizeof(FixupPrecode), 16, FixupPrecode::GenerateCodePage);
-#endif
+
     // Initialize the EE marshaling data to NULL.
     m_pMarshalingData = NULL;
 

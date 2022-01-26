@@ -186,17 +186,16 @@ BOOL Precode::IsPointingToPrestub(PCODE target)
         return TRUE;
 
 #ifdef HAS_FIXUP_PRECODE
-#ifdef INDIRECTION_SLOT_FROM_JIT
 #ifdef TARGET_ARM64
     if (IsPointingTo(target, ((PCODE)this + 8)))
-#else
+#elif defined(TARGET_AMD64)
     if (IsPointingTo(target, ((PCODE)this + 6)))
-#endif
-        return TRUE;
+#elif defined(TARGET_X86)
+    if (IsPointingTo(target, ((PCODE)this + 6)))
 #else
-    if (IsPointingTo(target, GetEEFuncEntryPoint(PrecodeFixupThunk)))
-        return TRUE;
+#error Implement this!    
 #endif
+        return TRUE;
 #endif
 
     return FALSE;

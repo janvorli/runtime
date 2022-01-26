@@ -87,14 +87,6 @@ private:
     // of a stub to find out what kind of a stub we have.
 
     BYTE _code[16];
-
-    //BYTE    _entryPoint [3];      // 90                       nop
-    //                              // 48 B8                    mov    rax,
-    //size_t  _token;               // xx xx xx xx xx xx xx xx              64-bit address
-    //BYTE    part2 [3];            // 50                       push   rax
-    //                              // 48 B8                    mov    rax,
-    //size_t  _resolveWorkerAddr;   // xx xx xx xx xx xx xx xx              64-bit address
-    //BYTE    part3 [2];            // FF E0                    jmp    rax
 };
 
 /* LookupHolders are the containers for LookupStubs, they provide for any alignment of
@@ -301,10 +293,6 @@ struct DispatchHolder
 
     static DispatchHolder* FromDispatchEntry(PCODE dispatchEntry);
     static size_t GenerateCodePage(uint8_t* pageBase);
-
-private:
-    // DispatchStub follows here. It is dynamically sized on allocation
-    // because it could be a DispatchStubLong or a DispatchStubShort
 };
 
 struct ResolveStub;
@@ -356,7 +344,7 @@ struct ResolveStub
     inline PCODE resolveEntryPoint()    { LIMITED_METHOD_CONTRACT; return (PCODE)((BYTE*)this); }
     inline PCODE slowEntryPoint()       { LIMITED_METHOD_CONTRACT; return (PCODE)((BYTE*)this + 0x4c); }
 
-    inline INT32* pCounter()            { LIMITED_METHOD_CONTRACT; return *(INT32**)((BYTE*)this + 4096 + 24); }
+    inline INT32* pCounter()            { LIMITED_METHOD_CONTRACT; return (INT32*)((BYTE*)this + 4096 + 24); }
     inline UINT32 hashedToken()         { LIMITED_METHOD_CONTRACT; return (*(INT32*)((BYTE*)this + 4096 + 8)) >> LOG2_PTRSIZE;    }
     inline size_t cacheAddress()        { LIMITED_METHOD_CONTRACT; return *(size_t*)((BYTE*)this + 4096);   }
     inline size_t token()               { LIMITED_METHOD_CONTRACT; return *(size_t*)((BYTE*)this + 4096 + 16);          }
@@ -366,50 +354,6 @@ private:
     friend struct ResolveHolder;
 
     BYTE code[96];
-//
-//    BYTE    _resolveEntryPoint[3];//                resolveStub:
-//                                  // 52                       push   rdx
-//                                  // 49 BA                    mov    r10,
-//    size_t  _cacheAddress;        // xx xx xx xx xx xx xx xx              64-bit address
-//    BYTE    part1 [15];           // 48 8B XX                 mov    rax, [THIS_REG]     ; Compute hash = ((MT + MT>>12) ^ prehash)
-//                                  // 48 8B D0                 mov    rdx, rax            ; rdx <- current MethodTable
-//                                  // 48 C1 E8 0C              shr    rax, 12
-//                                  // 48 03 C2                 add    rax, rdx
-//                                  // 48 35                    xor    rax,
-//    UINT32  _hashedToken;         // xx xx xx xx                          hashedtoken    ; xor with pre-hashed token
-//    BYTE    part2 [2];            // 48 25                    and    rax,
-//    UINT32  mask;                 // xx xx xx xx                          cache_mask     ; and with cache mask
-//    BYTE    part3 [6];            // 4A 8B 04 10              mov    rax, [r10 + rax]    ; get cache entry address
-//                                  // 49 BA                    mov    r10,
-//    size_t  _token;               // xx xx xx xx xx xx xx xx              64-bit address
-//    BYTE    part4 [3];            // 48 3B 50                 cmp    rdx, [rax+          ; compare our MT vs. cache MT
-//    BYTE    mtOffset;             // xx                                        ResolverCacheElem.pMT]
-//    BYTE    part5 [1];            // 75                       jne
-//    BYTE    toMiss1;              // xx                              miss                ; must be forward jump, for perf reasons
-//    BYTE    part6 [3];            // 4C 3B 50                 cmp    r10, [rax+          ; compare our token vs. cache token
-//    BYTE    tokenOffset;          // xx                                        ResolverCacheElem.token]
-//    BYTE    part7 [1];            // 75                       jne
-//    BYTE    toMiss2;              // xx                              miss                ; must be forward jump, for perf reasons
-//    BYTE    part8 [3];            // 48 8B 40                 mov    rax, [rax+          ; setup rax with method impl address
-//    BYTE    targetOffset;         // xx                                        ResolverCacheElem.target]
-//    BYTE    part9 [3];            // 5A                       pop    rdx
-//                                  // FF E0                    jmp    rax
-//                                  //                failStub:
-//    BYTE    _failEntryPoint [2];  // 48 B8                    mov    rax,
-//    INT32*  _pCounter;            // xx xx xx xx xx xx xx xx              64-bit address
-//    BYTE    part11 [4];           // 83 00 FF                 add    dword ptr [rax], -1
-//                                  // 7d                       jnl
-//    BYTE    toResolveStub1;       // xx                              resolveStub
-//    BYTE    part12 [4];           // 49 83 CB 01              or     r11, 1
-//    BYTE    _slowEntryPoint [3];  // 52             slow:     push   rdx
-//                                  // 49 BA                    mov    r10,
-//    size_t  _tokenSlow;           // xx xx xx xx xx xx xx xx              64-bit address
-////  BYTE    miss [5];             // 5A             miss:     pop    rdx                 ; don't pop rdx
-////                                // 41 52                    push   r10                 ; don't push r10 leave it setup with token
-//    BYTE    miss [3];             // 50                       push   rax                 ; push ptr to cache elem
-//                                  // 48 B8                    mov    rax,
-//    size_t  _resolveWorker;       // xx xx xx xx xx xx xx xx              64-bit address
-//    BYTE    part10 [2];           // FF E0                    jmp    rax
 };
 
 /* ResolveHolders are the containers for ResolveStubs,  They provide
@@ -425,7 +369,7 @@ struct ResolveHolder
     void  Initialize(ResolveHolder* pResolveHolderRX, 
                      PCODE resolveWorkerTarget, PCODE patcherTarget,
                      size_t dispatchToken, UINT32 hashedToken,
-                     void * cacheAddr, INT32* counterAddr);
+                     void * cacheAddr, INT32 counterValue);
 
     ResolveStub* stub()      { LIMITED_METHOD_CONTRACT;  return &_stub; }
 
@@ -521,37 +465,13 @@ extern size_t g_call_cache_counter;
 extern size_t g_miss_cache_counter;
 #endif
 
-/* Template used to generate the stub.  We generate a stub by allocating a block of
-   memory and copy the template over it and just update the specific fields that need
-   to be changed.
-*/
-
 void LookupHolder::InitializeStatic()
 {
     static_assert_no_msg((sizeof(LookupHolder) % sizeof(void*)) == 0);
-
-    // The first instruction of a LookupStub is nop
-    // and we use it in order to differentiate the first two bytes
-    // of a LookupStub and a ResolveStub
-    //lookupInit._entryPoint [0]     = INSTR_NOP;
-    //lookupInit._entryPoint [1]     = 0x48;
-    //lookupInit._entryPoint [2]     = 0xB8;
-    //lookupInit._token              = 0xcccccccccccccccc;
-    //lookupInit.part2 [0]           = 0x50;
-    //lookupInit.part2 [1]           = 0x48;
-    //lookupInit.part2 [2]           = 0xB8;
-    //lookupInit._resolveWorkerAddr  = 0xcccccccccccccccc;
-    //lookupInit.part3 [0]           = 0xFF;
-    //lookupInit.part3 [1]           = 0xE0;
 }
 
 void  LookupHolder::Initialize(LookupHolder* pLookupHolderRX, PCODE resolveWorkerTarget, size_t dispatchToken)
 {
-    //_stub = lookupInit;
-
-    ////fill in the stub specific fields
-    //_stub._token              = dispatchToken;
-    //_stub._resolveWorkerAddr  = (size_t) resolveWorkerTarget;
     *(size_t*)((BYTE*)this + 4096) = dispatchToken;
     *(size_t*)((BYTE*)this + 4096 + 8) = (size_t)resolveWorkerTarget;
 }
@@ -563,69 +483,14 @@ void  LookupHolder::Initialize(LookupHolder* pLookupHolderRX, PCODE resolveWorke
 
 void DispatchHolder::InitializeStatic()
 {
-    //// Check that _implTarget is aligned in the DispatchStub for backpatching
-    //static_assert_no_msg(((sizeof(DispatchStub) + offsetof(DispatchStubShort, _implTarget)) % sizeof(void *)) == 0);
-    //static_assert_no_msg(((sizeof(DispatchStub) + offsetof(DispatchStubLong, _implTarget)) % sizeof(void *)) == 0);
-
-    //static_assert_no_msg(((sizeof(DispatchStub) + sizeof(DispatchStubShort)) % sizeof(void*)) == 0);
-    //static_assert_no_msg(((sizeof(DispatchStub) + sizeof(DispatchStubLong)) % sizeof(void*)) == 0);
-    //static_assert_no_msg((DispatchStubLong_offsetof_failLabel - DispatchStubLong_offsetof_failDisplBase) < INT8_MAX);
-
-    //// Common dispatch stub initialization
-    //dispatchInit._entryPoint [0]      = 0x48;
-    //dispatchInit._entryPoint [1]      = 0xB8;
-    //dispatchInit._expectedMT          = 0xcccccccccccccccc;
-    //dispatchInit.part1 [0]            = X64_INSTR_CMP_IND_THIS_REG_RAX & 0xff;
-    //dispatchInit.part1 [1]            = (X64_INSTR_CMP_IND_THIS_REG_RAX >> 8) & 0xff;
-    //dispatchInit.part1 [2]            = (X64_INSTR_CMP_IND_THIS_REG_RAX >> 16) & 0xff;
-    //dispatchInit.nopOp                = 0x90;
-
-    //// Short dispatch stub initialization
-    //dispatchShortInit.part1 [0]       = 0x48;
-    //dispatchShortInit.part1 [1]       = 0xb8;
-    //dispatchShortInit._implTarget     = 0xcccccccccccccccc;
-    //dispatchShortInit.part2 [0]       = 0x0F;
-    //dispatchShortInit.part2 [1]       = 0x85;
-    //dispatchShortInit._failDispl      = 0xcccccccc;
-    //dispatchShortInit.part3 [0]       = 0xFF;
-    //dispatchShortInit.part3 [1]       = 0xE0;
-
-    //// Long dispatch stub initialization
-    //dispatchLongInit.part1 [0]        = 0x48;
-    //dispatchLongInit.part1 [1]        = 0xb8;
-    //dispatchLongInit._implTarget      = 0xcccccccccccccccc;
-    //dispatchLongInit.part2 [0]        = 0x75;
-    //dispatchLongInit._failDispl       = BYTE(DispatchStubLong_offsetof_failLabel - DispatchStubLong_offsetof_failDisplBase);
-    //dispatchLongInit.part3 [0]        = 0xFF;
-    //dispatchLongInit.part3 [1]        = 0xE0;
-    //    // failLabel:
-    //dispatchLongInit.part4 [0]        = 0x48;
-    //dispatchLongInit.part4 [1]        = 0xb8;
-    //dispatchLongInit._failTarget      = 0xcccccccccccccccc;
-    //dispatchLongInit.part5 [0]        = 0xFF;
-    //dispatchLongInit.part5 [1]        = 0xE0;
 };
 
 void  DispatchHolder::Initialize(DispatchHolder* pDispatchHolderRX, PCODE implTarget, PCODE failTarget, size_t expectedMT)
 {
-    //
-    // Initialize the common area
-    //
-
-    // initialize the static data
-    //*stub() = dispatchInit;
-
-    // fill in the dynamic data
-    //stub()->_expectedMT  = expectedMT;
     *(size_t*)((BYTE*)stub() + 4096) = expectedMT;
     *(PCODE*)((BYTE*)stub() + 4096 + 8) = implTarget;
     *(PCODE*)((BYTE*)stub() + 4096 + 16) = failTarget;
 }
-
-/* Template used to generate the stub.  We generate a stub by allocating a block of
-   memory and copy the template over it and just update the specific fields that need
-   to be changed.
-*/
 
 #ifndef DACCESS_COMPILE
 size_t LookupHolder::GenerateCodePage(uint8_t* pageBaseRX)
@@ -745,8 +610,8 @@ e:  48 c1 e8 0c             shr    rax,0xc
 38: 5a                      pop    rdx
 39: ff 60 10                jmp    QWORD PTR [rax+0x10]
 000000000000003c <failStub>:
-3c: 48 8b 05 d5 0f 00 00    mov    rax,QWORD PTR [rip+0xfd5]        # 1018 <miss+0xfc4>
-43: 83 00 ff                add    DWORD PTR [rax],0xffffffff
+3c: 83 05 d5 0f 00 00 ff    add    DWORD PTR [rip+0xfd5],0xffffffff # 1018 <miss+0xfc4>
+43: 90 90 90                nop nop nop << TODO: remove
 46: 7d b8                   jge    0 <resolveStub>
 48: 49 83 cb 01             or     r11,0x1
 000000000000004c <slow>:
@@ -823,16 +688,16 @@ e:  48 c1 e8 0c             shr    rax,0xc
     pageBase[57] = 0xFF;
     pageBase[58] = 0x60;
     pageBase[59] = 0x10;
-    pageBase[60] = 0x48;
-    pageBase[61] = 0x8B;
-    pageBase[62] = 0x05;
-    pageBase[63] = 0xD5;
-    pageBase[64] = 0x0F;
+    pageBase[60] = 0x83;
+    pageBase[61] = 0x05;
+    pageBase[62] = 0xD5;
+    pageBase[63] = 0x0F;
+    pageBase[64] = 0x00;
     pageBase[65] = 0x00;
-    pageBase[66] = 0x00;
-    pageBase[67] = 0x83;
-    pageBase[68] = 0x00;
-    pageBase[69] = 0xFF;
+    pageBase[66] = 0xFF;
+    pageBase[67] = 0x90; // TODO: remove the nops
+    pageBase[68] = 0x90;
+    pageBase[69] = 0x90;
     pageBase[70] = 0x7D;
     pageBase[71] = 0xB8;
     pageBase[72] = 0x49;
@@ -970,7 +835,7 @@ void ResolveHolder::InitializeStatic()
 void  ResolveHolder::Initialize(ResolveHolder* pResolveHolderRX, 
                                 PCODE resolveWorkerTarget, PCODE patcherTarget,
                                 size_t dispatchToken, UINT32 hashedToken,
-                                void * cacheAddr, INT32* counterAddr)
+                                void * cacheAddr, INT32 counterValue)
 {
     //_stub = resolveInit;
 
@@ -985,7 +850,7 @@ void  ResolveHolder::Initialize(ResolveHolder* pResolveHolderRX,
     *(UINT32*)((BYTE*)this + 4096 + 8) = hashedToken << LOG2_PTRSIZE;
     *(UINT32*)((BYTE*)this + 4096 + 12) = CALL_STUB_CACHE_MASK * sizeof(void*); // TODO: Move this to code
     *(size_t*)((BYTE*)this + 4096 + 16) = dispatchToken;
-    *(INT32**)((BYTE*)this + 4096 + 24) = counterAddr; // TODO: make it the counter itself?
+    *(INT32*)((BYTE*)this + 4096 + 24) = counterValue;
     *(size_t*)((BYTE*)this + 4096 + 32) = (size_t)resolveWorkerTarget;
 }
 

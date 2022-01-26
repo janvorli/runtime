@@ -3455,11 +3455,13 @@ AdjustContextForVirtualStub(
 
     if (sk == VirtualCallStubManager::SK_DISPATCH)
     {
-        if (*PTR_WORD(f_IP) != X86_INSTR_CMP_IND_ECX_IMM32)
+        if (*PTR_WORD(f_IP) != X86_INSTR_CMP_IND_ECX_EAX)
         {
             _ASSERTE(!"AV in DispatchStub at unknown instruction");
             return FALSE;
         }
+
+        SetSP(pContext, dac_cast<PCODE>(dac_cast<PTR_BYTE>(GetSP(pContext)) + sizeof(void*))); // rollback push eax
     }
     else
     if (sk == VirtualCallStubManager::SK_RESOLVE)
@@ -3504,7 +3506,7 @@ AdjustContextForVirtualStub(
 
         DispatchHolder *holder = DispatchHolder::FromDispatchEntry(f_IP);
         MethodTable *pMT = (MethodTable*)holder->stub()->expectedMT();
-        DispatchToken token(VirtualCallStubManager::GetTokenFromStubQuick(pMgr, f_IP, sk));
+        DispatchToken token(VirtualCallStubManager::GetTokenFromStubQuick(pMgr, f_IP - DispatchStub::offsetOfThisDeref(), sk));
         MethodDesc* pMD = VirtualCallStubManager::GetRepresentativeMethodDescFromToken(token, pMT);
         stackArgumentsSize = pMD->SizeOfArgStack();
     }

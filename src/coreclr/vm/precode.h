@@ -110,15 +110,23 @@ public:
 
         BYTE type = m_data[OFFSETOF_PRECODE_TYPE];
 #ifdef TARGET_X86
-        if (type == X86_INSTR_MOV_RM_R)
-            type = m_data[OFFSETOF_PRECODE_TYPE_MOV_RM_R];
+        // if (type == X86_INSTR_MOV_RM_R)
+        //     type = m_data[OFFSETOF_PRECODE_TYPE_MOV_RM_R];
+        if (type == 0x25)
+        {
+            type = AsStubPrecode()->GetType();
+        }
+        else if (type == 0xa1)
+        {
+            type = FixupPrecode::Type;
+        }
 #endif //  TARGET_X86
 
 #ifdef TARGET_AMD64
         // TODO: make sure this doesn't collide with FixupPrecode if we change it back!
         if (type == 0x4c && m_data[13] != 0xcc)
         {
-            type = *((BYTE*)m_data + 4096 + 16);
+            type = AsStubPrecode()->GetType();
         }
 /*
         if (type == (X86_INSTR_MOV_R10_IMM64 & 0xFF))
@@ -129,12 +137,7 @@ public:
 #endif // _AMD64
 
 #if defined(HAS_FIXUP_PRECODE) && (defined(TARGET_X86) || defined(TARGET_AMD64))
-#ifdef INDIRECTION_SLOT_FROM_JIT
         if (type == 0xff) //FixupPrecode::TypePrestub)
-#else
-        //        if (type == 0x48) //FixupPrecode::TypePrestub)
-        if (type == 0x4C) //FixupPrecode::TypePrestub)
-#endif
             type = FixupPrecode::Type;
 #endif
 

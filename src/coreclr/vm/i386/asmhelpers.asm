@@ -813,18 +813,18 @@ _NDirectImportThunk@0 endp
 ; The pupose of this function is to load the MethodDesc and forward the call the prestub.
 _PrecodeFixupThunk@0 proc public
 
-        pop     eax         ; Pop the return address. It points right after the call instruction in the precode.
-        push    esi
-        push    edi
+        ;pop     eax         ; Pop the return address. It points right after the call instruction in the precode.
+        ;push    esi
+        ;push    edi
 
         ; Inline computation done by FixupPrecode::GetMethodDesc()
-        movzx   esi,byte ptr [eax+2]    ; m_PrecodeChunkIndex
-        movzx   edi,byte ptr [eax+1]    ; m_MethodDescChunkIndex
-        mov     eax,dword ptr [eax+esi*8+3]
-        lea     eax,[eax+edi*4]
+        ;movzx   esi,byte ptr [eax+2]    ; m_PrecodeChunkIndex
+        ;movzx   edi,byte ptr [eax+1]    ; m_MethodDescChunkIndex
+        ;mov     eax,dword ptr [eax+esi*8+3]
+        ;lea     eax,[eax+edi*4]
 
-        pop     edi
-        pop     esi
+        ;pop     edi
+        ;pop     esi
         jmp     _ThePreStub@0
 
 _PrecodeFixupThunk@0 endp

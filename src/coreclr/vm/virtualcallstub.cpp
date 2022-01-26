@@ -739,7 +739,7 @@ void VirtualCallStubManager::Init(BaseDomain *pDomain, LoaderAllocator *pLoaderA
     initReservedMem += vtable_heap_reserve_size;
 
     // Allocate the initial counter block
-    NewHolder<counter_block> m_counters_holder(new counter_block);
+//    NewHolder<counter_block> m_counters_holder(new counter_block);
 
     //
     // On success of every allocation, assign the objects and suppress the release
@@ -758,15 +758,15 @@ void VirtualCallStubManager::Init(BaseDomain *pDomain, LoaderAllocator *pLoaderA
     vtableCallers    = vtableCallers_holder;    vtableCallers_holder.SuppressRelease();
     cache_entries    = cache_entries_holder;    cache_entries_holder.SuppressRelease();
 
-    m_counters       = m_counters_holder;       m_counters_holder.SuppressRelease();
+    // m_counters       = m_counters_holder;       m_counters_holder.SuppressRelease();
 
-    // Create the initial failure counter block
-    m_counters->next = NULL;
-    m_counters->used = 0;
-    m_cur_counter_block = m_counters;
+    // // Create the initial failure counter block
+    // m_counters->next = NULL;
+    // m_counters->used = 0;
+    // m_cur_counter_block = m_counters;
 
-    m_cur_counter_block_for_reclaim = m_counters;
-    m_cur_counter_block_for_reclaim_index = 0;
+    // m_cur_counter_block_for_reclaim = m_counters;
+    // m_cur_counter_block_for_reclaim_index = 0;
 
     // Keep track of all of our managers
     VirtualCallStubManagerManager::GlobalManager()->AddStubManager(this);
@@ -824,13 +824,13 @@ VirtualCallStubManager::~VirtualCallStubManager()
     if (vtableCallers)    { delete vtableCallers;    vtableCallers    = NULL;}
     if (cache_entries)    { delete cache_entries;    cache_entries    = NULL;}
 
-    // Now get rid of the memory taken by the counter_blocks
-    while (m_counters != NULL)
-    {
-        counter_block *del = m_counters;
-        m_counters = m_counters->next;
-        delete del;
-    }
+    // // Now get rid of the memory taken by the counter_blocks
+    // while (m_counters != NULL)
+    // {
+    //     counter_block *del = m_counters;
+    //     m_counters = m_counters->next;
+    //     delete del;
+    // }
 
     // This was the block reserved by Init for the heaps.
     // For the collectible case, the VSD logic does not allocate the memory.
@@ -931,28 +931,28 @@ void VirtualCallStubManager::Reclaim()
 {
     LIMITED_METHOD_CONTRACT;
 
-    UINT32 limit = min(counter_block::MAX_COUNTER_ENTRIES,
-                                  m_cur_counter_block_for_reclaim->used);
-    limit = min(m_cur_counter_block_for_reclaim_index + 16,  limit);
+    // UINT32 limit = min(counter_block::MAX_COUNTER_ENTRIES,
+    //                               m_cur_counter_block_for_reclaim->used);
+    // limit = min(m_cur_counter_block_for_reclaim_index + 16,  limit);
 
-    for (UINT32 i = m_cur_counter_block_for_reclaim_index; i < limit; i++)
-    {
-        m_cur_counter_block_for_reclaim->block[i] += (STUB_MISS_COUNT_VALUE/10)+1;
-    }
+    // for (UINT32 i = m_cur_counter_block_for_reclaim_index; i < limit; i++)
+    // {
+    //     m_cur_counter_block_for_reclaim->block[i] += (STUB_MISS_COUNT_VALUE/10)+1;
+    // }
 
-    // Increment the index by the number we processed
-    m_cur_counter_block_for_reclaim_index = limit;
+    // // Increment the index by the number we processed
+    // m_cur_counter_block_for_reclaim_index = limit;
 
-    // If we ran to the end of the block, go to the next
-    if (m_cur_counter_block_for_reclaim_index == m_cur_counter_block->used)
-    {
-        m_cur_counter_block_for_reclaim = m_cur_counter_block_for_reclaim->next;
-        m_cur_counter_block_for_reclaim_index = 0;
+    // // If we ran to the end of the block, go to the next
+    // if (m_cur_counter_block_for_reclaim_index == m_cur_counter_block->used)
+    // {
+    //     m_cur_counter_block_for_reclaim = m_cur_counter_block_for_reclaim->next;
+    //     m_cur_counter_block_for_reclaim_index = 0;
 
-        // If this was the last block in the chain, go back to the beginning
-        if (m_cur_counter_block_for_reclaim == NULL)
-            m_cur_counter_block_for_reclaim = m_counters;
-    }
+    //     // If this was the last block in the chain, go back to the beginning
+    //     if (m_cur_counter_block_for_reclaim == NULL)
+    //         m_cur_counter_block_for_reclaim = m_counters;
+    // }
 }
 
 #endif // !DACCESS_COMPILE
@@ -2742,7 +2742,7 @@ ResolveHolder *VirtualCallStubManager::GenerateResolveStub(PCODE            addr
     _ASSERTE(addrOfResolver);
 
     //get a counter for the fail piece
-
+/*
     UINT32         counter_index = counter_block::MAX_COUNTER_ENTRIES;
     counter_block *cur_block     = NULL;
 
@@ -2783,6 +2783,7 @@ ResolveHolder *VirtualCallStubManager::GenerateResolveStub(PCODE            addr
     // Initialize the default miss counter for this resolve stub
     INT32* counterAddr = &(cur_block->block[counter_index]);
     *counterAddr = STUB_MISS_COUNT_VALUE;
+*/
 
     //allocate from the requisite heap and copy the templates for each piece over it.
     ResolveHolder * holder = (ResolveHolder*) (void*)
@@ -2793,7 +2794,7 @@ ResolveHolder *VirtualCallStubManager::GenerateResolveStub(PCODE            addr
         holder->Initialize(holder,
                        addrOfResolver, addrOfPatcher,
                        dispatchToken, DispatchCache::HashToken(dispatchToken),
-                       g_resolveCache->GetCacheBaseAddr(), counterAddr
+                       g_resolveCache->GetCacheBaseAddr(), STUB_MISS_COUNT_VALUE
 #if defined(TARGET_X86) && !defined(UNIX_X86_ABI)
                        , stackArgumentsSize
 #endif
@@ -4152,13 +4153,12 @@ size_t ResolveHolder::GenerateCodePage(uint8_t* pageBaseRX)
 0x000000000000004c:  4D 11 40 F9    ldr  x13, [x10, #0x20]
 0x0000000000000050:  A0 01 1F D6    br   x13
 0x0000000000000054:  6A 7D 00 10    adr  x10, #0x1000
-0x0000000000000058:  4D 0D 40 F9    ldr  x13, [x10, #0x18]
-0x000000000000005c:  A9 01 40 B9    ldr  w9, [x13]
-0x0000000000000060:  29 05 00 71    subs w9, w9, #1
-0x0000000000000064:  A9 01 00 B9    str  w9, [x13]
-0x0000000000000068:  CA FC FF 54    b.ge #0
-0x000000000000006c:  6B 01 40 B2    orr  x11, x11, #1
-0x0000000000000070:  E4 FF FF 17    b    #0
+0x0000000000000058:  49 19 40 B9    ldr  w9, [x10, #0x18]
+0x000000000000005c:  29 05 00 71    subs w9, w9, #1
+0x0000000000000060:  49 19 00 B9    str  w9, [x10, #0x18]
+0x0000000000000064:  0A FD FF 54    b.ge #0
+0x0000000000000068:  6B 01 40 B2    orr  x11, x11, #1
+0x000000000000006c:  E5 FF FF 17    b    #0
 
 instead of adr, use pc relative addressing
 Move #8 to #0
@@ -4193,10 +4193,9 @@ slowEntryPoint:
     br x13
 failEntryPoint :
     adr x10, #Dataregionbase ; The data block
-    ldr x13, [x10, #24] ; counterAddr
-    ldr w9, [x13]
+    ldr w9, [x10, #24] ; counterAddr
     subs w9, w9, #1
-    str w9, [x13]
+    str w9, [x10, #24]
     bge resolveEntryPoint
     orr x11, x11, #1
     b resolveEntryPoint
@@ -4227,13 +4226,13 @@ failEntryPoint :
     pageBase[19] = 0xF940114D;
     pageBase[20] = 0xD61F01A0;
     pageBase[21] = 0x10007D6A;
-    pageBase[22] = 0xF9400D4D;
-    pageBase[23] = 0xB94001A9;
-    pageBase[24] = 0x71000529;
-    pageBase[25] = 0xB90001A9;
-    pageBase[26] = 0x54FFFCCA;
-    pageBase[27] = 0xB240016B;
-    pageBase[28] = 0x17FFFFE4;
+    pageBase[22] = 0xB9401949;
+    pageBase[23] = 0x71000529;
+    pageBase[24] = 0xB9001949;
+    pageBase[25] = 0x54FFFD0A;
+    pageBase[26] = 0xB240016B;
+    pageBase[27] = 0x17FFFFE5;
+    pageBase[28] = 0xD503201F; // nop
     pageBase[29] = 0xD503201F; // nop
     pageBase[30] = 0xD503201F; // nop
     pageBase[31] = 0xD503201F; // nop

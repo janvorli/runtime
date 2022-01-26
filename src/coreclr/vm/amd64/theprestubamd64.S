@@ -26,31 +26,3 @@ LEAF_ENTRY ThePreStubPatch, _TEXT
 PATCH_LABEL ThePreStubPatchLabel
         ret
 LEAF_END ThePreStubPatch, _TEXT
-
-LEAF_ENTRY StubPrecodeCode, _TEXT
-
-TargetSlot_StubPrecode = StubPrecodeCode + 0x1000
-MethodDescSlot_StubPrecode = StubPrecodeCode + 0x1008
-
-        mov    r10, [rip + MethodDescSlot_StubPrecode]
-        jmp    [rip + TargetSlot_StubPrecode]
-        .rept 11
-        nop
-        .endr
-LEAF_END StubPrecodeCode, _TEXT
-
-LEAF_ENTRY FixupPrecodeCode, _TEXT
-
-TargetSlot_FixupPrecode = FixupPrecodeCode + 0x1000
-MethodDescSlot_FixupPrecode = FixupPrecodeCode + 0x1008
-PrecodeFixupThunkSlot_FixupPrecode = FixupPrecodeCode + 0x1010
-
-        jmp [rip + TargetSlot_FixupPrecode]
-        mov    r10, [rip + MethodDescSlot_FixupPrecode]
-        jmp    [rip + PrecodeFixupThunkSlot_FixupPrecode]
-        .rept 5
-        nop
-        .endr
-LEAF_END FixupPrecodeCode, _TEXT
-
-

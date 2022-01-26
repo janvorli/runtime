@@ -287,10 +287,10 @@ public:
           cache_entries(NULL),
           dispatchers(NULL),
           resolvers(NULL),
-          m_counters(NULL),
-          m_cur_counter_block(NULL),
-          m_cur_counter_block_for_reclaim(NULL),
-          m_cur_counter_block_for_reclaim_index(NULL),
+        //   m_counters(NULL),
+        //   m_cur_counter_block(NULL),
+        //   m_cur_counter_block_for_reclaim(NULL),
+        //   m_cur_counter_block_for_reclaim_index(NULL),
           m_pNext(NULL)
     {
         LIMITED_METHOD_CONTRACT;
@@ -749,7 +749,7 @@ private:
     BucketTable *   dispatchers;        // hash table of dispatching stubs keyed by tokens/actualtype
     BucketTable *   resolvers;          // hash table of resolvers keyed by tokens/resolverstub
     BucketTable *   vtableCallers;      // hash table of vtable call stubs keyed by slot values
-
+/*
     // This structure is used to keep track of the fail counters.
     // We only need one fail counter per ResolveStub,
     //  and most programs use less than 250 ResolveStubs
@@ -767,7 +767,7 @@ private:
     counter_block *m_cur_counter_block;                   // current block for updating counts
     counter_block *m_cur_counter_block_for_reclaim;       // current block for updating
     UINT32         m_cur_counter_block_for_reclaim_index; // index into the current block for updating
-
+*/
     // Used to keep track of all the VCSManager objects in the system.
     PTR_VirtualCallStubManager m_pNext;            // Linked list pointer
 

@@ -542,8 +542,18 @@ typedef DPTR(CallCount) PTR_CallCount;
 class CallCountingStub;
 typedef DPTR(const CallCountingStub) PTR_CallCountingStub;
 
+struct CallCountingStubData
+{
+    PTR_CallCount RemainingCallCountCell;
+    PCODE TargetForMethod;
+    PCODE TargetForThresholdReached;
+};
+typedef DPTR(const CallCountingStubData) PTR_CallCountingStubData;
+
 class CallCountingStub
 {
+    UINT8 m_code[24];
+
 public:
     static const SIZE_T Alignment = sizeof(void *);
 
@@ -564,138 +574,32 @@ public:
 #endif // !DACCESS_COMPILE
 
 public:
-    PTR_CallCount GetRemainingCallCountCell() const;
-    PCODE GetTargetForMethod() const;
-
 #ifndef DACCESS_COMPILE
-protected:
-    template<class T> static INT_PTR GetRelativeOffset(const T *relRef, PCODE target)
+    void Initialize(PCODE targetForMethod, CallCount* remainingCallCountCell)
     {
-        WRAPPER_NO_CONTRACT;
-        static_assert_no_msg(sizeof(T) != 0);
-        static_assert_no_msg(sizeof(T) <= sizeof(void *));
-        static_assert_no_msg((sizeof(T) & (sizeof(T) - 1)) == 0); // is a power of 2
-        _ASSERTE(relRef != nullptr);
-
-        TADDR targetAddress = PCODEToPINSTR(target);
-        _ASSERTE(targetAddress != NULL);
-        return (INT_PTR)targetAddress - (INT_PTR)(relRef + 1);
-    }
-#endif
-
-protected:
-    template<class T> static PCODE GetTarget(const T *relRef)
-    {
-        WRAPPER_NO_CONTRACT;
-        static_assert_no_msg(sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8);
-        _ASSERTE(relRef != nullptr);
-
-        return PINSTRToPCODE((INT_PTR)(relRef + 1) + *relRef);
-    }
-
-    DISABLE_COPY(CallCountingStub);
-};
-
-////////////////////////////////////////////////////////////////
-// CallCountingStubShort
-
-class CallCountingStubShort;
-typedef DPTR(const CallCountingStubShort) PTR_CallCountingStubShort;
-
-#pragma pack(push, 1)
-class CallCountingStubShort : public CallCountingStub
-{
-private:
-    const UINT8 m_part0[1];
-    CallCount *const m_remainingCallCountCell;
-    const UINT8 m_part1[5];
-    const INT32 m_rel32TargetForMethod;
-    const UINT8 m_part2[1];
-    const INT32 m_rel32TargetForThresholdReached;
-    const UINT8 m_alignmentPadding[1];
-
-#ifndef DACCESS_COMPILE
-public:
-    CallCountingStubShort(CallCountingStubShort* stubRX, CallCount *remainingCallCountCell, PCODE targetForMethod)
-        : m_part0{                                              0xb8},                  //     mov  eax,
-        m_remainingCallCountCell(remainingCallCountCell),                               //               <imm32>
-        m_part1{                                                0x66, 0xff, 0x08,       //     dec  word ptr [eax]
-                                                                0x0f, 0x85},            //     jnz  
-        m_rel32TargetForMethod(                                                         //          <rel32>
-            GetRelative32BitOffset(
-                &stubRX->m_rel32TargetForMethod,
-                targetForMethod)),
-        m_part2{                                                0xe8},                  //     call
-        m_rel32TargetForThresholdReached(                                               //          <rel32>
-            GetRelative32BitOffset(
-                &stubRX->m_rel32TargetForThresholdReached,
-                TargetForThresholdReached)),
-                                                                                        // (eip == stub-identifying token)
-        m_alignmentPadding{                                     0xcc}                   //     int  3
-    {
-        WRAPPER_NO_CONTRACT;
-        static_assert_no_msg(sizeof(CallCountingStubShort) % Alignment == 0);
-        _ASSERTE(remainingCallCountCell != nullptr);
-        _ASSERTE(PCODEToPINSTR(targetForMethod) != NULL);
-    }
-
-public:
-    static bool Is(TADDR stubIdentifyingToken)
-    {
-        WRAPPER_NO_CONTRACT;
-        return true;
-    }
-
-    static const CallCountingStubShort *From(TADDR stubIdentifyingToken)
-    {
-        WRAPPER_NO_CONTRACT;
-        _ASSERTE(Is(stubIdentifyingToken));
-        _ASSERTE(stubIdentifyingToken % Alignment == offsetof(CallCountingStubShort, m_alignmentPadding[0]) % Alignment);
-
-        const CallCountingStubShort *stub =
-            (const CallCountingStubShort *)(stubIdentifyingToken - offsetof(CallCountingStubShort, m_alignmentPadding[0]));
-        _ASSERTE(IS_ALIGNED(stub, Alignment));
-        return stub;
+        CallCountingStubData* pStubData = (CallCountingStubData*)((BYTE*)this + 4096);
+        // TODO: Can we keep the count in the stub? It is problematic, as we have code that
+        // gets the CallCountingInfo from the count cell pointer.
+        // But maybe if we made the TargetForThresholdReached a global variable, we could place 
+        // a backpointer to the count info into that slot. That could make call counting a bit faster.
+        // However, it would be problematic for all other architectures, as the memory addresses
+        // are PC relative there.
+        pStubData->RemainingCallCountCell = remainingCallCountCell;
+        pStubData->TargetForMethod = targetForMethod;
+        // TODO: we can use a global variable to store this
+        pStubData->TargetForThresholdReached = CallCountingStub::TargetForThresholdReached;
     }
 #endif // !DACCESS_COMPILE
 
-public:
-    static bool Is(PTR_CallCountingStub callCountingStub)
-    {
-        WRAPPER_NO_CONTRACT;
-        return true;
-    }
+    static size_t GenerateCodePage(uint8_t* pageBase);
 
-    static PTR_CallCountingStubShort From(PTR_CallCountingStub callCountingStub)
-    {
-        WRAPPER_NO_CONTRACT;
-        _ASSERTE(Is(callCountingStub));
+    PTR_CallCount GetRemainingCallCountCell() const;
+    PCODE GetTargetForMethod() const;
 
-        return dac_cast<PTR_CallCountingStubShort>(callCountingStub);
-    }
+protected:
 
-    PCODE GetTargetForMethod() const
-    {
-        WRAPPER_NO_CONTRACT;
-        return GetTarget(&m_rel32TargetForMethod);
-    }
-
-#ifndef DACCESS_COMPILE
-private:
-    static INT32 GetRelative32BitOffset(const INT32 *rel32Ref, PCODE target)
-    {
-        WRAPPER_NO_CONTRACT;
-
-        INT_PTR relativeOffset = GetRelativeOffset(rel32Ref, target);
-        _ASSERTE((INT32)relativeOffset == relativeOffset);
-        return (INT32)relativeOffset;
-    }
-#endif
-
-    friend CallCountingStub;
-    DISABLE_COPY(CallCountingStubShort);
+    DISABLE_COPY(CallCountingStub);
 };
-#pragma pack(pop)
 
 ////////////////////////////////////////////////////////////////
 // CallCountingStub definitions
@@ -706,20 +610,28 @@ inline const CallCountingStub *CallCountingStub::From(TADDR stubIdentifyingToken
     WRAPPER_NO_CONTRACT;
     _ASSERTE(stubIdentifyingToken != NULL);
 
-    return CallCountingStubShort::From(stubIdentifyingToken);
+    const CallCountingStub *stub =
+        (const CallCountingStub *)(stubIdentifyingToken - 22/*sizeof(CallCountingStub)*/);
+    _ASSERTE(IS_ALIGNED(stub, Alignment));
+    return stub;
 }
 #endif
 
 inline PTR_CallCount CallCountingStub::GetRemainingCallCountCell() const
 {
     WRAPPER_NO_CONTRACT;
-    return PTR_CallCount(dac_cast<PTR_CallCountingStubShort>(this)->m_remainingCallCountCell);
+    PTR_CallCountingStubData pStubData = dac_cast<PTR_CallCountingStubData>((BYTE*)this + 4096);
+    return pStubData->RemainingCallCountCell;
+    //PTR_PTR_VOID cc = dac_cast<PTR_PTR_VOID>((UINT8*)this + 4096);
+    //return dac_cast<PTR_CallCount>(*cc);
 }
 
 inline PCODE CallCountingStub::GetTargetForMethod() const
 {
     WRAPPER_NO_CONTRACT;
-    return CallCountingStubShort::From(PTR_CallCountingStub(this))->GetTargetForMethod();
+    PTR_CallCountingStubData pStubData = dac_cast<PTR_CallCountingStubData>((BYTE*)this + 4096);
+    return pStubData->TargetForMethod;
+    //return *dac_cast<PTR_PCODE>((UINT8*)this + 4096 + 4);
 }
 
 ////////////////////////////////////////////////////////////////

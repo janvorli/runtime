@@ -317,7 +317,11 @@ public:
 
 #ifdef LOG_STATISTICS
 #undef ExecutableWriterHolder
+#ifdef TARGET_UNIX
+#define ExecutableWriterHolder ExecutableAllocator::LogUsage(__FILE__, __LINE__, __PRETTY_FUNCTION__); ExecutableWriterHolderC
+#else
 #define ExecutableWriterHolder ExecutableAllocator::LogUsage(__FILE__, __LINE__, __FUNCTION__); ExecutableWriterHolderC
+#endif
 #else
 #define ExecutableWriterHolder ExecutableWriterHolderC
 #endif

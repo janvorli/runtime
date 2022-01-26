@@ -22,8 +22,10 @@ extern PCODE GetPreStubEntryPoint();
 #define X86_INSTR_JMP_IND       0x25FF      // jmp dword ptr[addr32]
 #define X86_INSTR_JMP_EAX       0xE0FF      // jmp eax
 #define X86_INSTR_MOV_EAX_IMM32 0xB8        // mov eax, imm32
+#define X86_INSTR_MOV_EAX_IND 0xA1        // mov eax, ptr[addr32]
 #define X86_INSTR_MOV_EAX_ECX_IND 0x018b    // mov eax, [ecx]
 #define X86_INSTR_CMP_IND_ECX_IMM32 0x3981  // cmp [ecx], imm32
+#define X86_INSTR_CMP_IND_ECX_EAX 0x0139  // cmp [ecx], eax
 #define X86_INSTR_MOV_RM_R      0x89        // mov r/m,reg
 
 #define X86_INSTR_MOV_AL        0xB0        // mov al, imm8
@@ -477,7 +479,7 @@ EXTERN_C VOID STDCALL PrecodeFixupThunk();
 
 EXTERN_C VOID STDCALL PrecodeRemotingThunk();
 
-#define OFFSETOF_PRECODE_TYPE              5
+#define OFFSETOF_PRECODE_TYPE              6
 #define OFFSETOF_PRECODE_TYPE_CALL_OR_JMP  5
 #define OFFSETOF_PRECODE_TYPE_MOV_RM_R     6
 
@@ -494,6 +496,14 @@ struct InvalidPrecode {
     static const int Type = 0xCC;
 };
 
+struct StubPrecodeData
+{
+    PCODE Target;
+    MethodDesc *MethodDesc;
+    BYTE Type;
+};
+
+typedef DPTR(StubPrecodeData) PTR_StubPrecodeData;
 
 // Regular precode
 struct StubPrecode {
@@ -511,32 +521,34 @@ struct StubPrecode {
 #endif // HOST_64BIT
 
     BYTE            m_code[24];
-    //IN_TARGET_64BIT(USHORT m_movR10;)
-    //IN_TARGET_32BIT(BYTE   m_movEAX;)
-    //TADDR           m_pMethodDesc;
-    //IN_TARGET_32BIT(BYTE   m_mov_rm_r;)
-    //BYTE            m_type;
-    //BYTE            m_jmp;
-    //INT32           m_rel32;
 
     void Init(StubPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator = NULL, BYTE type = StubPrecode::Type, TADDR target = NULL);
+
+    PTR_StubPrecodeData GetData() const
+    {
+        LIMITED_METHOD_CONTRACT;
+        return dac_cast<PTR_StubPrecodeData>((BYTE*)this + 4096);
+    }
 
     TADDR GetMethodDesc()
     {
         LIMITED_METHOD_DAC_CONTRACT;
 
-        //return m_pMethodDesc;
-        return *(TADDR*)((BYTE*)this + 4096 + 8);
+        return (TADDR)GetData()->MethodDesc;
     }
 
     PCODE GetTarget()
     {
         LIMITED_METHOD_DAC_CONTRACT;
 
-        return *(PCODE*)((BYTE*)this + 4096);
-
-        //return rel32Decode(PTR_HOST_MEMBER_TADDR(StubPrecode, this, m_rel32));
+        return GetData()->Target;
     }
+
+    BYTE GetType()
+    {
+        return GetData()->Type;
+    }
+
 #ifndef DACCESS_COMPILE
     void ResetTargetInterlocked()
     {
@@ -547,9 +559,7 @@ struct StubPrecode {
         }
         CONTRACTL_END;
 
-        //ExecutableWriterHolder<INT32> rel32WriterHolder(&m_rel32, sizeof(INT32));
-        //rel32SetInterlocked(&m_rel32, rel32WriterHolder.GetRW(), GetPreStubEntryPoint(), (MethodDesc*)GetMethodDesc());
-        FastInterlockExchangeLong((INT64*)((BYTE*)this + 4096), (INT64)GetPreStubEntryPoint());
+        FastInterlockExchangePointer(&GetData()->Target, GetPreStubEntryPoint());
     }
 
     BOOL SetTargetInterlocked(TADDR target, TADDR expected)
@@ -561,21 +571,14 @@ struct StubPrecode {
         }
         CONTRACTL_END;
 
-        //ExecutableWriterHolder<void> rel32Holder(&m_rel32, 4);
-        //return rel32SetInterlocked(&m_rel32, rel32Holder.GetRW(), target, expected, (MethodDesc*)GetMethodDesc());
-        return FastInterlockCompareExchangeLong((INT64*)((BYTE*)this + 4096), target, expected) == expected;
+        return FastInterlockCompareExchangePointer((TADDR*)&GetData()->Target, target, expected) == expected;
     }
 
     static size_t GenerateCodePage(uint8_t* pageBase);
 
 #endif // !DACCESS_COMPILE
 };
-/*
-IN_TARGET_64BIT(static_assert_no_msg(offsetof(StubPrecode, m_movR10) == OFFSETOF_PRECODE_TYPE);)
-IN_TARGET_64BIT(static_assert_no_msg(offsetof(StubPrecode, m_type) == OFFSETOF_PRECODE_TYPE_MOV_R10);)
-IN_TARGET_32BIT(static_assert_no_msg(offsetof(StubPrecode, m_mov_rm_r) == OFFSETOF_PRECODE_TYPE);)
-IN_TARGET_32BIT(static_assert_no_msg(offsetof(StubPrecode, m_type) == OFFSETOF_PRECODE_TYPE_MOV_RM_R);)
-*/
+
 typedef DPTR(StubPrecode) PTR_StubPrecode;
 
 
@@ -612,8 +615,6 @@ typedef DPTR(NDirectImportPrecode) PTR_NDirectImportPrecode;
 
 #ifdef HAS_FIXUP_PRECODE
 
-#define INDIRECTION_SLOT_FROM_JIT
-
 struct FixupPrecodeData
 {
     PCODE Target;
@@ -621,39 +622,28 @@ struct FixupPrecodeData
     PCODE PrecodeFixupThunk;
 };
 
+typedef DPTR(FixupPrecodeData) PTR_FixupPrecodeData;
+
 // Fixup precode is used in ngen images when the prestub does just one time fixup.
 // The fixup precode is simple jump once patched. It does not have the two instruction overhead of regular precode.
 struct FixupPrecode {
 
+    // Before it has been patched to point to native code
     static const int TypePrestub = 0x5E;
-    // The entrypoint has to be 8-byte aligned so that the "call PrecodeFixupThunk" can be patched to "jmp NativeCode" atomically.
-    // call PrecodeFixupThunk
-    // db TypePrestub (pop esi)
-    // db MethodDescChunkIndex
-    // db PrecodeChunkIndex
 
-    static const int Type = 0x5F;
     // After it has been patched to point to native code
-    // jmp NativeCode
-    // db Type (pop edi)
+    static const int Type = 0x5F;
 
-#if defined(INDIRECTION_SLOT_FROM_JIT)
     BYTE            m_code[24];
-#else
-    BYTE            m_code[16];
-#endif
-//    BYTE            m_lea[7];    // lea rax, [rip+4089]
-//   BYTE            m_jmpRax[2]; // jmp [rax]
-//    BYTE            m_pad[7];
 
     void Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator);
 
     static size_t GenerateCodePage(uint8_t* pageBase);
 
-    FixupPrecodeData* GetData()
+    PTR_FixupPrecodeData GetData() const
     {
         LIMITED_METHOD_CONTRACT;
-        return (FixupPrecodeData*)((BYTE*)this + 4096);
+        return dac_cast<PTR_FixupPrecodeData>((BYTE*)this + 4096);
     }
 
     TADDR GetMethodDesc()
@@ -692,7 +682,7 @@ struct ThisPtrRetBufPrecode {
 #ifdef HOST_64BIT
     static const int Type = 0x90;
 #else
-    static const int Type = 0xC2;
+    static const int Type = 0x90;
 #endif // HOST_64BIT
 
     // mov regScratch,regArg0
@@ -728,7 +718,7 @@ struct ThisPtrRetBufPrecode {
 
     BOOL SetTargetInterlocked(TADDR target, TADDR expected);
 };
-IN_TARGET_32BIT(static_assert_no_msg(offsetof(ThisPtrRetBufPrecode, m_movArg1Scratch) + 1 == OFFSETOF_PRECODE_TYPE);)
+IN_TARGET_32BIT(static_assert_no_msg(offsetof(ThisPtrRetBufPrecode, m_nop2) == OFFSETOF_PRECODE_TYPE);)
 typedef DPTR(ThisPtrRetBufPrecode) PTR_ThisPtrRetBufPrecode;
 
 #endif // HAS_THISPTR_RETBUF_PRECODE

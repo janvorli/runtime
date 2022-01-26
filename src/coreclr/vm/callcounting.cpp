@@ -387,6 +387,56 @@ size_t CallCountingStub::GenerateCodePage(uint8_t* pageBaseRX)
     memcpy(pageBase + 320, pageBase, 1280);
     memcpy(pageBase + 640, pageBase, 1520);
 
+#elif TARGET_X86
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, 4096);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
+/*
+0:  a1 fb 0f 00 00          mov    eax,ds:0xffb
+5:  66 ff 08                dec    WORD PTR [eax]
+8:  74 06                   je     f <CountReachedZero>
+a:  ff 25 f5 0f 00 00       jmp    DWORD PTR ds:0xff5
+0000000f <CountReachedZero>:
+10: ff 15 f3 0f 00 00       call   DWORD PTR ds:0xff3
+16: cc                       int    3
+*/
+    for (int i = 0; i <= 4096 - 24; i += 24)
+    {
+        pageBase[i + 0] = 0xa1;
+
+        uint8_t* pCounterSlot = pageBase + i + 4096;
+        *(uint8_t**)(pageBase + i + 1) = pCounterSlot;
+
+        pageBase[i + 5] = 0x66;
+        pageBase[i + 6] = 0xff;
+        pageBase[i + 7] = 0x08;
+        pageBase[i + 8] = 0x74;
+        pageBase[i + 9] = 0x06;
+        pageBase[i + 10] = 0xff;
+        pageBase[i + 11] = 0x25;
+
+        uint8_t* pTargetSlot = pageBase + i + 4096 + 4;
+        *(uint8_t**)(pageBase + i + 12) = pTargetSlot;
+
+        pageBase[i + 16] = 0xff;
+        pageBase[i + 17] = 0x15;
+
+        uint8_t* pCountReachedZeroSlot = pageBase + i + 4096 + 8;
+        *(uint8_t**)(pageBase + i + 18) = pCountReachedZeroSlot;
+
+        pageBase[i + 22] = 0xcc;
+        pageBase[i + 23] = 0x90;
+    }
+
+    // Copy the same instructions to the whole page
+    // memcpy(pageBase + 24, pageBase, 24);
+    // memcpy(pageBase + 48, pageBase, 48);
+    // memcpy(pageBase + 96, pageBase, 96);
+    // memcpy(pageBase + 192, pageBase, 192);
+    // memcpy(pageBase + 384, pageBase, 384);
+    // memcpy(pageBase + 768, pageBase, 768);
+    // memcpy(pageBase + 1536, pageBase, 1536);
+    // memcpy(pageBase + 3072, pageBase, 1008);
+
 #else
 #error Not implemented yet
 #endif

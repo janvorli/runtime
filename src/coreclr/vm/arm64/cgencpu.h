@@ -688,7 +688,6 @@ struct NDirectImportPrecode : StubPrecode {
 };
 typedef DPTR(NDirectImportPrecode) PTR_NDirectImportPrecode;
 
-#define INDIRECTION_SLOT_FROM_JIT
 struct FixupPrecode {
 
     static const int Type = 0x0b;

@@ -666,14 +666,10 @@ void FixupPrecode::ResetTargetInterlocked()
     }
     CONTRACTL_END;
 
-#ifdef INDIRECTION_SLOT_FROM_JIT
     PCODE target = (PCODE)this + 8;
-#else
-    PCODE target = (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk);
-#endif
     _ASSERTE(IS_ALIGNED(this, sizeof(INT64)));
 
-    FastInterlockExchangeLong((INT64*)((BYTE*)this + 4096), (INT64)target);
+    FastInterlockExchangeLong((INT64*)&GetData()->Target, (INT64)target);
 }
 
 BOOL FixupPrecode::SetTargetInterlocked(TADDR target, TADDR expected)
@@ -685,12 +681,8 @@ BOOL FixupPrecode::SetTargetInterlocked(TADDR target, TADDR expected)
     }
     CONTRACTL_END;
 
-    INT64 oldTarget = *(INT64*)((BYTE*)this + 4096);
-#ifdef INDIRECTION_SLOT_FROM_JIT
+    INT64 oldTarget = (INT64)GetData()->Target;
     if (oldTarget != ((PCODE)this + 8))
-#else
-    if (oldTarget != (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk))
-#endif
     {
 #ifdef FEATURE_CODE_VERSIONING
         // No change needed, jmp is already in place
@@ -702,7 +694,7 @@ BOOL FixupPrecode::SetTargetInterlocked(TADDR target, TADDR expected)
 
     _ASSERTE(IS_ALIGNED(this, sizeof(INT64)));
 
-    return FastInterlockCompareExchangeLong((INT64*)((BYTE*)this + 4096), (INT64)target, oldTarget) == oldTarget;
+    return FastInterlockCompareExchangeLong((INT64*)&GetData()->Target, (INT64)target, oldTarget) == oldTarget;
 }
 
 #endif // HAS_FIXUP_PRECODE

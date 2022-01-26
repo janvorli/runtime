@@ -139,7 +139,7 @@ struct ResolveStub
     inline PCODE resolveEntryPoint()         { LIMITED_METHOD_CONTRACT; return (PCODE)&_resolveEntryPoint[0]; }
     inline PCODE slowEntryPoint()            { LIMITED_METHOD_CONTRACT; return (PCODE)&_slowEntryPoint[0]; }
     inline size_t  token()                   { LIMITED_METHOD_CONTRACT; return *(size_t*)((BYTE*)this + 4096 + 16); }
-    inline INT32*  pCounter()                { LIMITED_METHOD_CONTRACT; return *(INT32**)((BYTE*)this + 4096 + 24); }
+    inline INT32*  pCounter()                { LIMITED_METHOD_CONTRACT; return (INT32*)((BYTE*)this + 4096 + 24); }
 
     inline UINT32  hashedToken()             { LIMITED_METHOD_CONTRACT; return *(UINT32*)((BYTE*)this + 4096 + 8) >> LOG2_PTRSIZE;    }
     inline size_t  cacheAddress()            { LIMITED_METHOD_CONTRACT; return *(size_t*)((BYTE*)this + 4096);   }

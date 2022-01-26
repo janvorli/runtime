@@ -8845,20 +8845,15 @@ void CEEInfo::getFunctionEntryPoint(CORINFO_METHOD_HANDLE  ftnHnd,
     // Resolve methodImpl.
     ftn = ftn->GetMethodTable()->MapMethodDeclToMethodImpl(ftn);
 
-#ifdef INDIRECTION_SLOT_FROM_JIT
     if (!ftn->IsFCall() && ftn->MayHavePrecode() && ftn->GetPrecodeType() == PRECODE_FIXUP)
     {
         ret = PTR_PCODE(ftn->GetOrCreatePrecode()->GetEntryPoint() + 4096);
         accessType = IAT_PVALUE;
     }
-    //else if (!ftn->IsFCall() && ftn->MayHavePrecode() && (ftn->GetPrecodeType() == PRECODE_STUB || ftn->GetPrecodeType() == PRECODE_NDIRECT_IMPORT))
-    //{
-    //    ret = PTR_PCODE(ftn->GetOrCreatePrecode()->GetEntryPoint() + 4096);
-    //    accessType = IAT_PVALUE;
-    //}
     else
-#endif
+    {
         ret = (void *)ftn->TryGetMultiCallableAddrOfCode(accessFlags);
+    }
 
     // TryGetMultiCallableAddrOfCode returns NULL if indirect access is desired
     if (ret == NULL)
