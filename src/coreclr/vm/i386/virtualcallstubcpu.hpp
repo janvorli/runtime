@@ -85,8 +85,6 @@ stubs as necessary.  In the case of LookupStubs, alignment is necessary since
 LookupStubs are placed in a hash table keyed by token. */
 struct LookupHolder
 {
-    static void InitializeStatic();
-
     void  Initialize(LookupHolder* pLookupHolderRX, PCODE resolveWorkerTarget, size_t dispatchToken);
 
     LookupStub*    stub()               { LIMITED_METHOD_CONTRACT;  return &_stub;    }
@@ -197,8 +195,6 @@ atomically update it.  When we get a resolver function that does what we want, w
 and live with just the inlineTarget field in the stub itself, since immutability will hold.*/
 struct DispatchHolder
 {
-    static void InitializeStatic();
-
     void  Initialize(DispatchHolder* pDispatchHolderRX, PCODE implTarget, PCODE failTarget, size_t expectedMT);
 
     static size_t GetHolderSize()
@@ -307,8 +303,6 @@ any of its inlined tokens (non-prehashed) is aligned, then the token field in th
 is not needed. */
 struct ResolveHolder
 {
-    static void  InitializeStatic();
-
     void  Initialize(ResolveHolder* pResolveHolderRX,
                      PCODE resolveWorkerTarget, PCODE patcherTarget,
                      size_t dispatchToken, UINT32 hashedToken,
@@ -672,11 +666,6 @@ extern size_t g_poly_miss_counter;
    memory and copy the template over it and just update the specific fields that need
    to be changed.
 */
-// LookupStub lookupInit;
-
-void LookupHolder::InitializeStatic()
-{
-}
 
 void  LookupHolder::Initialize(LookupHolder* pLookupHolderRX, PCODE resolveWorkerTarget, size_t dispatchToken)
 {
@@ -989,11 +978,6 @@ f:  c1 e8 0c                shr    eax,0xc <<< CALL_STUB_CACHE_NUM_BITS
    memory and copy the template over it and just update the specific fields that need
    to be changed.
 */
-//DispatchStub dispatchInit;
-
-void DispatchHolder::InitializeStatic()
-{
-};
 
 void  DispatchHolder::Initialize(DispatchHolder* pDispatchHolderRX, PCODE implTarget, PCODE failTarget, size_t expectedMT)
 {
@@ -1016,12 +1000,6 @@ DispatchHolder* DispatchHolder::FromDispatchEntry(PCODE dispatchEntry)
    memory and copy the template over it and just update the specific fields that need
    to be changed.
 */
-
-//ResolveStub resolveInit;
-
-void ResolveHolder::InitializeStatic()
-{
-};
 
 void  ResolveHolder::Initialize(ResolveHolder* pResolveHolderRX, 
                                 PCODE resolveWorkerTarget, PCODE patcherTarget,

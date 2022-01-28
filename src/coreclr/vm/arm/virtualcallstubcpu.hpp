@@ -49,19 +49,29 @@ transfer of control to the appropriate target method implementation, perhaps pat
 along the way to point to a more appropriate stub.  Hence callsites that point to LookupStubs
 get quickly changed to point to another kind of stub.
 */
+struct LookupStubData
+{
+    size_t DispatchToken;
+    PCODE  ResolveWorkerTarget;
+};
+
+typedef DPTR(LookupStubData) PTR_LookupStubData;
+
 struct LookupStub
 {
-    inline PCODE entryPoint()       { LIMITED_METHOD_CONTRACT; return (PCODE)&_entryPoint[0] + THUMB_CODE; }
-    inline size_t token()           { LIMITED_METHOD_CONTRACT; return _token; }
+    inline PCODE entryPoint() const { LIMITED_METHOD_CONTRACT; return DataPointerToThumbCode<PCODE, TADDR>(dac_cast<TADDR>(this)); }
+    inline size_t token()           { LIMITED_METHOD_CONTRACT; return GetData()->DispatchToken; }
     inline size_t size()            { LIMITED_METHOD_CONTRACT; return sizeof(LookupStub); }
 
 private:
     friend struct LookupHolder;
-    const static int entryPointLen = 4;
 
-    WORD    _entryPoint[entryPointLen];
-    PCODE   _resolveWorkerTarget;   // xx xx xx xx               target address
-    size_t  _token;	            // xx xx xx xx               32-bit constant
+    PTR_LookupStubData GetData() const
+    {
+        return dac_cast<PTR_LookupStubData>((uint8_t*)this + 4096);
+    }
+
+    BYTE code[12];
 };
 
 /* LookupHolders are the containers for LookupStubs, they provide for any alignment of
@@ -69,20 +79,19 @@ stubs as necessary.  In the case of LookupStubs, alignment is necessary since
 LookupStubs are placed in a hash table keyed by token. */
 struct LookupHolder
 {
-    static void InitializeStatic() { LIMITED_METHOD_CONTRACT; }
-
     void  Initialize(LookupHolder* pLookupHolderRX, PCODE resolveWorkerTarget, size_t dispatchToken);
 
     LookupStub*    stub()               { LIMITED_METHOD_CONTRACT;  return &_stub;    }
 
     static LookupHolder*  FromLookupEntry(PCODE lookupEntry);
 
+    static size_t GenerateCodePage(uint8_t* pageBase);
+
 private:
     friend struct LookupStub;
 
     LookupStub _stub;
 };
-
 
 #endif // USES_LOOKUP_STUBS
 
@@ -107,33 +116,54 @@ that the branch prediction staticly predict this, which means it must be a forwa
 is to reverse the order of the jumps and make sure that the resulting conditional jump "je implTarget"
 is statically predicted as taken, i.e a backward jump. The current choice was taken since it was easier
 to control the placement of the stubs than control the placement of the jitted code and the stubs. */
+
+struct DispatchStubData
+{
+    size_t ExpectedMT;
+    PCODE ImplTarget;
+    PCODE FailTarget;
+};
+
+typedef DPTR(DispatchStubData) PTR_DispatchStubData;
+
 struct DispatchStub
 {
-    inline PCODE entryPoint()         { LIMITED_METHOD_CONTRACT;  return (PCODE)(&_entryPoint[0]) + THUMB_CODE; }
+    inline PCODE        entryPoint() const { LIMITED_METHOD_CONTRACT; return DataPointerToThumbCode<PCODE, TADDR>(dac_cast<TADDR>(this)); }
+    inline size_t       expectedMT() const { LIMITED_METHOD_CONTRACT;  return GetData()->ExpectedMT; }
+    inline size_t       size()       const { WRAPPER_NO_CONTRACT; return sizeof(DispatchStub); }
 
-    inline size_t       expectedMT()  { LIMITED_METHOD_CONTRACT;  return _expectedMT;     }
-    inline PCODE        implTarget()  { LIMITED_METHOD_CONTRACT;  return _implTarget; }
+    inline static size_t offsetOfThisDeref(){ LIMITED_METHOD_CONTRACT; return 0; }
+
+    inline PCODE implTarget() const
+    {
+        LIMITED_METHOD_CONTRACT;
+        return GetData()->ImplTarget;
+    }
 
     inline TADDR implTargetSlot(EntryPointSlots::SlotType *slotTypeRef) const
     {
         LIMITED_METHOD_CONTRACT;
         _ASSERTE(slotTypeRef != nullptr);
 
-        *slotTypeRef = EntryPointSlots::SlotType_Executable;
-        return (TADDR)&_implTarget;
+        *slotTypeRef = EntryPointSlots::SlotType_Normal;
+        return (TADDR)&GetData()->ImplTarget;
     }
 
-    inline PCODE        failTarget()  { LIMITED_METHOD_CONTRACT;  return _failTarget; }
-    inline size_t       size()        { LIMITED_METHOD_CONTRACT;  return sizeof(DispatchStub); }
+    inline PCODE failTarget() const
+    {
+        return GetData()->FailTarget;
+    }
 
 private:
-    friend struct DispatchHolder;
-    const static int entryPointLen = 12;
 
-    WORD _entryPoint[entryPointLen];
-    size_t  _expectedMT;
-    PCODE _failTarget;
-    PCODE _implTarget;
+    friend struct DispatchHolder;
+
+    PTR_DispatchStubData GetData() const
+    {
+        return dac_cast<PTR_DispatchStubData>((uint8_t*)this + 4096);
+    }
+
+    BYTE code[24];
 };
 
 /* DispatchHolders are the containers for DispatchStubs, they provide for any alignment of
@@ -157,23 +187,16 @@ atomically update it.  When we get a resolver function that does what we want, w
 and live with just the inlineTarget field in the stub itself, since immutability will hold.*/
 struct DispatchHolder
 {
-    static void InitializeStatic()
-    {
-        LIMITED_METHOD_CONTRACT;
-
-        // Check that _implTarget is aligned in the DispatchHolder for backpatching
-        static_assert_no_msg(((offsetof(DispatchHolder, _stub) + offsetof(DispatchStub, _implTarget)) % sizeof(void *)) == 0);
-    }
-
     void  Initialize(DispatchHolder* pDispatchHolderRX, PCODE implTarget, PCODE failTarget, size_t expectedMT);
 
-    DispatchStub* stub()      { LIMITED_METHOD_CONTRACT;  return &_stub; }
+    static size_t GetHolderSize()
+        { STATIC_CONTRACT_WRAPPER; return sizeof(DispatchStub); }
+
+    DispatchStub* stub()      { LIMITED_METHOD_CONTRACT;  return reinterpret_cast<DispatchStub *>(this); }
 
     static DispatchHolder*  FromDispatchEntry(PCODE dispatchEntry);
 
-private:
-    //force expectedMT to be aligned since used as key in hash tables.
-    DispatchStub _stub;
+    static size_t GenerateCodePage(uint8_t* pageBase);
 };
 
 struct ResolveStub;
@@ -219,34 +242,43 @@ Hence the 3 jcc instrs need to be forward jumps.  As structured, there is only o
 gets put in the BTB since all the others typically fall straight thru.  Minimizing potential BTB entries
 is important. */
 
+struct ResolveStubData
+{
+    size_t CacheAddress;
+    UINT32 HashedToken;
+    UINT32 CacheMask;
+    size_t Token;
+    INT32  Counter;
+    PCODE  ResolveWorkerTarget;
+    //PCODE  PatcherTarget; // not for arm
+};
+
+typedef DPTR(ResolveStubData) PTR_ResolveStubData;
+
 struct ResolveStub
 {
-    inline PCODE failEntryPoint()            { LIMITED_METHOD_CONTRACT; return (PCODE)(&_failEntryPoint[0]) + THUMB_CODE;    }
-    inline PCODE resolveEntryPoint()         { LIMITED_METHOD_CONTRACT; return (PCODE)(&_resolveEntryPoint[0]) + THUMB_CODE; }
-    inline PCODE slowEntryPoint()            { LIMITED_METHOD_CONTRACT; return (PCODE)(&_slowEntryPoint[0]) + THUMB_CODE; }
+    inline PCODE failEntryPoint()       { LIMITED_METHOD_CONTRACT; return DataPointerToThumbCode<PCODE, TADDR>(dac_cast<TADDR>((BYTE*)this + 0x50)); }
+    inline PCODE resolveEntryPoint()    { LIMITED_METHOD_CONTRACT; return DataPointerToThumbCode<PCODE, TADDR>(dac_cast<TADDR>(this)); }
+    inline PCODE slowEntryPoint()       { LIMITED_METHOD_CONTRACT; return DataPointerToThumbCode<PCODE, TADDR>(dac_cast<TADDR>((BYTE*)this + 0x48)); }
 
-    inline INT32*  pCounter()                { LIMITED_METHOD_CONTRACT; return _pCounter; }
-    inline UINT32  hashedToken()             { LIMITED_METHOD_CONTRACT; return _hashedToken >> LOG2_PTRSIZE;    }
-    inline size_t  cacheAddress()            { LIMITED_METHOD_CONTRACT; return _cacheAddress;   }
-    inline size_t  token()                   { LIMITED_METHOD_CONTRACT; return _token;          }
-    inline size_t  size()                    { LIMITED_METHOD_CONTRACT; return sizeof(ResolveStub); }
+    inline INT32* pCounter()            { LIMITED_METHOD_CONTRACT; return &GetData()->Counter; }
+    inline UINT32 hashedToken()         { LIMITED_METHOD_CONTRACT; return GetData()->HashedToken >> LOG2_PTRSIZE; }
+    inline size_t cacheAddress()        { LIMITED_METHOD_CONTRACT; return GetData()->CacheAddress; }
+    inline size_t token()               { LIMITED_METHOD_CONTRACT; return GetData()->Token; }
+    inline size_t size()                { LIMITED_METHOD_CONTRACT; return sizeof(ResolveStub); }
+
+    inline static size_t offsetOfThisDeref(){ LIMITED_METHOD_CONTRACT; return 0; }
 
 private:
-    friend struct ResolveHolder;
-    const static int resolveEntryPointLen = 32;
-    const static int slowEntryPointLen = 4;
-    const static int failEntryPointLen = 14;
 
-    WORD _resolveEntryPoint[resolveEntryPointLen];
-    WORD _slowEntryPoint[slowEntryPointLen];
-    WORD _failEntryPoint[failEntryPointLen];
-    INT32*  _pCounter;
-    UINT32  _hashedToken;
-    size_t  _cacheAddress; // lookupCache
-    size_t  _token;
-    size_t  _tokenSlow;
-    PCODE   _resolveWorkerTarget;
-    UINT32  _cacheMask;
+    PTR_ResolveStubData GetData() const
+    {
+        return dac_cast<PTR_ResolveStubData>((uint8_t*)this + 4096);
+    }
+
+    friend struct ResolveHolder;
+
+    BYTE code[108];
 };
 
 /* ResolveHolders are the containers for ResolveStubs,  They provide
@@ -257,21 +289,23 @@ any of its inlined tokens (non-prehashed) is aligned, then the token field in th
 is not needed. */
 struct ResolveHolder
 {
-    static void  InitializeStatic() { LIMITED_METHOD_CONTRACT; }
-
     void  Initialize(ResolveHolder* pResolveHolderRX,
                      PCODE resolveWorkerTarget, PCODE patcherTarget,
                      size_t dispatchToken, UINT32 hashedToken,
-                     void * cacheAddr, INT32 * counterAddr);
+                     void * cacheAddr, INT32 counterValue
+                     );
 
     ResolveStub* stub()      { LIMITED_METHOD_CONTRACT;  return &_stub; }
 
     static ResolveHolder*  FromFailEntry(PCODE failEntry);
     static ResolveHolder*  FromResolveEntry(PCODE resolveEntry);
 
+    static size_t GenerateCodePage(uint8_t* pageBase);
+
 private:
     ResolveStub _stub;
 };
+
 
 /*VTableCallStub**************************************************************************************
 These are jump stubs that perform a vtable-base virtual call. These stubs assume that an object is placed
@@ -373,7 +407,7 @@ TADDR StubDispatchFrame_MethodFrameVPtr;
 LookupHolder* LookupHolder::FromLookupEntry(PCODE lookupEntry)
 {
     lookupEntry = lookupEntry & ~THUMB_CODE;
-    return (LookupHolder*) ( lookupEntry - offsetof(LookupHolder, _stub) - offsetof(LookupStub, _entryPoint)  );
+    return (LookupHolder*)lookupEntry;
 }
 
 
@@ -387,8 +421,7 @@ DispatchHolder* DispatchHolder::FromDispatchEntry(PCODE dispatchEntry)
 {
     LIMITED_METHOD_CONTRACT;
     dispatchEntry = dispatchEntry & ~THUMB_CODE;
-    DispatchHolder* dispatchHolder = (DispatchHolder*) ( dispatchEntry - offsetof(DispatchHolder, _stub) - offsetof(DispatchStub, _entryPoint) );
-    //    _ASSERTE(dispatchHolder->_stub._entryPoint[0] == dispatchInit._entryPoint[0]);
+    DispatchHolder* dispatchHolder = (DispatchHolder*)dispatchEntry;
     return dispatchHolder;
 }
 
@@ -404,8 +437,7 @@ ResolveHolder* ResolveHolder::FromFailEntry(PCODE failEntry)
 {
     LIMITED_METHOD_CONTRACT;
     failEntry = failEntry & ~THUMB_CODE;
-    ResolveHolder* resolveHolder = (ResolveHolder*) ( failEntry - offsetof(ResolveHolder, _stub) - offsetof(ResolveStub, _failEntryPoint) );
-    //    _ASSERTE(resolveHolder->_stub._resolveEntryPoint[0] == resolveInit._resolveEntryPoint[0]);
+    ResolveHolder* resolveHolder = (ResolveHolder*) ( failEntry - 0x50);
     return resolveHolder;
 }
 
@@ -413,7 +445,7 @@ ResolveHolder* ResolveHolder::FromResolveEntry(PCODE resolveEntry)
 {
     LIMITED_METHOD_CONTRACT;
     resolveEntry = resolveEntry & ~THUMB_CODE;
-    ResolveHolder* resolveHolder = (ResolveHolder*) ( resolveEntry - offsetof(ResolveHolder, _stub) - offsetof(ResolveStub, _resolveEntryPoint) );
+    ResolveHolder* resolveHolder = (ResolveHolder*)resolveEntry;
     //    _ASSERTE(resolveHolder->_stub._resolveEntryPoint[0] == resolveInit._resolveEntryPoint[0]);
     return resolveHolder;
 }

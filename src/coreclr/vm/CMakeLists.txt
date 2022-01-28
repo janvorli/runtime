@@ -698,6 +698,7 @@ elseif(CLR_CMAKE_TARGET_ARCH_ARM)
         ${ARCH_SOURCES_DIR}/ehhelpers.asm
         ${ARCH_SOURCES_DIR}/patchedcode.asm
         ${ARCH_SOURCES_DIR}/PInvokeStubs.asm
+        ${ARCH_SOURCES_DIR}/thunktemplates.asm
     )
 
     set(VM_HEADERS_WKS_ARCH_ASM
@@ -753,6 +754,7 @@ else(CLR_CMAKE_TARGET_WIN32)
             ${ARCH_SOURCES_DIR}/ehhelpers.S
             ${ARCH_SOURCES_DIR}/patchedcode.S
             ${ARCH_SOURCES_DIR}/pinvokestubs.S
+            ${ARCH_SOURCES_DIR}/thunktemplates.S
         )
     elseif(CLR_CMAKE_TARGET_ARCH_ARM64)
         set(VM_SOURCES_WKS_ARCH_ASM

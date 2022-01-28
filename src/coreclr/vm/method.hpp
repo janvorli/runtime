@@ -2657,7 +2657,7 @@ class NDirectImportThunkGlue
     PVOID m_dummy; // Dummy field to make the alignment right
 
 public:
-    LPVOID GetEntrypoint()
+    LPVOID GetEntryPoint()
     {
         LIMITED_METHOD_CONTRACT;
         return NULL;
@@ -2684,7 +2684,7 @@ public:
     // The JIT generates an indirect call through this location in some cases.
     // Initialized to NDirectImportThunkGlue. Patched to the true target or
     // host interceptor stub or alignment thunk after linking.
-    LPVOID      m_pNDirectTarget;
+    PCODE      m_pNDirectTarget;
 };
 
 typedef DPTR(NDirectWriteableData)      PTR_NDirectWriteableData;
@@ -2928,7 +2928,7 @@ public:
         LIMITED_METHOD_CONTRACT;
 
         _ASSERTE(IsNDirect());
-        return GetWriteableData()->m_pNDirectTarget;
+        return (LPVOID)GetWriteableData()->m_pNDirectTarget;
     }
 
     LPVOID GetNativeNDirectTarget()
@@ -2954,7 +2954,7 @@ public:
 
         _ASSERTE(IsNDirect());
 
-        return (GetNDirectTarget() == GetNDirectImportThunkGlue()->GetEntrypoint());
+        return (GetNDirectTarget() == (LPVOID)GetNDirectImportThunkGlue()->GetEntryPoint());
     }
 #endif // !DACCESS_COMPILE
 

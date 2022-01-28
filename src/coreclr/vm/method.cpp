@@ -3027,7 +3027,6 @@ Precode* MethodDesc::GetOrCreatePrecode()
         AllocMemTracker amt;
         Precode* pPrecode = Precode::Allocate(requiredType, this, GetLoaderAllocator(), &amt);
 
-
         if (FastInterlockCompareExchangePointer(pSlot, pPrecode->GetEntryPoint(), tempEntry) == tempEntry)
             amt.SuppressRelease();
     }

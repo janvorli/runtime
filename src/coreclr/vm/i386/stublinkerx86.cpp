@@ -5069,7 +5069,7 @@ void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocat
 #else
     pData->Target = (PCODE)pPrecodeRX + 6;
 #endif    
-    pData->PrecodeFixupThunk = (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk);;
+    pData->PrecodeFixupThunk = (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk);
 }
 
 extern "C" void FixupPrecodeCode();

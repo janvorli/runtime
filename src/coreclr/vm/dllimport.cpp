@@ -5731,7 +5731,7 @@ VOID NDirectMethodDesc::SetNDirectTarget(LPVOID pTarget)
 
     NDirectWriteableData* pWriteableData = GetWriteableData();
     g_IBCLogger.LogNDirectCodeAccess(this);
-    pWriteableData->m_pNDirectTarget = pTarget;
+    pWriteableData->m_pNDirectTarget = (PCODE)pTarget;
 }
 
 void MarshalStructViaILStub(MethodDesc* pStubMD, void* pManagedData, void* pNativeData, StructMarshalStubs::MarshalOperation operation, void** ppCleanupWorkList /* = nullptr */)

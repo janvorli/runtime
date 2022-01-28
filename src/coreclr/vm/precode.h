@@ -142,9 +142,9 @@ public:
 #endif
 
 #ifdef TARGET_ARM
-        static_assert_no_msg(offsetof(StubPrecode, m_pTarget) == offsetof(NDirectImportPrecode, m_pMethodDesc));
+        //static_assert_no_msg(offsetof(StubPrecode, m_pTarget) == offsetof(NDirectImportPrecode, m_pMethodDesc));
         // If the precode does not have thumb bit on target, it must be NDirectImportPrecode.
-        if (type == StubPrecode::Type && ((AsStubPrecode()->m_pTarget & THUMB_CODE) == 0))
+        if (type == StubPrecode::Type && ((AsStubPrecode()->GetTarget() & THUMB_CODE) == 0))
             type = NDirectImportPrecode::Type;
 #endif
 

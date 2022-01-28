@@ -42,8 +42,6 @@ struct LookupHolder
 private:
     LookupStub _stub;
 public:
-    static void InitializeStatic() { }
-
     void  Initialize(LookupHolder* pLookupHolderRX, PCODE resolveWorkerTarget, size_t dispatchToken)
     {
         *(size_t*)((BYTE*)this + 4096) = dispatchToken;
@@ -98,14 +96,6 @@ private:
 
 struct DispatchHolder
 {
-    static void InitializeStatic()
-    {
-        LIMITED_METHOD_CONTRACT;
-
-        // Check that _implTarget is aligned in the DispatchHolder for backpatching
-        //static_assert_no_msg(((offsetof(DispatchHolder, _stub) + offsetof(DispatchStub, _implTarget)) % sizeof(void *)) == 0);
-    }
-
     void  Initialize(DispatchHolder* pDispatchHolderRX, PCODE implTarget, PCODE failTarget, size_t expectedMT)
     {
         *(size_t*)((BYTE*)stub() + 4096) = expectedMT;
@@ -164,8 +154,6 @@ private:
 
 struct ResolveHolder
 {
-    static void  InitializeStatic() { }
-
     void Initialize(ResolveHolder* pResolveHolderRX,
                     PCODE resolveWorkerTarget, PCODE patcherTarget,
                     size_t dispatchToken, UINT32 hashedToken,

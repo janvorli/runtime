@@ -188,12 +188,12 @@ BOOL Precode::IsPointingToPrestub(PCODE target)
 #ifdef HAS_FIXUP_PRECODE
 #ifdef TARGET_ARM64
     if (IsPointingTo(target, ((PCODE)this + 8)))
+#elif defined(TARGET_ARM)
+    if (IsPointingTo(target, ((PCODE)this + 8)))
 #elif defined(TARGET_AMD64)
     if (IsPointingTo(target, ((PCODE)this + 6)))
 #elif defined(TARGET_X86)
     if (IsPointingTo(target, ((PCODE)this + 6)))
-#else
-#error Implement this!    
 #endif
         return TRUE;
 #endif

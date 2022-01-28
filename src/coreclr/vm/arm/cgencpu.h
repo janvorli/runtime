@@ -1031,30 +1031,47 @@ struct InvalidPrecode {
     static const int Type = 0;
 };
 
-struct StubPrecode {
+struct StubPrecodeData
+{
+    PTR_MethodDesc MethodDesc;
+    PCODE Target;
+    BYTE Type;
+};
 
+typedef DPTR(StubPrecodeData) PTR_StubPrecodeData;
+
+struct StubPrecode 
+{
     static const int Type = 0xdf;
 
-    // ldr r12, [pc, #8]    ; =m_pMethodDesc
-    // ldr pc, [pc, #0]     ; =m_pTarget
-    // dcd pTarget
-    // dcd pMethodDesc
-    WORD    m_rgCode[4];
-    TADDR   m_pTarget;
-    TADDR   m_pMethodDesc;
+    BYTE m_code[12];
 
     void Init(StubPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator);
+
+    PTR_StubPrecodeData GetData()
+    {
+        return dac_cast<PTR_StubPrecodeData>((uint8_t*)this + 4096);
+    }
+
+    static size_t GenerateCodePage(uint8_t* pageBaseRX);
 
     TADDR GetMethodDesc()
     {
         LIMITED_METHOD_DAC_CONTRACT;
-        return m_pMethodDesc;
+        return dac_cast<TADDR>(GetData()->MethodDesc);
     }
 
     PCODE GetTarget()
     {
         LIMITED_METHOD_DAC_CONTRACT;
-        return m_pTarget;
+        return GetData()->Target;
+    }
+
+    PCODE GetEntryPoint()
+    {
+        LIMITED_METHOD_CONTRACT;
+        //return (LPVOID)(dac_cast<TADDR>(this) + 4 + THUMB_CODE);
+        return DataPointerToThumbCode<PCODE, TADDR>(dac_cast<TADDR>(this) + 4);
     }
 
 #ifndef DACCESS_COMPILE
@@ -1067,8 +1084,8 @@ struct StubPrecode {
         }
         CONTRACTL_END;
 
-        ExecutableWriterHolder<StubPrecode> precodeWriterHolder(this, sizeof(StubPrecode));
-        InterlockedExchange((LONG*)&precodeWriterHolder.GetRW()->m_pTarget, (LONG)GetPreStubEntryPoint());
+        StubPrecodeData *pData = GetData();
+        InterlockedExchangeT<PCODE>(&pData->Target, GetPreStubEntryPoint());
     }
 
     BOOL SetTargetInterlocked(TADDR target, TADDR expected)
@@ -1080,90 +1097,63 @@ struct StubPrecode {
         }
         CONTRACTL_END;
 
-        ExecutableWriterHolder<StubPrecode> precodeWriterHolder(this, sizeof(StubPrecode));
-        return (TADDR)InterlockedCompareExchange(
-            (LONG*)&precodeWriterHolder.GetRW()->m_pTarget, (LONG)target, (LONG)expected) == expected;
+        StubPrecodeData *pData = GetData();
+        return InterlockedCompareExchangeT<PCODE>(&pData->Target, (PCODE)target, (PCODE)expected) == expected;
     }
 #endif // !DACCESS_COMPILE
 
 };
 typedef DPTR(StubPrecode) PTR_StubPrecode;
 
-
-struct NDirectImportPrecode {
+struct NDirectImportPrecode : StubPrecode
+{
 
     static const int Type = 0xe0;
-
-    // ldr r12, [pc, #4]    ; =m_pMethodDesc
-    // ldr pc, [pc, #4]     ; =m_pTarget
-    // dcd pMethodDesc
-    // dcd pTarget
-    WORD    m_rgCode[4];
-    TADDR   m_pMethodDesc;  // Notice that the fields are reversed compared to StubPrecode. Precode::GetType
-                            // takes advantage of this to detect NDirectImportPrecode.
-    TADDR   m_pTarget;
-
     void Init(NDirectImportPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator);
+};
+typedef DPTR(NDirectImportPrecode) PTR_NDirectImportPrecode;
+
+struct FixupPrecodeData
+{
+    PCODE Target;
+    MethodDesc *MethodDesc;
+    PCODE PrecodeFixupThunk;
+};
+
+typedef DPTR(FixupPrecodeData) PTR_FixupPrecodeData;
+
+struct FixupPrecode 
+{
+    static const int Type = 0xfc;
+
+    BYTE    m_code[16];
+
+    void Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator, int iMethodDescChunkIndex = 0, int iPrecodeChunkIndex = 0);
+
+    PTR_FixupPrecodeData GetData()
+    {
+        return dac_cast<PTR_FixupPrecodeData>((uint8_t*)this + 4096);
+    }
+
+    static size_t GenerateCodePage(uint8_t* pageBaseRX);
 
     TADDR GetMethodDesc()
     {
         LIMITED_METHOD_DAC_CONTRACT;
-        return m_pMethodDesc;
+        return dac_cast<TADDR>(GetData()->MethodDesc);
     }
 
     PCODE GetTarget()
     {
         LIMITED_METHOD_DAC_CONTRACT;
-        return m_pTarget;
+        return GetData()->Target;
     }
 
-    LPVOID GetEntrypoint()
+    PCODE GetEntrypoint()
     {
         LIMITED_METHOD_CONTRACT;
-        return (LPVOID)(dac_cast<TADDR>(this) + THUMB_CODE);
-    }
-
-};
-typedef DPTR(NDirectImportPrecode) PTR_NDirectImportPrecode;
-
-
-struct FixupPrecode {
-
-    static const int Type = 0xfc;
-
-    // mov r12, pc
-    // ldr pc, [pc, #4]     ; =m_pTarget
-    // dcb m_MethodDescChunkIndex
-    // dcb m_PrecodeChunkIndex
-    // dcd m_pTarget
-    WORD    m_rgCode[3];
-    BYTE    m_MethodDescChunkIndex;
-    BYTE    m_PrecodeChunkIndex;
-    TADDR   m_pTarget;
-
-    void Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator, int iMethodDescChunkIndex = 0, int iPrecodeChunkIndex = 0);
-
-    TADDR GetBase()
-    {
-        LIMITED_METHOD_CONTRACT;
-        SUPPORTS_DAC;
-
-        return dac_cast<TADDR>(this) + (m_PrecodeChunkIndex + 1) * sizeof(FixupPrecode);
-    }
-
-    size_t GetSizeRW()
-    {
-        LIMITED_METHOD_CONTRACT;
-
-        return GetBase() + sizeof(void*) - dac_cast<TADDR>(this);
-    }
-
-    TADDR GetMethodDesc();
-
-    PCODE GetTarget()
-    {
-        LIMITED_METHOD_DAC_CONTRACT;
-        return m_pTarget;
+        //return (LPVOID)(dac_cast<TADDR>(this) + 4 + THUMB_CODE);
+        return DataPointerToThumbCode<PCODE, TADDR>(dac_cast<TADDR>(this) + 4);
     }
 
 #ifndef DACCESS_COMPILE
@@ -1176,8 +1166,8 @@ struct FixupPrecode {
         }
         CONTRACTL_END;
 
-        ExecutableWriterHolder<FixupPrecode> precodeWriterHolder(this, sizeof(FixupPrecode));
-        InterlockedExchange((LONG*)&precodeWriterHolder.GetRW()->m_pTarget, (LONG)GetEEFuncEntryPoint(PrecodeFixupThunk));
+        FixupPrecodeData *pData = GetData();
+        InterlockedExchangeT<PCODE>(&pData->Target, GetEEFuncEntryPoint(PrecodeFixupThunk));
     }
 
     BOOL SetTargetInterlocked(TADDR target, TADDR expected)
@@ -1189,9 +1179,8 @@ struct FixupPrecode {
         }
         CONTRACTL_END;
 
-        ExecutableWriterHolder<FixupPrecode> precodeWriterHolder(this, sizeof(FixupPrecode));
-        return (TADDR)InterlockedCompareExchange(
-            (LONG*)&precodeWriterHolder.GetRW()->m_pTarget, (LONG)target, (LONG)expected) == expected;
+        FixupPrecodeData *pData = GetData();
+        return InterlockedCompareExchangeT<PCODE>(&pData->Target, (PCODE)target, (PCODE)expected) == expected;
     }
 #endif // !DACCESS_COMPILE
 
@@ -1200,9 +1189,10 @@ struct FixupPrecode {
         PTR_WORD pInstr = dac_cast<PTR_WORD>(PCODEToPINSTR(addr));
 
         return
-           (pInstr[0] == 0x46fc) &&
-           (pInstr[1] == 0xf8df) &&
-           (pInstr[2] == 0xf004);
+           (pInstr[0] == 0xf8df) &&
+           (pInstr[1] == 0xcffc) &&
+           (pInstr[2] == 0xf8df) &&
+           (pInstr[3] == 0xfffc);
     }
 
 #ifdef DACCESS_COMPILE
@@ -1312,8 +1302,18 @@ typedef DPTR(CallCount) PTR_CallCount;
 class CallCountingStub;
 typedef DPTR(const CallCountingStub) PTR_CallCountingStub;
 
+struct CallCountingStubData
+{
+    PTR_CallCount RemainingCallCountCell;
+    PCODE TargetForMethod;
+    PCODE TargetForThresholdReached;
+};
+typedef DPTR(const CallCountingStubData) PTR_CallCountingStubData;
+
 class CallCountingStub
 {
+    UINT8 m_code[24];
+
 public:
     static const SIZE_T Alignment = sizeof(void *);
 
@@ -1331,96 +1331,35 @@ public:
         WRAPPER_NO_CONTRACT;
         return PINSTRToPCODE((TADDR)this);
     }
-#endif
+#endif // !DACCESS_COMPILE
 
 public:
+#ifndef DACCESS_COMPILE
+    void Initialize(PCODE targetForMethod, CallCount* remainingCallCountCell)
+    {
+        CallCountingStubData* pStubData = (CallCountingStubData*)((BYTE*)this + 4096);
+        // TODO: Can we keep the count in the stub? It is problematic, as we have code that
+        // gets the CallCountingInfo from the count cell pointer.
+        // But maybe if we made the TargetForThresholdReached a global variable, we could place 
+        // a backpointer to the count info into that slot. That could make call counting a bit faster.
+        // However, it would be problematic for all other architectures, as the memory addresses
+        // are PC relative there.
+        pStubData->RemainingCallCountCell = remainingCallCountCell;
+        pStubData->TargetForMethod = targetForMethod;
+        // TODO: we can use a global variable to store this
+        pStubData->TargetForThresholdReached = CallCountingStub::TargetForThresholdReached;
+    }
+#endif // !DACCESS_COMPILE
+
+    static size_t GenerateCodePage(uint8_t* pageBase);
+
     PTR_CallCount GetRemainingCallCountCell() const;
     PCODE GetTargetForMethod() const;
 
+protected:
+
     DISABLE_COPY(CallCountingStub);
 };
-
-////////////////////////////////////////////////////////////////
-// CallCountingStubShort
-
-class CallCountingStubShort;
-typedef DPTR(const CallCountingStubShort) PTR_CallCountingStubShort;
-
-#pragma pack(push, 1)
-class CallCountingStubShort : public CallCountingStub
-{
-private:
-    const UINT16 m_part0[16];
-    CallCount *const m_remainingCallCountCell;
-    const PCODE m_targetForMethod;
-    const PCODE m_targetForThresholdReached;
-
-#ifndef DACCESS_COMPILE
-public:
-    CallCountingStubShort(CallCountingStubShort* stubRX, CallCount *remainingCallCountCell, PCODE targetForMethod)
-        : m_part0{  0xb401,                 //     push {r0}
-                    0xf8df, 0xc01c,         //     ldr  r12, [pc, #(m_remainingCallCountCell)]
-                    0xf8bc, 0x0000,         //     ldrh r0, [r12]
-                    0x1e40,                 //     subs r0, r0, #1
-                    0xf8ac, 0x0000,         //     strh r0, [r12]
-                    0xbc01,                 //     pop  {r0}
-                    0xd001,                 //     beq  L0
-                    0xf8df, 0xf00c,         //     ldr  pc, [pc, #(m_targetForMethod)]
-                    0xf2af, 0x0c1c,         // L0: adr  r12, #(this)
-                                            // (r12 == stub-identifying token == this)
-                    0xf8df, 0xf008},        //     ldr  pc, [pc, #(m_targetForThresholdReached)]
-        m_remainingCallCountCell(remainingCallCountCell),
-        m_targetForMethod(targetForMethod),
-        m_targetForThresholdReached(TargetForThresholdReached)
-    {
-        WRAPPER_NO_CONTRACT;
-        static_assert_no_msg(sizeof(CallCountingStubShort) % Alignment == 0);
-        _ASSERTE(remainingCallCountCell != nullptr);
-        _ASSERTE(PCODEToPINSTR(targetForMethod) != NULL);
-    }
-
-    static bool Is(TADDR stubIdentifyingToken)
-    {
-        WRAPPER_NO_CONTRACT;
-        return true;
-    }
-
-    static const CallCountingStubShort *From(TADDR stubIdentifyingToken)
-    {
-        WRAPPER_NO_CONTRACT;
-        _ASSERTE(Is(stubIdentifyingToken));
-
-        const CallCountingStubShort *stub = (const CallCountingStubShort *)stubIdentifyingToken;
-        _ASSERTE(IS_ALIGNED(stub, Alignment));
-        return stub;
-    }
-#endif
-
-public:
-    static bool Is(PTR_CallCountingStub callCountingStub)
-    {
-        WRAPPER_NO_CONTRACT;
-        return true;
-    }
-
-    static PTR_CallCountingStubShort From(PTR_CallCountingStub callCountingStub)
-    {
-        WRAPPER_NO_CONTRACT;
-        _ASSERTE(Is(callCountingStub));
-
-        return dac_cast<PTR_CallCountingStubShort>(callCountingStub);
-    }
-
-    PCODE GetTargetForMethod() const
-    {
-        WRAPPER_NO_CONTRACT;
-        return m_targetForMethod;
-    }
-
-    friend CallCountingStub;
-    DISABLE_COPY(CallCountingStubShort);
-};
-#pragma pack(pop)
 
 ////////////////////////////////////////////////////////////////
 // CallCountingStub definitions
@@ -1431,20 +1370,28 @@ inline const CallCountingStub *CallCountingStub::From(TADDR stubIdentifyingToken
     WRAPPER_NO_CONTRACT;
     _ASSERTE(stubIdentifyingToken != NULL);
 
-    return CallCountingStubShort::From(stubIdentifyingToken);
+    // TODO: verify this
+    const CallCountingStub* stub = (const CallCountingStub*)stubIdentifyingToken;
+    _ASSERTE(IS_ALIGNED(stub, Alignment));
+    return stub;
 }
 #endif
 
 inline PTR_CallCount CallCountingStub::GetRemainingCallCountCell() const
 {
     WRAPPER_NO_CONTRACT;
-    return PTR_CallCount(dac_cast<PTR_CallCountingStubShort>(this)->m_remainingCallCountCell);
+    PTR_CallCountingStubData pStubData = dac_cast<PTR_CallCountingStubData>((BYTE*)this + 4096);
+    return pStubData->RemainingCallCountCell;
+    //PTR_PTR_VOID cc = dac_cast<PTR_PTR_VOID>((UINT8*)this + 4096);
+    //return dac_cast<PTR_CallCount>(*cc);
 }
 
 inline PCODE CallCountingStub::GetTargetForMethod() const
 {
     WRAPPER_NO_CONTRACT;
-    return CallCountingStubShort::From(PTR_CallCountingStub(this))->GetTargetForMethod();
+    PTR_CallCountingStubData pStubData = dac_cast<PTR_CallCountingStubData>((BYTE*)this + 4096);
+    return pStubData->TargetForMethod;
+    //return *dac_cast<PTR_PCODE>((UINT8*)this + 4096 + 4);
 }
 
 ////////////////////////////////////////////////////////////////

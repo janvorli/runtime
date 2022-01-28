@@ -857,12 +857,6 @@ void VirtualCallStubManager::InitStatic()
     g_resetCacheIncr       = (INT32) CLRConfig::GetConfigValue(CLRConfig::INTERNAL_VirtualCallStubResetCacheIncr);
 #endif // STUB_LOGGING
 
-#ifndef STUB_DISPATCH_PORTABLE
-    DispatchHolder::InitializeStatic();
-    ResolveHolder::InitializeStatic();
-#endif // !STUB_DISPATCH_PORTABLE
-    LookupHolder::InitializeStatic();
-
     g_resolveCache = new DispatchCache();
 
     if(CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_VirtualCallStubLogging))
@@ -4052,9 +4046,10 @@ BOOL VirtualCallStubManagerManager::TraceManager(
     return pMgr->TraceManager(thread, trace, pContext, pRetAddr);
 }
 
+#ifndef DACCESS_COMPILE
+
 #ifdef TARGET_ARM64
 
-#ifndef DACCESS_COMPILE
 size_t LookupHolder::GenerateCodePage(uint8_t* pageBaseRX)
 {
     // ldr x12, #4096
@@ -4273,222 +4268,147 @@ failEntryPoint :
     //orr x11, x11, SDF_ResolveBackPatch _ASSERTE(SDF_ResolveBackPatch == 0x1);
     //b resolveEntryPoint:
 
-
-//    int n = 0;
-//    DWORD offset;
-//    int br_nextEntry[2];
-//    /******** Rough Convention of used in this routine
-//             ;;x9  hash scratch / current ResolveCacheElem
-//             ;;x10 base address of the data region
-//             ;;x11 indirection cell
-//             ;;x12 MethodTable (from object ref in x0), out: this._token
-//             ;;X13 temp
-//             ;;X15 temp, this._token
-//             ;;cachemask => [CALL_STUB_CACHE_MASK * sizeof(void*)]
-//    *********/
-//    // Called directly by JITTED code
-//    // ResolveStub._resolveEntryPoint(x0:Object*, x1 ...,r7, x11:IndirectionCellAndFlags)
-//    // {
-//    //    MethodTable mt = x0.m_pMethTab;
-//    //    int i = ((mt + mt >> 12) ^ this._hashedToken) & _cacheMask
-//    //    ResolveCacheElem e = this._cacheAddress + i
-//    //    x9 = e = this._cacheAddress + i
-//    //    if (mt == e.pMT && this._token == e.token)
-//    //    {
-//    //        (e.target)(x0, [x1,...,x7 and x8]);
-//    //    }
-//    //    else
-//    //    {
-//    //        x12 = this._token;
-//    //        (this._slowEntryPoint)(x0, [x1,.., x7 and x8], x9, x11, x12);
-//    //    }
-//    // }
-//    //
-//
-//#define Dataregionbase  _pCounter
-//#define DATA_OFFSET(_fieldHigh) (DWORD)((offsetof(ResolveStub, _fieldHigh ) - offsetof(ResolveStub, Dataregionbase)) & 0xffffffff)
-//#define PC_REL_OFFSET(_field) (DWORD)((offsetof(ResolveStub, _field) - (offsetof(ResolveStub, _resolveEntryPoint) + sizeof(*ResolveStub::_resolveEntryPoint) * n)) & 0xffffffff)
-//
-//         //ldr x12, [x0,#Object.m_pMethTab ] ; methodTable from object in x0
-//    _stub._resolveEntryPoint[n++] = RESOLVE_STUB_FIRST_DWORD; //0xF940000C
-//
-//    //  ;; Compute i = ((mt + mt >> 12) ^ this._hashedToken) & _cacheMask
-//
-//    //add x9, x12, x12 lsr #12
-//    _stub._resolveEntryPoint[n++] = 0x8B4C3189;
-//
-//    //;;adr x10, #Dataregionbase of ResolveStub
-//    _stub._resolveEntryPoint[n] = 0x1000000A | ARM64EncodeHelpers::ADR_PATCH(PC_REL_OFFSET(Dataregionbase));
-//    n++;
-//
-//    //w13- this._hashedToken
-//    //ldr w13, [x10 + DATA_OFFSET(_hashedToken)]
-//    offset = DATA_OFFSET(_hashedToken);
-//    _ASSERTE(offset >= 0 && offset % 4 == 0);
-//    _stub._resolveEntryPoint[n++] = 0xB940014D | offset << 8;
-//
-//    //eor x9,x9,x13
-//    _stub._resolveEntryPoint[n++] = 0xCA0D0129;
-//
-//    _ASSERTE(CALL_STUB_CACHE_MASK * sizeof(void*) == 0x7FF8);
-//    //x9-i
-//    //and x9,x9,#cachemask
-//    _stub._resolveEntryPoint[n++] = 0x927D2D29;
-//
-//    //;; ResolveCacheElem e = this._cacheAddress + i
-//    //
-//    //ldr x13, [x10 + DATA_OFFSET(_cacheAddress)]
-//    offset = DATA_OFFSET(_cacheAddress);
-//    _ASSERTE(offset >= 0 && offset % 8 == 0);
-//    _stub._resolveEntryPoint[n++] = 0xF940014D | offset << 7;
-//
-//    //ldr x9, [x13, x9] ;; x9 = e = this._cacheAddress + i
-//    _stub._resolveEntryPoint[n++] = 0xF86969A9;
-//
-//    //ldr x15, [x10 + DATA_OFFSET(_token)]
-//    offset = DATA_OFFSET(_token);
-//    _ASSERTE(offset >= 0 && offset % 8 == 0);
-//    _stub._resolveEntryPoint[n++] = 0xF940014F | offset << 7;
-//
-//    //;; Check mt == e.pMT
-//    //
-//    //
-//    //ldr x13, [x9, #offsetof(ResolveCacheElem, pMT) ]
-//    offset = offsetof(ResolveCacheElem, pMT) & 0x000001ff;
-//    _ASSERTE(offset >= 0 && offset % 8 == 0);
-//    _stub._resolveEntryPoint[n++] = 0xF940012D | offset << 7;
-//
-//    //cmp x12, x13
-//    _stub._resolveEntryPoint[n++] = 0xEB0D019F;
-//
-//    //;; bne nextEntry
-//    //place holder for the above instruction
-//    br_nextEntry[0] = n++;
-//
-//    //;; Check this._token == e.token
-//    //x15: this._token
-//    //
-//    //ldr x13, [x9, #offsetof(ResolveCacheElem, token) ]
-//    offset = offsetof(ResolveCacheElem, token) & 0xffffffff;
-//    _ASSERTE(offset >= 0 && offset % 8 == 0);
-//    _stub._resolveEntryPoint[n++] = 0xF940012D | offset << 7;
-//
-//    //cmp x15, x13
-//    _stub._resolveEntryPoint[n++] = 0xEB0D01FF;
-//
-//    //;; bne nextEntry
-//    //place holder for the above instruction
-//    br_nextEntry[1] = n++;
-//
-//    //ldr x12, [x9, #offsetof(ResolveCacheElem, target) ]
-//    offset = offsetof(ResolveCacheElem, target) & 0xffffffff;
-//    _ASSERTE(offset >= 0 && offset % 8 == 0);
-//    _stub._resolveEntryPoint[n++] = 0xF940012C | offset << 7;
-//
-//    // ;; Branch to e.target
-//    // br x12
-//    _stub._resolveEntryPoint[n++] = 0xD61F0180;
-//
-//    //;;nextEntry:
-//    //back patching the call sites as now we know the offset to nextEntry
-//    //bne #offset
-//    for (auto i : br_nextEntry)
-//    {
-//        _stub._resolveEntryPoint[i] = 0x54000001 | ((((n - i) * sizeof(DWORD)) << 3) & 0x3FFFFFF);
-//    }
-//
-//    _ASSERTE(n == ResolveStub::resolveEntryPointLen);
-//    _ASSERTE(_stub._resolveEntryPoint + n == _stub._slowEntryPoint);
-//
-//    // ResolveStub._slowEntryPoint(x0:MethodToken, [x1..x7 and x8], x11:IndirectionCellAndFlags)
-//    // {
-//    //     x12 = this._token;
-//    //     this._resolveWorkerTarget(x0, [x1..x7 and x8], x9, x11, x12);
-//    // }
-//
-//#undef PC_REL_OFFSET
-//#define PC_REL_OFFSET(_field) (DWORD)((offsetof(ResolveStub, _field) - (offsetof(ResolveStub, _slowEntryPoint) + sizeof(*ResolveStub::_slowEntryPoint) * n)) & 0xffffffff )
-//    n = 0;
-//    // ;;slowEntryPoint:
-//    // ;;fall through to the slow case
-//
-//    //;;adr x10, #Dataregionbase
-//    _stub._slowEntryPoint[n] = 0x1000000A | ARM64EncodeHelpers::ADR_PATCH(PC_REL_OFFSET(Dataregionbase));
-//    n++;
-//
-//    //ldr x12, [x10 , DATA_OFFSET(_token)]
-//    offset = DATA_OFFSET(_token);
-//    _ASSERTE(offset >= 0 && offset % 8 == 0);
-//    _stub._slowEntryPoint[n++] = 0xF940014C | (offset << 7);
-//
-//    //
-//    //ldr x13, [x10 , DATA_OFFSET(_resolveWorkerTarget)]
-//    offset = DATA_OFFSET(_resolveWorkerTarget);
-//    _ASSERTE(offset >= 0 && offset % 8 == 0);
-//    _stub._slowEntryPoint[n++] = 0xF940014d | (offset << 7);
-//
-//    //  br x13
-//    _stub._slowEntryPoint[n++] = 0xD61F01A0;
-//
-//    _ASSERTE(n == ResolveStub::slowEntryPointLen);
-//    // ResolveStub._failEntryPoint(x0:MethodToken, x1,.., x7 and x8, x11:IndirectionCellAndFlags)
-//    // {
-//    //     if(--*(this._pCounter) < 0) x11 = x11 | SDF_ResolveBackPatch;
-//    //     this._resolveEntryPoint(x0, [x1..x7 and x8]);
-//    // }
-//
-//#undef PC_REL_OFFSET //NOTE Offset can be negative
-//#define PC_REL_OFFSET(_field) (DWORD)((offsetof(ResolveStub, _field) - (offsetof(ResolveStub, _failEntryPoint) + sizeof(*ResolveStub::_failEntryPoint) * n)) & 0xffffffff)
-//    n = 0;
-//
-//    //;;failEntryPoint
-//    //;;adr x10, #Dataregionbase
-//    _stub._failEntryPoint[n] = 0x1000000A | ARM64EncodeHelpers::ADR_PATCH(PC_REL_OFFSET(Dataregionbase));
-//    n++;
-//
-//    //
-//    //ldr x13, [x10]
-//    offset = DATA_OFFSET(_pCounter);
-//    _ASSERTE(offset >= 0 && offset % 8 == 0);
-//    _stub._failEntryPoint[n++] = 0xF940014D | offset << 7;
-//
-//    //ldr w9, [x13]
-//    _stub._failEntryPoint[n++] = 0xB94001A9;
-//    //subs w9,w9,#1
-//    _stub._failEntryPoint[n++] = 0x71000529;
-//    //str w9, [x13]
-//    _stub._failEntryPoint[n++] = 0xB90001A9;
-//
-//    //;;bge resolveEntryPoint
-//    offset = PC_REL_OFFSET(_resolveEntryPoint);
-//    _stub._failEntryPoint[n++] = 0x5400000A | ((offset << 3) & 0x00FFFFF0);
-//
-//    // ;; orr x11, x11, SDF_ResolveBackPatch
-//    // orr x11, x11, #1
-//    _ASSERTE(SDF_ResolveBackPatch == 0x1);
-//    _stub._failEntryPoint[n++] = 0xB240016B;
-//
-//    //;;b resolveEntryPoint:
-//    offset = PC_REL_OFFSET(_resolveEntryPoint);
-//    _stub._failEntryPoint[n++] = 0x14000000 | ((offset >> 2) & 0x3FFFFFF);
-//
-//    _ASSERTE(n == ResolveStub::failEntryPointLen);
-//    _stub._pCounter = counterAddr;
-//    _stub._hashedToken = hashedToken << LOG2_PTRSIZE;
-//    _stub._cacheAddress = (size_t)cacheAddr;
-//    _stub._token = dispatchToken;
-//    _stub._resolveWorkerTarget = resolveWorkerTarget;
-//
-//    _ASSERTE(resolveWorkerTarget == (PCODE)ResolveWorkerChainLookupAsmStub);
-//    _ASSERTE(patcherTarget == NULL);
-//
-//#undef DATA_OFFSET
-//#undef PC_REL_OFFSET
-//#undef Dataregionbase
-
     ClrFlushInstructionCache(pageBaseRX, 4096);
     return 0;
 }
+
+#elif defined(TARGET_ARM)
+
+extern "C" void VSDLookupStubCode();
+
+size_t LookupHolder::GenerateCodePage(uint8_t* pageBaseRX)
+{
+    /*
+0x0000000000000000:  00 BF          nop   
+0x0000000000000002:  00 BF          nop   
+0x0000000000000004:  DF F8 FC CF    ldr.w r12, [pc, #0xffc]
+0x0000000000000008:  DF F8 FC FF    ldr.w pc, [pc, #0xffc]    
+    */
+
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder((uint8_t*)pageBaseRX, 4096);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
+
+    memcpy(pageBase, (const void*)&VSDLookupStubCode, 12);
+    memcpy(pageBase + 12, pageBase, 12);
+    memcpy(pageBase + 24, pageBase, 24);
+    memcpy(pageBase + 48, pageBase, 48);
+    memcpy(pageBase + 96, pageBase, 96);
+    memcpy(pageBase + 192, pageBase, 192);
+    memcpy(pageBase + 384, pageBase, 384);
+    memcpy(pageBase + 768, pageBase, 768);
+    memcpy(pageBase + 1536, pageBase, 1536);
+    memcpy(pageBase + 3072, pageBase, 1008);
+    ClrFlushInstructionCache(pageBaseRX, 4096);
+
+    return 0;
+}
+
+extern "C" void VSDDispatchStubCode();
+
+size_t DispatchHolder::GenerateCodePage(uint8_t* pageBaseRX)
+{
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder((uint8_t*)pageBaseRX, 4096);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
+/*
+0x0000000000000000:  D0 F8 00 C0    ldr.w r12, [r0]
+0x0000000000000004:  02 B4          push  {r1}
+0x0000000000000006:  DF F8 FC 1F    ldr.w r1, [pc, #0xff8]
+0x000000000000000a:  61 45          cmp   r1, r12
+0x000000000000000c:  02 BC          pop   {r1}
+0x000000000000000e:  01 D1          bne   #0x14
+0x0000000000000010:  DF F8 FC FF    ldr.w pc, [pc, #0xff4]
+0x0000000000000014:  DF F8 FC FF    ldr.w pc, [pc, #0xff4]
+*/
+
+    memcpy(pageBase, (const void*)&VSDDispatchStubCode, 24);
+    _ASSERTE(*(DWORD*)pageBase == DISPATCH_STUB_FIRST_WORD);
+    memcpy(pageBase + 24, pageBase, 24);
+    memcpy(pageBase + 48, pageBase, 48);
+    memcpy(pageBase + 96, pageBase, 96);
+    memcpy(pageBase + 192, pageBase, 192);
+    memcpy(pageBase + 384, pageBase, 384);
+    memcpy(pageBase + 768, pageBase, 768);
+    memcpy(pageBase + 1536, pageBase, 1536);
+    memcpy(pageBase + 3072, pageBase, 1008);
+
+    ClrFlushInstructionCache(pageBaseRX, 4096);
+
+    return 0;
+}
+
+extern "C" void VSDResolveStubCode();
+
+size_t ResolveHolder::GenerateCodePage(uint8_t* pageBaseRX)
+{
+
+/*
+struct ResolveStubData
+{
+    size_t CacheAddress;
+    UINT32 HashedToken;
+    UINT32 CacheMask;
+    size_t Token;
+    INT32  Counter;
+    PCODE  ResolveWorkerTarget;
+    PCODE  PatcherTarget; // Not on arm
+};
+0x0000000000000000:  D0 F8 00 C0    ldr.w  r12, [r0]
+0x0000000000000004:  60 B4          push   {r5, r6}
+0x0000000000000006:  0C EB 1C 36    add.w  r6, r12, r12, lsr #12
+0x000000000000000a:  DF F8 FC 5F    ldr.w  r5, [pc, #0xff8] <<< HashedToken - offset 4
+0x000000000000000e:  86 EA 05 06    eor.w  r6, r6, r5
+0x0000000000000012:  DF F8 FC 5F    ldr.w  r5, [pc, #0xff4] <<< CacheMask - offset 8
+0x0000000000000016:  06 EA 05 06    and.w  r6, r6, r5
+0x000000000000001a:  DF F8 FC 5F    ldr.w  r5, [pc, #0xfe4] <<< CacheAddress - offset  0
+0x000000000000001e:  AE 59          ldr    r6, [r5, r6]
+0x0000000000000020:  35 68          ldr    r5, [r6]
+0x0000000000000022:  AC 45          cmp    r12, r5
+0x0000000000000024:  09 D1          bne    #0x3a
+0x0000000000000026:  DF F8 FC 5F    ldr.w  r5, [pc, #0xfe4] <<< Token - offset 0x0c
+0x000000000000002a:  D6 F8 04 C0    ldr.w  r12, [r6, #4]
+0x000000000000002e:  AC 45          cmp    r12, r5
+0x0000000000000030:  03 D1          bne    #0x3a
+0x0000000000000032:  D6 F8 08 C0    ldr.w  r12, [r6, #8]
+0x0000000000000036:  60 BC          pop    {r5, r6}
+0x0000000000000038:  60 47          bx     r12
+0x000000000000003a:  F6 68          ldr    r6, [r6, #0xc]
+0x000000000000003c:  16 B1          cbz    r6, #0x44
+0x000000000000003e:  D0 F8 00 C0    ldr.w  r12, [r0]
+0x0000000000000042:  ED E7          b      #0x20
+0x0000000000000044:  60 BC          pop    {r5, r6}
+0x0000000000000046:  00 BF          nop    
+slowEntryPoint
+0x0000000000000048:  DF F8 FC CF    ldr.w  r12, [pc, #0xfc4] <<< Token - offset 0x0c
+0x000000000000004c:  DF F8 FC FF    ldr.w  pc, [pc, #0xfc8] <<< ResolveWorkerTarget - offset 0x14
+failEntryPoint
+0x0000000000000050:  20 B4          push   {r5}
+0x0000000000000052:  DF F8 FC 5F    ldr.w  r5, [pc, #0xfbc] <<< Counter - offset 0x10
+0x0000000000000056:  D5 F8 00 C0    ldr.w  r12, [r5]
+0x000000000000005a:  BC F1 01 0C    subs.w r12, r12, #1
+0x000000000000005e:  C5 F8 00 C0    str.w  r12, [r5]
+0x0000000000000062:  20 BC          pop    {r5}
+0x0000000000000064:  01 DA          bge    #0x6a
+0x0000000000000066:  44 F0 01 04    orr    r4, r4, #1
+0x000000000000006a:  C9 E7          b      #0
+*/
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder((uint8_t*)pageBaseRX, 4096);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
+
+    memcpy(pageBase, (const void*)&VSDResolveStubCode, 108);
+    _ASSERTE(*(DWORD*)pageBase == RESOLVE_STUB_FIRST_WORD);
+
+    memcpy(pageBase + 108, pageBase, 108);
+    memcpy(pageBase + 216, pageBase, 216);
+    memcpy(pageBase + 432, pageBase, 432);
+    memcpy(pageBase + 864, pageBase, 864);
+    memcpy(pageBase + 1728, pageBase, 1728);
+    memcpy(pageBase + 3456, pageBase, 540);
+
+    ClrFlushInstructionCache(pageBaseRX, 4096);
+
+    return 0;
+}
+
 #endif
 
 #endif

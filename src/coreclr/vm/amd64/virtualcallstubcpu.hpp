@@ -94,8 +94,6 @@ stubs as necessary.  In the case of LookupStubs, alignment is necessary since
 LookupStubs are placed in a hash table keyed by token. */
 struct LookupHolder
 {
-    static void InitializeStatic();
-
     void  Initialize(LookupHolder* pLookupHolderRX, PCODE resolveWorkerTarget, size_t dispatchToken);
 
     LookupStub*    stub()         { LIMITED_METHOD_CONTRACT;  return &_stub;    }
@@ -282,8 +280,6 @@ atomically update it.  When we get a resolver function that does what we want, w
 and live with just the inlineTarget field in the stub itself, since immutability will hold.*/
 struct DispatchHolder
 {
-    static void InitializeStatic();
-
     void  Initialize(DispatchHolder* pDispatchHolderRX, PCODE implTarget, PCODE failTarget, size_t expectedMT);
 
     static size_t GetHolderSize()
@@ -364,8 +360,6 @@ any of its inlined tokens (non-prehashed) is aligned, then the token field in th
 is not needed. */
 struct ResolveHolder
 {
-    static void  InitializeStatic();
-
     void  Initialize(ResolveHolder* pResolveHolderRX, 
                      PCODE resolveWorkerTarget, PCODE patcherTarget,
                      size_t dispatchToken, UINT32 hashedToken,
@@ -465,11 +459,6 @@ extern size_t g_call_cache_counter;
 extern size_t g_miss_cache_counter;
 #endif
 
-void LookupHolder::InitializeStatic()
-{
-    static_assert_no_msg((sizeof(LookupHolder) % sizeof(void*)) == 0);
-}
-
 void  LookupHolder::Initialize(LookupHolder* pLookupHolderRX, PCODE resolveWorkerTarget, size_t dispatchToken)
 {
     *(size_t*)((BYTE*)this + 4096) = dispatchToken;
@@ -480,10 +469,6 @@ void  LookupHolder::Initialize(LookupHolder* pLookupHolderRX, PCODE resolveWorke
    memory and copy the template over it and just update the specific fields that need
    to be changed.
 */
-
-void DispatchHolder::InitializeStatic()
-{
-};
 
 void  DispatchHolder::Initialize(DispatchHolder* pDispatchHolderRX, PCODE implTarget, PCODE failTarget, size_t expectedMT)
 {
@@ -744,108 +729,11 @@ e:  48 c1 e8 0c             shr    rax,0xc
 
 #endif
 
-void ResolveHolder::InitializeStatic()
-{
-//    static_assert_no_msg((sizeof(ResolveHolder) % sizeof(void*)) == 0);
-//
-//    resolveInit._resolveEntryPoint [0] = 0x52;
-//    resolveInit._resolveEntryPoint [1] = 0x49;
-//    resolveInit._resolveEntryPoint [2] = 0xBA;
-//    resolveInit._cacheAddress          = 0xcccccccccccccccc;
-//    resolveInit.part1 [ 0]             = X64_INSTR_MOV_RAX_IND_THIS_REG & 0xff;
-//    resolveInit.part1 [ 1]             = (X64_INSTR_MOV_RAX_IND_THIS_REG >> 8) & 0xff;
-//    resolveInit.part1 [ 2]             = (X64_INSTR_MOV_RAX_IND_THIS_REG >> 16) & 0xff;
-//    resolveInit.part1 [ 3]             = 0x48;
-//    resolveInit.part1 [ 4]             = 0x8B;
-//    resolveInit.part1 [ 5]             = 0xD0;
-//    resolveInit.part1 [ 6]             = 0x48;
-//    resolveInit.part1 [ 7]             = 0xC1;
-//    resolveInit.part1 [ 8]             = 0xE8;
-//    resolveInit.part1 [ 9]             = CALL_STUB_CACHE_NUM_BITS;
-//    resolveInit.part1 [10]             = 0x48;
-//    resolveInit.part1 [11]             = 0x03;
-//    resolveInit.part1 [12]             = 0xC2;
-//    resolveInit.part1 [13]             = 0x48;
-//    resolveInit.part1 [14]             = 0x35;
-//// Review truncation from unsigned __int64 to UINT32 of a constant value.
-//#if defined(_MSC_VER)
-//#pragma warning(push)
-//#pragma warning(disable:4305 4309)
-//#endif // defined(_MSC_VER)
-//
-//    resolveInit._hashedToken           = 0xcccccccc;
-//
-//#if defined(_MSC_VER)
-//#pragma warning(pop)
-//#endif // defined(_MSC_VER)
-//
-//    resolveInit.part2 [ 0]             = 0x48;
-//    resolveInit.part2 [ 1]             = 0x25;
-//    resolveInit.mask                   = CALL_STUB_CACHE_MASK*sizeof(void *);
-//    resolveInit.part3 [0]              = 0x4A;
-//    resolveInit.part3 [1]              = 0x8B;
-//    resolveInit.part3 [2]              = 0x04;
-//    resolveInit.part3 [3]              = 0x10;
-//    resolveInit.part3 [4]              = 0x49;
-//    resolveInit.part3 [5]              = 0xBA;
-//    resolveInit._token                 = 0xcccccccccccccccc;
-//    resolveInit.part4 [0]              = 0x48;
-//    resolveInit.part4 [1]              = 0x3B;
-//    resolveInit.part4 [2]              = 0x50;
-//    resolveInit.mtOffset               = offsetof(ResolveCacheElem,pMT) & 0xFF;
-//    resolveInit.part5 [0]              = 0x75;
-//    resolveInit.toMiss1                = (offsetof(ResolveStub,miss)-(offsetof(ResolveStub,toMiss1)+1)) & 0xFF;
-//    resolveInit.part6 [0]              = 0x4C;
-//    resolveInit.part6 [1]              = 0x3B;
-//    resolveInit.part6 [2]              = 0x50;
-//    resolveInit.tokenOffset            = offsetof(ResolveCacheElem,token) & 0xFF;
-//    resolveInit.part7 [0]              = 0x75;
-//    resolveInit.toMiss2                = (offsetof(ResolveStub,miss)-(offsetof(ResolveStub,toMiss2)+1)) & 0xFF;
-//    resolveInit.part8 [0]              = 0x48;
-//    resolveInit.part8 [1]              = 0x8B;
-//    resolveInit.part8 [2]              = 0x40;
-//    resolveInit.targetOffset           = offsetof(ResolveCacheElem,target) & 0xFF;
-//    resolveInit.part9 [0]              = 0x5A;
-//    resolveInit.part9 [1]              = 0xFF;
-//    resolveInit.part9 [2]              = 0xE0;
-//    resolveInit._failEntryPoint [0]    = 0x48;
-//    resolveInit._failEntryPoint [1]    = 0xB8;
-//    resolveInit._pCounter              = (INT32*) (size_t) 0xcccccccccccccccc;
-//    resolveInit.part11 [0]             = 0x83;
-//    resolveInit.part11 [1]             = 0x00;
-//    resolveInit.part11 [2]             = 0xFF;
-//    resolveInit.part11 [3]             = 0x7D;
-//    resolveInit.toResolveStub1         = (offsetof(ResolveStub, _resolveEntryPoint) - (offsetof(ResolveStub, toResolveStub1)+1)) & 0xFF;
-//    resolveInit.part12 [0]             = 0x49;
-//    resolveInit.part12 [1]             = 0x83;
-//    resolveInit.part12 [2]             = 0xCB;
-//    resolveInit.part12 [3]             = 0x01;
-//    resolveInit._slowEntryPoint [0]    = 0x52;
-//    resolveInit._slowEntryPoint [1]    = 0x49;
-//    resolveInit._slowEntryPoint [2]    = 0xBA;
-//    resolveInit._tokenSlow             = 0xcccccccccccccccc;
-//    resolveInit.miss [0]               = 0x50;
-//    resolveInit.miss [1]               = 0x48;
-//    resolveInit.miss [2]               = 0xB8;
-//    resolveInit._resolveWorker         = 0xcccccccccccccccc;
-//    resolveInit.part10 [0]             = 0xFF;
-//    resolveInit.part10 [1]             = 0xE0;
-};
-
 void  ResolveHolder::Initialize(ResolveHolder* pResolveHolderRX, 
                                 PCODE resolveWorkerTarget, PCODE patcherTarget,
                                 size_t dispatchToken, UINT32 hashedToken,
                                 void * cacheAddr, INT32 counterValue)
 {
-    //_stub = resolveInit;
-
-    ////fill in the stub specific fields
-    //_stub._cacheAddress       = (size_t) cacheAddr;
-    //_stub._hashedToken        = hashedToken << LOG2_PTRSIZE;
-    //_stub._token              = dispatchToken;
-    //_stub._tokenSlow          = dispatchToken;
-    //_stub._resolveWorker      = (size_t) resolveWorkerTarget;
-    //_stub._pCounter           = counterAddr;
     *(void**)((BYTE*)this + 4096) = cacheAddr;
     *(UINT32*)((BYTE*)this + 4096 + 8) = hashedToken << LOG2_PTRSIZE;
     *(UINT32*)((BYTE*)this + 4096 + 12) = CALL_STUB_CACHE_MASK * sizeof(void*); // TODO: Move this to code

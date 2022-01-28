@@ -499,7 +499,7 @@ struct InvalidPrecode {
 struct StubPrecodeData
 {
     PCODE Target;
-    MethodDesc *MethodDesc;
+    PTR_MethodDesc MethodDesc;
     BYTE Type;
 };
 
@@ -534,7 +534,7 @@ struct StubPrecode {
     {
         LIMITED_METHOD_DAC_CONTRACT;
 
-        return (TADDR)GetData()->MethodDesc;
+        return dac_cast<TADDR>(GetData()->MethodDesc);
     }
 
     PCODE GetTarget()
@@ -602,7 +602,7 @@ struct NDirectImportPrecode : StubPrecode {
 
     void Init(NDirectImportPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator);
 
-    LPVOID GetEntrypoint()
+    LPVOID GetEntryPoint()
     {
         LIMITED_METHOD_CONTRACT;
         return this;

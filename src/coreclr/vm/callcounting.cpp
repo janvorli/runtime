@@ -268,6 +268,8 @@ const CallCountingStub *CallCountingManager::CallCountingStubAllocator::Allocate
     return stub;
 }
 
+extern "C" void CallCountingStubCode();
+
 size_t CallCountingStub::GenerateCodePage(uint8_t* pageBaseRX)
 {
 #if TARGET_AMD64
@@ -436,6 +438,44 @@ a:  ff 25 f5 0f 00 00       jmp    DWORD PTR ds:0xff5
     // memcpy(pageBase + 768, pageBase, 768);
     // memcpy(pageBase + 1536, pageBase, 1536);
     // memcpy(pageBase + 3072, pageBase, 1008);
+
+#elif TARGET_ARM
+/*    
+start:
+push {r0}
+ldr r12, [pc, #0xffc]
+ldrh r0, [r12]
+subs r0, #1
+strh r0, [r12]
+pop {r0}
+beq 0f
+ldr pc, [pc, #0xff0]
+0:
+adr r12, start
+ldr pc, [pc, #0xfec]
+
+0x0000000000000000:  01 B4          push   {r0}
+0x0000000000000002:  DF F8 FC CF    ldr.w  ip, [pc, #0xffc]
+0x0000000000000006:  BC F8 00 00    ldrh.w r0, [ip]
+0x000000000000000a:  01 38          subs   r0, #1
+0x000000000000000c:  AC F8 00 00    strh.w r0, [ip]
+0x0000000000000010:  01 BC          pop    {r0}
+0x0000000000000012:  01 D0          beq    #0x18
+0x0000000000000014:  DF F8 F0 FF    ldr.w  pc, [pc, #0xff0]
+0x0000000000000018:  AF F2 1C 0C    subw   ip, pc, #0x1c
+0x000000000000001c:  DF F8 EC FF    ldr.w  pc, [pc, #0xfec]
+*/
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, 4096);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
+
+    memcpy(pageBase, (const void*)&CallCountingStubCode, 32);
+    memcpy(pageBase + 32, pageBase, 32);
+    memcpy(pageBase + 64, pageBase, 64);
+    memcpy(pageBase + 128, pageBase, 128);
+    memcpy(pageBase + 256, pageBase, 256);
+    memcpy(pageBase + 512, pageBase, 512);
+    memcpy(pageBase + 1024, pageBase, 1024);
+    memcpy(pageBase + 2048, pageBase, 2048);
 
 #else
 #error Not implemented yet
