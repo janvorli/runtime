@@ -1024,7 +1024,7 @@ EXTERN_C VOID STDCALL PrecodeFixupThunk();
 
 #define PRECODE_ALIGNMENT           sizeof(void*)
 #define SIZEOF_PRECODE_BASE         CODE_SIZE_ALIGN
-#define OFFSETOF_PRECODE_TYPE       0
+#define OFFSETOF_PRECODE_TYPE       3
 
 // Invalid precode type
 struct InvalidPrecode {
@@ -1042,7 +1042,7 @@ typedef DPTR(StubPrecodeData) PTR_StubPrecodeData;
 
 struct StubPrecode 
 {
-    static const int Type = 0xdf;
+    static const int Type = 0xcf;
 
     BYTE m_code[12];
 
@@ -1071,7 +1071,7 @@ struct StubPrecode
     {
         LIMITED_METHOD_CONTRACT;
         //return (LPVOID)(dac_cast<TADDR>(this) + 4 + THUMB_CODE);
-        return DataPointerToThumbCode<PCODE, TADDR>(dac_cast<TADDR>(this) + 4);
+        return DataPointerToThumbCode<PCODE, TADDR>(dac_cast<TADDR>(this));
     }
 
 #ifndef DACCESS_COMPILE
@@ -1124,9 +1124,9 @@ typedef DPTR(FixupPrecodeData) PTR_FixupPrecodeData;
 
 struct FixupPrecode 
 {
-    static const int Type = 0xfc;
+    static const int Type = 0xff;
 
-    BYTE    m_code[16];
+    BYTE    m_code[12];
 
     void Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator, int iMethodDescChunkIndex = 0, int iPrecodeChunkIndex = 0);
 
@@ -1153,7 +1153,7 @@ struct FixupPrecode
     {
         LIMITED_METHOD_CONTRACT;
         //return (LPVOID)(dac_cast<TADDR>(this) + 4 + THUMB_CODE);
-        return DataPointerToThumbCode<PCODE, TADDR>(dac_cast<TADDR>(this) + 4);
+        return DataPointerToThumbCode<PCODE, TADDR>(dac_cast<TADDR>(this));
     }
 
 #ifndef DACCESS_COMPILE
@@ -1167,7 +1167,8 @@ struct FixupPrecode
         CONTRACTL_END;
 
         FixupPrecodeData *pData = GetData();
-        InterlockedExchangeT<PCODE>(&pData->Target, GetEEFuncEntryPoint(PrecodeFixupThunk));
+        PCODE target = (PCODE)this + 4 + THUMB_CODE;
+        InterlockedExchangeT<PCODE>(&pData->Target, target);
     }
 
     BOOL SetTargetInterlocked(TADDR target, TADDR expected)
@@ -1180,20 +1181,32 @@ struct FixupPrecode
         CONTRACTL_END;
 
         FixupPrecodeData *pData = GetData();
-        return InterlockedCompareExchangeT<PCODE>(&pData->Target, (PCODE)target, (PCODE)expected) == expected;
+        PCODE oldTarget = pData->Target;
+        if (oldTarget != ((PCODE)this + 4 + THUMB_CODE))
+        {
+#ifdef FEATURE_CODE_VERSIONING
+            // No change needed, jmp is already in place
+#else
+            // Setting the target more than once is unexpected
+            return FALSE;
+#endif
+        }
+
+        return InterlockedCompareExchangeT<PCODE>(&pData->Target, (PCODE)target, oldTarget) == oldTarget;
     }
 #endif // !DACCESS_COMPILE
 
-    static BOOL IsFixupPrecodeByASM(PCODE addr)
-    {
-        PTR_WORD pInstr = dac_cast<PTR_WORD>(PCODEToPINSTR(addr));
+    // static BOOL IsFixupPrecodeByASM(PCODE addr)
+    // {
+    //     PTR_WORD pInstr = dac_cast<PTR_WORD>(PCODEToPINSTR(addr));
 
-        return
-           (pInstr[0] == 0xf8df) &&
-           (pInstr[1] == 0xcffc) &&
-           (pInstr[2] == 0xf8df) &&
-           (pInstr[3] == 0xfffc);
-    }
+    // TODO: fix this
+    //     return
+    //        (pInstr[0] == 0xf8df) &&
+    //        (pInstr[1] == 0xcffc) &&
+    //        (pInstr[2] == 0xf8df) &&
+    //        (pInstr[3] == 0xfffc);
+    // }
 
 #ifdef DACCESS_COMPILE
     void EnumMemoryRegions(CLRDataEnumMemoryFlags flags);
@@ -1205,7 +1218,7 @@ typedef DPTR(FixupPrecode) PTR_FixupPrecode;
 // Precode to shuffle this and retbuf for closed delegates over static methods with return buffer
 struct ThisPtrRetBufPrecode {
 
-    static const int Type = 0x84;
+    static const int Type = 0x46;
 
     // mov r12, r0
     // mov r0, r1
@@ -1312,7 +1325,7 @@ typedef DPTR(const CallCountingStubData) PTR_CallCountingStubData;
 
 class CallCountingStub
 {
-    UINT8 m_code[24];
+    UINT8 m_code[32];
 
 public:
     static const SIZE_T Alignment = sizeof(void *);

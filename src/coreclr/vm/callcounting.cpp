@@ -468,7 +468,7 @@ ldr pc, [pc, #0xfec]
     ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, 4096);
     uint8_t* pageBase = codePageWriterHolder.GetRW();
 
-    memcpy(pageBase, (const void*)&CallCountingStubCode, 32);
+    memcpy(pageBase, (const void*)PCODEToPINSTR((PCODE)&CallCountingStubCode), 32);
     memcpy(pageBase + 32, pageBase, 32);
     memcpy(pageBase + 64, pageBase, 64);
     memcpy(pageBase + 128, pageBase, 128);

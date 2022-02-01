@@ -2125,7 +2125,7 @@ MethodDesc* NonVirtualEntry2MethodDesc(PCODE entryPoint)
     if (pRS == NULL)
     {
         // TODO: this is a hack, probably need to update the ExecutionManager to track the new precodes
-        Precode* pPrecode = (Precode*)entryPoint;
+        Precode* pPrecode = (Precode*)PCODEToPINSTR(entryPoint);
 
         switch (pPrecode->GetType())
         {

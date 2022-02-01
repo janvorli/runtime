@@ -1196,9 +1196,9 @@ void LoaderAllocator::Init(BaseDomain *pDomain, BYTE *pExecutableHeapMemory)
     m_pPrecodeHeap = new (&m_PrecodeHeapInstance) CodeFragmentHeap(this, STUB_CODE_BLOCK_PRECODE);
 
     // NOTE: use StubHeap for the StubPrecode for now. Figure out how to migrate the CodeFragmentHeap to a model that can use the dual alloc
-    m_pNewStubPrecodeHeap = new (&m_NewStubPrecodeHeapInstance) StubHeap(0, sizeof(StubPrecode), 24, StubPrecode::GenerateCodePage);
+    m_pNewStubPrecodeHeap = new (&m_NewStubPrecodeHeapInstance) StubHeap(0, sizeof(StubPrecode), sizeof(StubPrecode), StubPrecode::GenerateCodePage);
 
-    m_pFixupPrecodeHeap = new (&m_FixupPrecodeHeapInstance) StubHeap(0, sizeof(FixupPrecode), 24, FixupPrecode::GenerateCodePage);
+    m_pFixupPrecodeHeap = new (&m_FixupPrecodeHeapInstance) StubHeap(0, sizeof(FixupPrecode), sizeof(FixupPrecode), FixupPrecode::GenerateCodePage);
 
     // Initialize the EE marshaling data to NULL.
     m_pMarshalingData = NULL;

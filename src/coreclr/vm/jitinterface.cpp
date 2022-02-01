@@ -8847,7 +8847,7 @@ void CEEInfo::getFunctionEntryPoint(CORINFO_METHOD_HANDLE  ftnHnd,
 
     if (!ftn->IsFCall() && ftn->MayHavePrecode() && ftn->GetPrecodeType() == PRECODE_FIXUP)
     {
-        ret = PTR_PCODE(ftn->GetOrCreatePrecode()->GetEntryPoint() + 4096);
+        ret = PTR_PCODE(PCODEToPINSTR(ftn->GetOrCreatePrecode()->GetEntryPoint()) + 4096);
         accessType = IAT_PVALUE;
     }
     else

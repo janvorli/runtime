@@ -99,7 +99,7 @@ slowEntryPoint
         ldr pc, VSDResolveStubCode + 4096 + ResolveStubData__ResolveWorkerTarget
 failEntryPoint
         push {r5}
-        ldr r5, VSDResolveStubCode + 4096 + ResolveStubData__Counter
+        adr r5, VSDResolveStubCode + 4096 + ResolveStubData__Counter
         ldr r12, [r5]
         subs r12, r12, #1
         str r12, [r5]

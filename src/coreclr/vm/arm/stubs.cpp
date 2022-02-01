@@ -760,7 +760,7 @@ size_t StubPrecode::GenerateCodePage(uint8_t* pageBaseRX)
     ExecutableWriterHolder<uint8_t> codePageWriterHolder((uint8_t*)pageBaseRX, 4096);
     uint8_t* pageBase = codePageWriterHolder.GetRW();
 
-    memcpy(pageBase, (const void*)&StubPrecodeCode, 12);
+    memcpy(pageBase, (const void*)PCODEToPINSTR((PCODE)&StubPrecodeCode), 12);
     memcpy(pageBase + 12, pageBase, 12);
     memcpy(pageBase + 24, pageBase, 24);
     memcpy(pageBase + 48, pageBase, 48);
@@ -769,7 +769,7 @@ size_t StubPrecode::GenerateCodePage(uint8_t* pageBaseRX)
     memcpy(pageBase + 384, pageBase, 384);
     memcpy(pageBase + 768, pageBase, 768);
     memcpy(pageBase + 1536, pageBase, 1536);
-    memcpy(pageBase + 3072, pageBase, 1008);
+    memcpy(pageBase + 3072, pageBase, 1020);
 
     ClrFlushInstructionCache(pageBaseRX, 4096);
 
@@ -802,7 +802,7 @@ void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocat
 
     if (pLoaderAllocator != NULL)
     {
-        pData->Target = (PCODE)pPrecodeRX + 8;
+        pData->Target = (PCODE)pPrecodeRX + 4 + THUMB_CODE;
     }
 
     pData->PrecodeFixupThunk = (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk);
@@ -813,14 +813,9 @@ extern "C" void FixupPrecodeCode();
 size_t FixupPrecode::GenerateCodePage(uint8_t* pageBaseRX)
 {
 /*    
-0x0000000000000000:  00 BF          nop   
-0x0000000000000002:  00 BF          nop   
-0x0000000000000004:  DF F8 FC FF    ldr.w pc, [pc, #0xffc]
-0x0000000000000008:  DF F8 FC CF    ldr.w ip, [pc, #0xffc]
-0x000000000000000c:  DF F8 FC FF    ldr.w pc, [pc, #0xffc]
-        nop
-        nop
-FixupPrecodeCode_Entry
+0x0000000000000000:  DF F8 FC FF    ldr.w pc, [pc, #0xffc]
+0x0000000000000004:  DF F8 FC CF    ldr.w ip, [pc, #0xffc]
+0x0000000000000008:  DF F8 FC FF    ldr.w pc, [pc, #0xffc]
         ldr pc, [pc, #4092]
         ldr r12, [pc, #4092]
         ldr pc, [pc, #4092]    
@@ -829,15 +824,16 @@ FixupPrecodeCode_Entry
     ExecutableWriterHolder<uint8_t> codePageWriterHolder((uint8_t*)pageBaseRX, 4096);
     uint8_t* pageBase = codePageWriterHolder.GetRW();
 
-    memcpy(pageBase, (const void*)&FixupPrecodeCode, 16);
-    memcpy(pageBase + 16, pageBase, 16);
-    memcpy(pageBase + 32, pageBase, 32);
-    memcpy(pageBase + 64, pageBase, 64);
-    memcpy(pageBase + 128, pageBase, 128);
-    memcpy(pageBase + 256, pageBase, 256);
-    memcpy(pageBase + 512, pageBase, 512);
-    memcpy(pageBase + 1024, pageBase, 1024);
-    memcpy(pageBase + 2048, pageBase, 2048);
+    memcpy(pageBase, (const void*)PCODEToPINSTR((PCODE)&FixupPrecodeCode), 12);
+    memcpy(pageBase + 12, pageBase, 12);
+    memcpy(pageBase + 24, pageBase, 24);
+    memcpy(pageBase + 48, pageBase, 48);
+    memcpy(pageBase + 96, pageBase, 96);
+    memcpy(pageBase + 192, pageBase, 192);
+    memcpy(pageBase + 384, pageBase, 384);
+    memcpy(pageBase + 768, pageBase, 768);
+    memcpy(pageBase + 1536, pageBase, 1536);
+    memcpy(pageBase + 3072, pageBase, 1020);
     ClrFlushInstructionCache(pageBaseRX, 4096);
 
     return 0;
@@ -955,7 +951,7 @@ BOOL DoesSlotCallPrestub(PCODE pCode)
             pTarget = decodeJump(pTarget);
         }
 
-        return pTarget == (TADDR)pInstr + 8;
+        return pTarget == (TADDR)pInstr + 4 + THUMB_CODE;
     }
 
     // StubPrecode

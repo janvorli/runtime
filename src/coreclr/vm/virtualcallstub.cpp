@@ -4288,7 +4288,7 @@ size_t LookupHolder::GenerateCodePage(uint8_t* pageBaseRX)
     ExecutableWriterHolder<uint8_t> codePageWriterHolder((uint8_t*)pageBaseRX, 4096);
     uint8_t* pageBase = codePageWriterHolder.GetRW();
 
-    memcpy(pageBase, (const void*)&VSDLookupStubCode, 12);
+    memcpy(pageBase, (const void*)PCODEToPINSTR((PCODE)&VSDLookupStubCode), 12);
     memcpy(pageBase + 12, pageBase, 12);
     memcpy(pageBase + 24, pageBase, 24);
     memcpy(pageBase + 48, pageBase, 48);
@@ -4297,7 +4297,7 @@ size_t LookupHolder::GenerateCodePage(uint8_t* pageBaseRX)
     memcpy(pageBase + 384, pageBase, 384);
     memcpy(pageBase + 768, pageBase, 768);
     memcpy(pageBase + 1536, pageBase, 1536);
-    memcpy(pageBase + 3072, pageBase, 1008);
+    memcpy(pageBase + 3072, pageBase, 1020);
     ClrFlushInstructionCache(pageBaseRX, 4096);
 
     return 0;
@@ -4320,8 +4320,8 @@ size_t DispatchHolder::GenerateCodePage(uint8_t* pageBaseRX)
 0x0000000000000014:  DF F8 FC FF    ldr.w pc, [pc, #0xff4]
 */
 
-    memcpy(pageBase, (const void*)&VSDDispatchStubCode, 24);
-    _ASSERTE(*(DWORD*)pageBase == DISPATCH_STUB_FIRST_WORD);
+    memcpy(pageBase, (const void*)PCODEToPINSTR((PCODE)&VSDDispatchStubCode), 24);
+    _ASSERTE(*(WORD*)pageBase == DISPATCH_STUB_FIRST_WORD);
     memcpy(pageBase + 24, pageBase, 24);
     memcpy(pageBase + 48, pageBase, 48);
     memcpy(pageBase + 96, pageBase, 96);
@@ -4394,8 +4394,8 @@ failEntryPoint
     ExecutableWriterHolder<uint8_t> codePageWriterHolder((uint8_t*)pageBaseRX, 4096);
     uint8_t* pageBase = codePageWriterHolder.GetRW();
 
-    memcpy(pageBase, (const void*)&VSDResolveStubCode, 108);
-    _ASSERTE(*(DWORD*)pageBase == RESOLVE_STUB_FIRST_WORD);
+    memcpy(pageBase, (const void*)PCODEToPINSTR((PCODE)&VSDResolveStubCode), 108);
+    _ASSERTE(*(WORD*)pageBase == RESOLVE_STUB_FIRST_WORD);
 
     memcpy(pageBase + 108, pageBase, 108);
     memcpy(pageBase + 216, pageBase, 216);

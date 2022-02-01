@@ -189,7 +189,7 @@ BOOL Precode::IsPointingToPrestub(PCODE target)
 #ifdef TARGET_ARM64
     if (IsPointingTo(target, ((PCODE)this + 8)))
 #elif defined(TARGET_ARM)
-    if (IsPointingTo(target, ((PCODE)this + 8)))
+    if (IsPointingTo(target, ((PCODE)this + 4 + THUMB_CODE)))
 #elif defined(TARGET_AMD64)
     if (IsPointingTo(target, ((PCODE)this + 6)))
 #elif defined(TARGET_X86)
