@@ -21,3 +21,56 @@ LEAF_ENTRY FixupPrecodeCode, _TEXT
         nop
         .endr
 LEAF_END FixupPrecodeCode, _TEXT
+
+LEAF_ENTRY CallCountingStubCode, _TEXT
+        mov    rax,QWORD PTR [rip + CallCountingStubCode + 4096 + CallCountingStubData__RemainingCallCountCell]
+        dec    WORD PTR [rax]
+        je     CountReachedZero
+        jmp    QWORD PTR [rip + CallCountingStubCode + 4096 + CallCountingStubData__TargetForMethod]
+    CountReachedZero:
+        call   QWORD PTR [rip + CallCountingStubCode + 4096 + CallCountingStubData__TargetForThresholdReached]
+LEAF_END CallCountingStubCode, _TEXT
+
+LEAF_ENTRY LookupStubCode, _TEXT
+       nop
+       push   QWORD PTR [rip + LookupStubCode + 4096 + LookupStubData__DispatchToken]
+       jmp    QWORD PTR [rip + LookupStubCode + 4096 + LookupStubData__ResolveWorkerTarget]
+LEAF_END LookupStubCode, _TEXT
+
+LEAF_ENTRY DispatchStubCode, _TEXT
+       mov    rax,QWORD PTR [rip + DispatchStubCode + 4096 + DispatchStubData__ExpectedMT]
+       cmp    QWORD PTR [rcx],rax;
+       jne    Fail
+       jmp    QWORD PTR [rip + DispatchStubCode + 4096 + DispatchStubData__ImplTarget]
+    Fail:
+       jmp    QWORD PTR [rip + DispatchStubCode + 4096 + DispatchStubData__FailTarget]
+LEAF_END DispatchStubCode, _TEXT
+
+LEAF_ENTRY ResolveStubCode, _TEXT
+        push   rdx
+        mov    r10,QWORD PTR [rip + ResolveStubCode + 4096 + ResolveStubData__CacheAddress]
+        mov    rax,QWORD PTR [rcx]
+        mov    rdx,rax
+        shr    rax,12
+        add    rax,rdx
+        xor    eax,DWORD PTR [rip + ResolveStubCode + 4096 + ResolveStubData__HashedToken]
+        and    eax,DWORD PTR [rip + ResolveStubCode + 4096 + ResolveStubData__CacheMask]
+        mov    rax,QWORD PTR [r10+rax*1]
+        mov    r10,QWORD PTR [rip + ResolveStubCode + 4096 + ResolveStubData__Token]
+        cmp    rdx,QWORD PTR [rax]
+        jne    miss
+        cmp    r10,QWORD PTR [rax+8]
+        jne    miss
+        pop    rdx
+        jmp    QWORD PTR [rax+0x10]
+PATCH_LABEL ResolveStubCode_FailEntry
+        add    DWORD PTR [rip + ResolveStubCode + 4096 + ResolveStubData__Counter], -1
+        jge    ResolveStubCode
+        or     r11, 1 // SDF_ResolveBackPatch
+PATCH_LABEL ResolveStubCode_SlowEntry
+        push   rdx
+        mov    r10,QWORD PTR [rip + ResolveStubCode + 4096 + ResolveStubData__Token]
+miss:
+        push   rax
+        jmp    QWORD PTR [rip + ResolveStubCode + 4096 + ResolveStubData__ResolveWorkerTarget]
+LEAF_END ResolveStubCode, _TEXT

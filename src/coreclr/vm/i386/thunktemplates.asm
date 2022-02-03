@@ -31,33 +31,27 @@ _FixupPrecodeCode@0 PROC PUBLIC
         REPEAT  7
         nop
         ENDM
-
 _FixupPrecodeCode@0 ENDP
 
-_VSDLookupStubCode@0 PROC PUBLIC
-
+_LookupStubCode@0 PROC PUBLIC
         push   eax
-        push   dword ptr _VSDLookupStubCode@0 + 1000h
-        jmp    dword ptr _VSDLookupStubCode@0 + 1004h
+        push   dword ptr _LookupStubCode@0 + 4096 + LookupStubData__DispatchToken
+        jmp    dword ptr _LookupStubCode@0 + 4096 + LookupStubData__ResolveWorkerTarget
+_LookupStubCode@0 ENDP
 
-_VSDLookupStubCode@0 ENDP
-
-_VSDDispatchStubCode@0 PROC PUBLIC
-
+_DispatchStubCode@0 PROC PUBLIC
         push   eax
-        mov    eax, dword ptr _VSDLookupStubCode@0 + 1000h
+        mov    eax, dword ptr _DispatchStubCode@0 + 4096 + DispatchStubData__ExpectedMT
         cmp    dword ptr [ecx],eax
         pop    eax
         jne    NoMatch
-        jmp    dword ptr _VSDDispatchStubCode@0 + 1004h
+        jmp    dword ptr _DispatchStubCode@0 + 4096 + DispatchStubData__ImplTarget
 NoMatch:
-        jmp    dword ptr _VSDDispatchStubCode@0 + 1008h
+        jmp    dword ptr _DispatchStubCode@0 + 4096 + DispatchStubData__FailTarget
+_DispatchStubCode@0 ENDP
 
-_VSDDispatchStubCode@0 ENDP
-
-_VSDResolveStubCode@0 PROC PUBLIC
-
-        sub dword ptr _VSDResolveStubCode@0 + 1010h, 1
+_ResolveStubCode@0 PROC PUBLIC
+        sub dword ptr _ResolveStubCode@0 + 1010h, 1
         jl Backpatcher
 Resolve:
         push    eax
@@ -66,16 +60,16 @@ Resolve:
         mov     edx,eax
         shr     eax, 12
         add     eax,edx
-        xor     eax,dword ptr _VSDResolveStubCode@0 + 1004h; <<< hashedToken
+        xor     eax,dword ptr _ResolveStubCode@0 + 4096 + ResolveStubData__HashedToken
 HashedTokenAddr EQU .-4
-        and     eax,dword ptr _VSDResolveStubCode@0 + 1008h; <<< cacheMask
+        and     eax,dword ptr _ResolveStubCode@0 + 4096 + ResolveStubData__CacheMask
 CacheMaskAddr EQU .-4
-        add     eax,dword ptr _VSDResolveStubCode@0 + 1000h; <<< lookupCache
+        add     eax,dword ptr _ResolveStubCode@0 + 4096 + ResolveStubData__CacheAddress
 LookupCacheAddr EQU .-4
         mov     eax,dword ptr [eax]
         cmp     edx,dword ptr [eax]
         jne     Miss
-        mov     edx,dword ptr _VSDResolveStubCode@0 + 100ch; <<< token
+        mov     edx,dword ptr _ResolveStubCode@0 + 4096 + ResolveStubData__Token
 TokenAddr1 EQU .-4
         cmp     edx,dword ptr [eax + 4]
         jne     Miss
@@ -86,15 +80,14 @@ TokenAddr1 EQU .-4
 Miss:
         pop     edx
 Slow:
-        push    dword ptr _VSDResolveStubCode@0 + 100ch; <<< token
+        push    dword ptr _ResolveStubCode@0 + 4096 + ResolveStubData__Token
 TokenAddr2 EQU .-4
-        jmp     dword ptr _VSDResolveStubCode@0 + 1014h; <<< resolveWorker == ResolveWorkerChainLookupAsmStub or ResolveWorkerAsmStub
+        jmp     dword ptr _ResolveStubCode@0 + 4096 + ResolveStubData__ResolveWorkerTarget; <<< resolveWorker == ResolveWorkerChainLookupAsmStub or ResolveWorkerAsmStub
 ResolveWorkerAddr EQU .-4
 Backpatcher:
-        call    dword ptr _VSDResolveStubCode@0 + 1018h; <<< backpatcherWorker == BackPatchWorkerAsmStub
+        call    dword ptr _ResolveStubCode@0 + 4096 + ResolveStubData__PatcherTarget; <<< backpatcherWorker == BackPatchWorkerAsmStub
 BackpatcherWorkerAddr EQU .-4
         jmp     Resolve
-
-_VSDResolveStubCode@0 ENDP
+_ResolveStubCode@0 ENDP
 
         end

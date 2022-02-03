@@ -10,29 +10,28 @@
 #define RESOLVE_STUB_FIRST_DWORD 0xF940000C
 #define VTABLECALL_STUB_FIRST_DWORD 0xF9400009
 
-struct ARM64EncodeHelpers
+#define USES_LOOKUP_STUBS   1
+
+struct LookupStubData
 {
-     inline static DWORD ADR_PATCH(DWORD offset)
-     {
-        DWORD immLO = (offset & 0x03)<<29 ;
-
-        if (immLO ==0 )
-            return  (offset<<3);
-        else
-            return immLO<<29 | (offset -immLO)<<3;
-     }
-
+    size_t DispatchToken;
+    PCODE  ResolveWorkerTarget;
 };
 
-#define USES_LOOKUP_STUBS   1
+typedef DPTR(LookupStubData) PTR_LookupStubData;
 
 struct LookupStub
 {
-    inline PCODE entryPoint() { LIMITED_METHOD_CONTRACT; return (PCODE)&_entryPoint[0]; }
-    inline size_t token() { LIMITED_METHOD_CONTRACT; return *(size_t*)((BYTE*)this + 4096); }
-    inline size_t size() { LIMITED_METHOD_CONTRACT; return sizeof(LookupStub); }
+    inline PCODE entryPoint() { LIMITED_METHOD_CONTRACT; return (PCODE)this; }
+    inline size_t token()           { LIMITED_METHOD_CONTRACT; return GetData()->DispatchToken; }
+    inline size_t  size() { LIMITED_METHOD_CONTRACT; return sizeof(LookupStub); }
 private :
     friend struct LookupHolder;
+
+    PTR_LookupStubData GetData() const
+    {
+        return dac_cast<PTR_LookupStubData>((uint8_t*)this + 4096);
+    }
 
     DWORD _entryPoint[4];
 };
@@ -44,8 +43,9 @@ private:
 public:
     void  Initialize(LookupHolder* pLookupHolderRX, PCODE resolveWorkerTarget, size_t dispatchToken)
     {
-        *(size_t*)((BYTE*)this + 4096) = dispatchToken;
-        *(size_t*)((BYTE*)this + 4096 + 8) = (size_t)resolveWorkerTarget;
+        LookupStubData *pData = stub()->GetData();
+        pData->DispatchToken = dispatchToken;
+        pData->ResolveWorkerTarget = resolveWorkerTarget;
     }
 
     static size_t GenerateCodePage(uint8_t* pageBase);
@@ -57,16 +57,26 @@ public:
     }
 };
 
+struct DispatchStubData
+{
+    size_t ExpectedMT;
+    PCODE ImplTarget;
+    PCODE FailTarget;
+};
+
+typedef DPTR(DispatchStubData) PTR_DispatchStubData;
+
 struct DispatchStub
 {
     inline PCODE entryPoint()         { LIMITED_METHOD_CONTRACT; return (PCODE)&_entryPoint[0]; }
+    inline size_t expectedMT() const { LIMITED_METHOD_CONTRACT;  return GetData()->ExpectedMT; }
+    inline size_t size()        { LIMITED_METHOD_CONTRACT; return sizeof(DispatchStub); }
 
-    inline size_t expectedMT() const { LIMITED_METHOD_CONTRACT;  return *(PCODE*)((BYTE*)this + 4096);     }
 
     inline PCODE implTarget() const
     {
         LIMITED_METHOD_CONTRACT;
-        return *(PCODE*)((BYTE*)this + 4096 + 8);
+        return GetData()->ImplTarget;
     }
 
     inline TADDR implTargetSlot(EntryPointSlots::SlotType *slotTypeRef) const
@@ -75,32 +85,33 @@ struct DispatchStub
         _ASSERTE(slotTypeRef != nullptr);
 
         *slotTypeRef = EntryPointSlots::SlotType_Normal;
-        return (TADDR)((BYTE*)this + 4096 + 8);
+        return (TADDR)&GetData()->ImplTarget;
     }
 
     inline PCODE failTarget() const
     {
-        return *(PCODE*)((BYTE*)this + 4096 + 16);
+        return GetData()->FailTarget;
     }
-
-    inline size_t size()        { LIMITED_METHOD_CONTRACT; return sizeof(DispatchStub); }
 
 private:
     friend struct DispatchHolder;
 
     DWORD _entryPoint[8];
-    //size_t  _expectedMT;
-    //PCODE _implTarget;
-    //PCODE _failTarget;
+
+    PTR_DispatchStubData GetData() const
+    {
+        return dac_cast<PTR_DispatchStubData>((uint8_t*)this + 4096);
+    }
 };
 
 struct DispatchHolder
 {
     void  Initialize(DispatchHolder* pDispatchHolderRX, PCODE implTarget, PCODE failTarget, size_t expectedMT)
     {
-        *(size_t*)((BYTE*)stub() + 4096) = expectedMT;
-        *(PCODE*)((BYTE*)stub() + 4096 + 8) = implTarget;
-        *(PCODE*)((BYTE*)stub() + 4096 + 16) = failTarget;
+        DispatchStubData *pData = stub()->GetData();
+        pData->ExpectedMT = expectedMT;
+        pData->ImplTarget = implTarget;
+        pData->FailTarget = failTarget;
     }
 
     DispatchStub* stub()      { LIMITED_METHOD_CONTRACT; return &_stub; }
@@ -115,7 +126,7 @@ struct DispatchHolder
     static DispatchHolder*  FromDispatchEntry(PCODE dispatchEntry)
     {
         LIMITED_METHOD_CONTRACT;
-        DispatchHolder* dispatchHolder = (DispatchHolder*) ( dispatchEntry - offsetof(DispatchHolder, _stub) - offsetof(DispatchStub, _entryPoint) );
+        DispatchHolder* dispatchHolder = (DispatchHolder*)dispatchEntry;
         return dispatchHolder;
     }
 
@@ -123,17 +134,35 @@ private:
     DispatchStub _stub;
 };
 
+struct ResolveStubData
+{
+    size_t CacheAddress;
+    UINT32 HashedToken;
+    UINT32 CacheMask;
+    size_t Token;
+    INT32  Counter;
+    INT32  _dummy;
+    PCODE  ResolveWorkerTarget;
+    PCODE  PatcherTarget;
+};
+
+typedef DPTR(ResolveStubData) PTR_ResolveStubData;
+
+extern "C" void ResolveStubCode();
+extern "C" void ResolveStubCode_FailEntry();
+extern "C" void ResolveStubCode_SlowEntry();
+
 struct ResolveStub
 {
-    inline PCODE failEntryPoint()            { LIMITED_METHOD_CONTRACT; return (PCODE)&_failEntryPoint[0]; }
-    inline PCODE resolveEntryPoint()         { LIMITED_METHOD_CONTRACT; return (PCODE)&_resolveEntryPoint[0]; }
-    inline PCODE slowEntryPoint()            { LIMITED_METHOD_CONTRACT; return (PCODE)&_slowEntryPoint[0]; }
-    inline size_t  token()                   { LIMITED_METHOD_CONTRACT; return *(size_t*)((BYTE*)this + 4096 + 16); }
-    inline INT32*  pCounter()                { LIMITED_METHOD_CONTRACT; return (INT32*)((BYTE*)this + 4096 + 24); }
+    inline PCODE failEntryPoint()       { LIMITED_METHOD_CONTRACT; return (PCODE)((BYTE*)this + ((BYTE*)ResolveStubCode_FailEntry - (BYTE*)ResolveStubCode)); }
+    inline PCODE resolveEntryPoint()    { LIMITED_METHOD_CONTRACT; return (PCODE)((BYTE*)this); }
+    inline PCODE slowEntryPoint()       { LIMITED_METHOD_CONTRACT; return (PCODE)((BYTE*)this + ((BYTE*)ResolveStubCode_SlowEntry - (BYTE*)ResolveStubCode)); }
 
-    inline UINT32  hashedToken()             { LIMITED_METHOD_CONTRACT; return *(UINT32*)((BYTE*)this + 4096 + 8) >> LOG2_PTRSIZE;    }
-    inline size_t  cacheAddress()            { LIMITED_METHOD_CONTRACT; return *(size_t*)((BYTE*)this + 4096);   }
-    inline size_t  size()                    { LIMITED_METHOD_CONTRACT; return sizeof(ResolveStub); }
+    inline INT32* pCounter()            { LIMITED_METHOD_CONTRACT; return &GetData()->Counter; }
+    inline UINT32 hashedToken()         { LIMITED_METHOD_CONTRACT; return GetData()->HashedToken >> LOG2_PTRSIZE; }
+    inline size_t cacheAddress()        { LIMITED_METHOD_CONTRACT; return GetData()->CacheAddress; }
+    inline size_t token()               { LIMITED_METHOD_CONTRACT; return GetData()->Token; }
+    inline size_t size()                { LIMITED_METHOD_CONTRACT; return sizeof(ResolveStub); }
 
 private:
     friend struct ResolveHolder;
@@ -141,15 +170,12 @@ private:
     const static int slowEntryPointLen = 4;
     const static int failEntryPointLen = 8;
 
-    DWORD _resolveEntryPoint[resolveEntryPointLen];
-    DWORD _slowEntryPoint[slowEntryPointLen];
-    DWORD _failEntryPoint[failEntryPointLen];
-    DWORD _align[3];
-    //INT32*  _pCounter;               //Base of the Data Region
-    //size_t  _cacheAddress;           // lookupCache
-    //size_t  _token;
-    //PCODE   _resolveWorkerTarget;
-    //UINT32  _hashedToken;
+    PTR_ResolveStubData GetData() const
+    {
+        return dac_cast<PTR_ResolveStubData>((uint8_t*)this + 4096);
+    }
+
+    DWORD code[32];
 };
 
 struct ResolveHolder
@@ -157,14 +183,17 @@ struct ResolveHolder
     void Initialize(ResolveHolder* pResolveHolderRX,
                     PCODE resolveWorkerTarget, PCODE patcherTarget,
                     size_t dispatchToken, UINT32 hashedToken,
-                    void * cacheAddr, INT32 * counterAddr)
+                    void * cacheAddr, INT32 counterValue)
     {
-        *(void**)((BYTE*)this + 4096) = cacheAddr;
-        *(UINT32*)((BYTE*)this + 4096 + 8) = hashedToken << LOG2_PTRSIZE;
-        *(UINT32*)((BYTE*)this + 4096 + 12) = CALL_STUB_CACHE_MASK * sizeof(void*); // TODO: Move this to code
-        *(size_t*)((BYTE*)this + 4096 + 16) = dispatchToken;
-        *(INT32**)((BYTE*)this + 4096 + 24) = counterAddr; // TODO: make it the counter itself?
-        *(size_t*)((BYTE*)this + 4096 + 32) = (size_t)resolveWorkerTarget;
+        ResolveStubData *pData = stub()->GetData();
+
+        pData->CacheAddress = (size_t)cacheAddr;
+        pData->HashedToken = hashedToken << LOG2_PTRSIZE;
+        pData->CacheMask = CALL_STUB_CACHE_MASK * sizeof(void*);
+        pData->Token = dispatchToken;
+        pData->Counter = counterValue;
+        pData->ResolveWorkerTarget = resolveWorkerTarget;
+        pData->PatcherTarget = patcherTarget;
     }
 
     ResolveStub* stub()      { LIMITED_METHOD_CONTRACT; return &_stub; }
@@ -263,14 +292,14 @@ private:
 ResolveHolder* ResolveHolder::FromFailEntry(PCODE failEntry)
 {
     LIMITED_METHOD_CONTRACT;
-    ResolveHolder* resolveHolder = (ResolveHolder*) ( failEntry - offsetof(ResolveHolder, _stub) - offsetof(ResolveStub, _failEntryPoint) );
+    ResolveHolder* resolveHolder = (ResolveHolder*) ( failEntry - ((BYTE*)ResolveStubCode_FailEntry - (BYTE*)ResolveStubCode));
     return resolveHolder;
 }
 
 ResolveHolder* ResolveHolder::FromResolveEntry(PCODE resolveEntry)
 {
     LIMITED_METHOD_CONTRACT;
-    ResolveHolder* resolveHolder = (ResolveHolder*) ( resolveEntry - offsetof(ResolveHolder, _stub) - offsetof(ResolveStub, _resolveEntryPoint) );
+    ResolveHolder* resolveHolder = (ResolveHolder*)resolveEntry;
     return resolveHolder;
 }
 

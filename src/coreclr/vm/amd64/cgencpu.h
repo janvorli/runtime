@@ -531,10 +531,12 @@ typedef DPTR(const CallCountingStub) PTR_CallCountingStub;
 
 struct CallCountingStubData
 {
-    CallCount* RemainingCallCountCell;
+    PTR_CallCount RemainingCallCountCell;
     PCODE TargetForMethod;
     PCODE TargetForThresholdReached;
 };
+
+typedef DPTR(CallCountingStubData) PTR_CallCountingStubData;
 
 class CallCountingStub
 {
@@ -543,8 +545,13 @@ class CallCountingStub
 public:
     static const SIZE_T Alignment = sizeof(void *);
 
-#ifndef DACCESS_COMPILE
 protected:
+    PTR_CallCountingStubData GetData() const
+    {
+        return dac_cast<PTR_CallCountingStubData>((BYTE*)this + 4096);
+    }
+
+#ifndef DACCESS_COMPILE
     static const PCODE TargetForThresholdReached;
 
     CallCountingStub() = default;
@@ -564,13 +571,10 @@ public:
 #ifndef DACCESS_COMPILE
     void Initialize(PCODE targetForMethod, CallCount* remainingCallCountCell)
     {
-        CallCountingStubData* pStubData = (CallCountingStubData*)((BYTE*)this + 4096);
+        PTR_CallCountingStubData pStubData = GetData();
         pStubData->RemainingCallCountCell = remainingCallCountCell;
         pStubData->TargetForMethod = targetForMethod;
         pStubData->TargetForThresholdReached = CallCountingStub::TargetForThresholdReached;
-        // *(CallCount**)((BYTE*)this + 4096) = remainingCallCountCell;
-        // *(PCODE*)((BYTE*)this + 4096 + 8) = targetForMethod;
-        // *(PCODE*)((BYTE*)this + 4096 + 16) = CallCountingStub::TargetForThresholdReached;
     }
 #endif // !DACCESS_COMPILE
 
@@ -605,15 +609,14 @@ inline const CallCountingStub *CallCountingStub::From(TADDR stubIdentifyingToken
 inline PTR_CallCount CallCountingStub::GetRemainingCallCountCell() const
 {
     WRAPPER_NO_CONTRACT;
-    PTR_PTR_VOID cc = dac_cast<PTR_PTR_VOID>((UINT8*)this + 4096);
-    return dac_cast<PTR_CallCount>(*cc);
+    return GetData()->RemainingCallCountCell;
 }
 
 inline PCODE CallCountingStub::GetTargetForMethod() const
 {
     WRAPPER_NO_CONTRACT;
 
-    return *dac_cast<PTR_PCODE>((UINT8*)this + 4096 + 8);
+    return GetData()->TargetForMethod;
 }
 
 ////////////////////////////////////////////////////////////////

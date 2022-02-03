@@ -42,43 +42,42 @@ LCountReachedZero:
 
     .align 4
 
-    LEAF_ENTRY VSDLookupStubCode
-        ldr r12, VSDLookupStubCode + 4096 + LookupStubData__DispatchToken
-        ldr pc, VSDLookupStubCode + 4096 + LookupStubData__ResolveWorkerTarget
-    LEAF_END VSDLookupStubCode
+    LEAF_ENTRY LookupStubCode
+        ldr r12, LookupStubCode + 4096 + LookupStubData__DispatchToken
+        ldr pc, LookupStubCode + 4096 + LookupStubData__ResolveWorkerTarget
+    LEAF_END LookupStubCode
 
     .align 4
 
-    LEAF_ENTRY VSDDispatchStubCode
+    LEAF_ENTRY DispatchStubCode
         ldr r12, [r0]
         push {r5}
-        ldr r5, VSDDispatchStubCode + 4096 + DispatchStubData__ExpectedMT
+        ldr r5, DispatchStubCode + 4096 + DispatchStubData__ExpectedMT
         cmp r5, r12
         pop {r5}
         bne LFailTarget
-        ldr pc, VSDDispatchStubCode + 4096 + DispatchStubData__ImplTarget
+        ldr pc, DispatchStubCode + 4096 + DispatchStubData__ImplTarget
 LFailTarget:
-        ldr pc, VSDDispatchStubCode + 4096 + DispatchStubData__FailTarget
-    LEAF_END VSDDispatchStubCode
+        ldr pc, DispatchStubCode + 4096 + DispatchStubData__FailTarget
+    LEAF_END DispatchStubCode
 
     .align 4
 
-    LEAF_ENTRY VSDResolveStubCode
-resolveEntryPoint:
+    LEAF_ENTRY ResolveStubCode
         ldr r12, [r0]
         push {r5, r6}
         add r6, r12, r12,    lsr #12
-        ldr r5, VSDResolveStubCode + 4096 + ResolveStubData__HashedToken
+        ldr r5, ResolveStubCode + 4096 + ResolveStubData__HashedToken
         eor r6, r6, r5
-        ldr r5, VSDResolveStubCode + 4096 + ResolveStubData__CacheMask
+        ldr r5, ResolveStubCode + 4096 + ResolveStubData__CacheMask
         and r6, r6, r5
-        ldr r5, VSDResolveStubCode + 4096 + ResolveStubData__CacheAddress
+        ldr r5, ResolveStubCode + 4096 + ResolveStubData__CacheAddress
         ldr r6, [r5, r6]
 loop:
         ldr r5, [r6]
         cmp r12, r5
         bne nextEntry
-        ldr r5, VSDResolveStubCode + 4096 + ResolveStubData__Token
+        ldr r5, ResolveStubCode + 4096 + ResolveStubData__Token
         ldr r12, [r6, #4]
         cmp r12, r5
         bne nextEntry
@@ -94,20 +93,19 @@ slowEntryPoint2:
         pop {r5, r6}
         nop
 slowEntryPoint:
-        ldr r12, VSDResolveStubCode + 4096 + ResolveStubData__Token
-        ldr pc, VSDResolveStubCode + 4096 + ResolveStubData__ResolveWorkerTarget
+        ldr r12, ResolveStubCode + 4096 + ResolveStubData__Token
+        ldr pc, ResolveStubCode + 4096 + ResolveStubData__ResolveWorkerTarget
 failEntryPoint:
         push {r5}
-        adr r5, VSDResolveStubCode + 4096 + ResolveStubData__Counter
+        adr r5, ResolveStubCode + 4096 + ResolveStubData__Counter
         ldr r12, [r5]
         subs r12, r12, #1
         str r12, [r5]
         pop {r5}
-        //str r12, VSDResolveStubCode + 4096 + ResolveStubData__Counter
-        bge resolveEntryPoint2
+        //str r12, ResolveStubCode + 4096 + ResolveStubData__Counter
+        bge ResolveStubCode
         orr r4, r4, #1 // SDF_ResolveBackPatch
-resolveEntryPoint2:
-        b resolveEntryPoint
-    LEAF_END VSDResolveStubCode
+        b ResolveStubCode
+    LEAF_END ResolveStubCode
 
 

@@ -160,8 +160,8 @@ protected:
     BYTE                m_HighFreqHeapInstance[sizeof(LoaderHeap)];
     BYTE                m_StubHeapInstance[sizeof(LoaderHeap)];
     BYTE                m_PrecodeHeapInstance[sizeof(CodeFragmentHeap)];
-    BYTE                m_FixupPrecodeHeapInstance[sizeof(StubHeap)];
-    BYTE                m_NewStubPrecodeHeapInstance[sizeof(StubHeap)];
+    BYTE                m_FixupPrecodeHeapInstance[sizeof(LoaderHeap)];
+    BYTE                m_NewStubPrecodeHeapInstance[sizeof(LoaderHeap)];
     PTR_LoaderHeap      m_pLowFrequencyHeap;
     PTR_LoaderHeap      m_pHighFrequencyHeap;
     PTR_LoaderHeap      m_pStubHeap; // stubs for PInvoke, remoting, etc
@@ -170,8 +170,8 @@ protected:
 #ifdef FEATURE_READYTORUN
     PTR_CodeFragmentHeap m_pDynamicHelpersHeap;
 #endif
-    StubHeap*           m_pFixupPrecodeHeap;
-    StubHeap*           m_pNewStubPrecodeHeap;
+    PTR_LoaderHeap      m_pFixupPrecodeHeap;
+    PTR_LoaderHeap      m_pNewStubPrecodeHeap;
     //****************************************************************************************
     OBJECTHANDLE        m_hLoaderAllocatorObjectHandle;
     FuncPtrStubs *      m_pFuncPtrStubs; // for GetMultiCallableAddrOfCode()
@@ -447,7 +447,7 @@ public:
         return m_pPrecodeHeap;
     }
 
-    StubHeap* GetNewStubPrecodeHeap()
+    PTR_LoaderHeap GetNewStubPrecodeHeap()
     {
         LIMITED_METHOD_CONTRACT;
         return m_pNewStubPrecodeHeap;
@@ -461,7 +461,7 @@ public:
         return m_pExecutableHeap;
     }
 
-    StubHeap* GetFixupPrecodeHeap()
+    PTR_LoaderHeap GetFixupPrecodeHeap()
     {
         LIMITED_METHOD_CONTRACT;
         return m_pFixupPrecodeHeap;

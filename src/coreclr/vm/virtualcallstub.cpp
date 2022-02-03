@@ -4050,223 +4050,68 @@ BOOL VirtualCallStubManagerManager::TraceManager(
 
 #ifdef TARGET_ARM64
 
+extern "C" void LookupStubCode();
+
 size_t LookupHolder::GenerateCodePage(uint8_t* pageBaseRX)
 {
-    // ldr x12, #4096
-    // ldp x10, #4100
-    // br x10
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder((uint8_t*)pageBaseRX, 4096);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
 
-    ExecutableWriterHolder<uint32_t> codePageWriterHolder((uint32_t*)pageBaseRX, 4096/4);
-    uint32_t* pageBase = codePageWriterHolder.GetRW();
+    memcpy(pageBase, (const void*)PCODEToPINSTR((PCODE)&LookupStubCode), 16);
 
-    pageBase[0] = 0x5800800C;
-    pageBase[1] = 0x5800802A;
-    pageBase[2] = 0xd61f0140;
-    pageBase[3] = 0xD503201F; // nop
-
-    memcpy(pageBase + 4, pageBase, 16);
-    memcpy(pageBase + 8, pageBase, 32);
-    memcpy(pageBase + 16, pageBase, 64);
-    memcpy(pageBase + 32, pageBase, 128);
-    memcpy(pageBase + 64, pageBase, 256);
-    memcpy(pageBase + 128, pageBase, 512);
-    memcpy(pageBase + 256, pageBase, 1024);
-    memcpy(pageBase + 512, pageBase, 2048);
+    memcpy(pageBase + 16, pageBase, 16);
+    memcpy(pageBase + 32, pageBase, 32);
+    memcpy(pageBase + 64, pageBase, 64);
+    memcpy(pageBase + 128, pageBase, 128);
+    memcpy(pageBase + 256, pageBase, 256);
+    memcpy(pageBase + 512, pageBase, 512);
+    memcpy(pageBase + 1024, pageBase, 1024);
+    memcpy(pageBase + 2048, pageBase, 2048);
 
     ClrFlushInstructionCache(pageBaseRX, 4096);
 
     return 0;
 }
 
+extern "C" void DispatchStubCode();
 
 size_t DispatchHolder::GenerateCodePage(uint8_t* pageBaseRX)
 {
-    ExecutableWriterHolder<uint32_t> codePageWriterHolder((uint32_t*)pageBaseRX, 4096 / 4);
-    uint32_t* pageBase = codePageWriterHolder.GetRW();
-    // ldr x13, [x0] ; methodTable from object in x0
-    // adr x9, _expectedMT ; _expectedMT is at offset 28 from pc
-    // ldp x10, x12, [x9] ; x10 = _expectedMT & x12 = _implTarget
-    // cmp x13, x10
-    // bne failLabel
-    // br x12
-    // failLabel
-    // ldr x9, _failTarget ; _failTarget is at offset 24 from pc
-    // br x9
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder((uint8_t*)pageBaseRX, 4096);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
 
-    // Offset 4096:
-    // _expectedMT
-    // _implTarget
-    // _failTarget
+    memcpy(pageBase, (const void*)PCODEToPINSTR((PCODE)&DispatchStubCode), 32);
+    _ASSERTE(*(DWORD*)pageBase == DISPATCH_STUB_FIRST_DWORD);
 
-    pageBase[0] = 0xf940000d;
-    _ASSERTE(pageBase[0] == DISPATCH_STUB_FIRST_DWORD);
-    pageBase[1] = 0x10007fe9;
-    pageBase[2] = 0xa940312a;
-    pageBase[3] = 0xeb0a01bf;
-    pageBase[4] = 0x54000041;
-    pageBase[5] = 0xd61f0180;
-    pageBase[6] = 0x58007fc9;
-    pageBase[7] = 0xd61f0120;
-
-    memcpy(pageBase + 8, pageBase, 32);
-    memcpy(pageBase + 16, pageBase, 64);
-    memcpy(pageBase + 32, pageBase, 128);
-    memcpy(pageBase + 64, pageBase, 256);
-    memcpy(pageBase + 128, pageBase, 512);
-    memcpy(pageBase + 256, pageBase, 1024);
-    memcpy(pageBase + 512, pageBase, 2048);
+    memcpy(pageBase + 32, pageBase, 32);
+    memcpy(pageBase + 64, pageBase, 64);
+    memcpy(pageBase + 128, pageBase, 128);
+    memcpy(pageBase + 256, pageBase, 256);
+    memcpy(pageBase + 512, pageBase, 512);
+    memcpy(pageBase + 1024, pageBase, 1024);
+    memcpy(pageBase + 2048, pageBase, 2048);
 
     ClrFlushInstructionCache(pageBaseRX, 4096);
 
     return 0;
 }
 
+extern "C" void ResolveStubCode();
+
 size_t ResolveHolder::GenerateCodePage(uint8_t* pageBaseRX)
 {
-    ExecutableWriterHolder<uint32_t> codePageWriterHolder((uint32_t*)pageBaseRX, 4096 / 4);
-    uint32_t* pageBase = codePageWriterHolder.GetRW();
-/*
-0x0000000000000000:  0C 00 40 F9    ldr  x12, [x0]
-0x0000000000000004:  89 31 4C 8B    add  x9, x12, x12, lsr #12
-0x0000000000000008:  CA 7F 00 10    adr  x10, #0x1000
-0x000000000000000c:  4D 09 40 B9    ldr  w13, [x10, #8]
-0x0000000000000010:  29 01 0D CA    eor  x9, x9, x13
-0x0000000000000014:  29 2D 7D 92    and  x9, x9, #0x7ff8
-0x0000000000000018:  4D 01 40 F9    ldr  x13, [x10]
-0x000000000000001c:  A9 69 69 F8    ldr  x9, [x13, x9]
-0x0000000000000020:  4F 09 40 F9    ldr  x15, [x10, #0x10]
-0x0000000000000024:  2D 01 40 F9    ldr  x13, [x9]
-0x0000000000000028:  9F 01 0D EB    cmp  x12, x13
-0x000000000000002c:  C1 00 00 54    b.ne #0x44
-0x0000000000000030:  2D 05 40 F9    ldr  x13, [x9, #8]
-0x0000000000000034:  FF 01 0D EB    cmp  x15, x13
-0x0000000000000038:  61 00 00 54    b.ne #0x44
-0x000000000000003c:  2C 09 40 F9    ldr  x12, [x9, #0x10]
-0x0000000000000040:  80 01 1F D6    br   x12
-0x0000000000000044:  EA 7D 00 10    adr  x10, #0x1000
-0x0000000000000048:  4C 09 40 F9    ldr  x12, [x10, #0x10]
-0x000000000000004c:  4D 11 40 F9    ldr  x13, [x10, #0x20]
-0x0000000000000050:  A0 01 1F D6    br   x13
-0x0000000000000054:  6A 7D 00 10    adr  x10, #0x1000
-0x0000000000000058:  49 19 40 B9    ldr  w9, [x10, #0x18]
-0x000000000000005c:  29 05 00 71    subs w9, w9, #1
-0x0000000000000060:  49 19 00 B9    str  w9, [x10, #0x18]
-0x0000000000000064:  0A FD FF 54    b.ge #0
-0x0000000000000068:  6B 01 40 B2    orr  x11, x11, #1
-0x000000000000006c:  E5 FF FF 17    b    #0
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder((uint8_t*)pageBaseRX, 4096);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
 
-instead of adr, use pc relative addressing
-Move #8 to #0
-Move #0 to #8
-Move #18 to #20
-Move #20 to #18
-Then I can save two instructions by using ldp
-Sigh, no, ldp cannot use pc relative addresses
+    memcpy(pageBase, (const void*)PCODEToPINSTR((PCODE)&DispatchStubCode), 104);
+    _ASSERTE(*(DWORD*)pageBase == RESOLVE_STUB_FIRST_DWORD);
 
-resolveEntryPoint:
-    ldr x12, [x0]
-    add x9, x12, x12, lsr #12
-    adr x10, #Dataregionbase; the data block
-    ldr w13, [x10, #8]; hashed token
-    eor x9, x9, x13
-    and x9, x9, #0x7ff8 ; cache mask
-    ldr x13, [x10, #0] ;cacheAddress
-    ldr x9, [x13, x9]
-    ldr x15, [x10, #16]; dispatchToken
-    ldr x13, [x9, #0]; offsetof(ResolveCacheElem, pMT)
-    cmp x12, x13
-    bne slowEntryPoint
-    ldr x13, [x9, #8]; offsetof(ResolveCacheElem, token)
-    cmp x15, x13
-    bne slowEntryPoint
-    ldr x12, [x9, #16]; offsetof(ResolveCacheElem, target)
-    br x12
-slowEntryPoint:
-    adr x10, #Dataregionbase
-    ldr x12, [x10, #16]; DATA_OFFSET(_token)]
-    ldr x13, [x10, #32]; DATA_OFFSET(_resolveWorkerTarget)]
-    br x13
-failEntryPoint :
-    adr x10, #Dataregionbase ; The data block
-    ldr w9, [x10, #24] ; counterAddr
-    subs w9, w9, #1
-    str w9, [x10, #24]
-    bge resolveEntryPoint
-    orr x11, x11, #1
-    b resolveEntryPoint
-
-
-*/
-    
-    pageBase[0] = 0xF940000C;
-    _ASSERTE(pageBase[0] == RESOLVE_STUB_FIRST_DWORD);
-    pageBase[1] = 0x8B4C3189;
-    pageBase[2] = 0x10007FCA;
-    pageBase[3] = 0xB940094D;
-    pageBase[4] = 0xCA0D0129;
-    pageBase[5] = 0x927D2D29;
-    pageBase[6] = 0xF940014D;
-    pageBase[7] = 0xF86969A9;
-    pageBase[8] = 0xF940094F;
-    pageBase[9] = 0xF940012D;
-    pageBase[10] = 0xEB0D019F;
-    pageBase[11] = 0x540000C1;
-    pageBase[12] = 0xF940052D;
-    pageBase[13] = 0xEB0D01FF;
-    pageBase[14] = 0x54000061;
-    pageBase[15] = 0xF940092C;
-    pageBase[16] = 0xD61F0180;
-    pageBase[17] = 0x10007DEA;
-    pageBase[18] = 0xF940094C;
-    pageBase[19] = 0xF940114D;
-    pageBase[20] = 0xD61F01A0;
-    pageBase[21] = 0x10007D6A;
-    pageBase[22] = 0xB9401949;
-    pageBase[23] = 0x71000529;
-    pageBase[24] = 0xB9001949;
-    pageBase[25] = 0x54FFFD0A;
-    pageBase[26] = 0xB240016B;
-    pageBase[27] = 0x17FFFFE5;
-    pageBase[28] = 0xD503201F; // nop
-    pageBase[29] = 0xD503201F; // nop
-    pageBase[30] = 0xD503201F; // nop
-    pageBase[31] = 0xD503201F; // nop
-
-    memcpy(pageBase + 32, pageBase, 128);
-    memcpy(pageBase + 64, pageBase, 256);
-    memcpy(pageBase + 128, pageBase, 512);
-    memcpy(pageBase + 256, pageBase, 1024);
-    memcpy(pageBase + 512, pageBase, 2048);
-
-    //resolveEntryPoint:
-    //ldr x12, [x0,#Object.m_pMethTab ] ; methodTable from object in x0
-    //add x9, x12, x12 lsr #12
-    //adr x10, #Dataregionbase of ResolveStub
-    //ldr w13, [x10 + DATA_OFFSET(_hashedToken)]
-    //eor x9,x9,x13
-    //and x9,x9,#cachemask
-    //ldr x13, [x10 + DATA_OFFSET(_cacheAddress)]
-    //ldr x9, [x13, x9] ;; x9 = e = this._cacheAddress + i
-    //ldr x15, [x10 + DATA_OFFSET(_token)]
-    //ldr x13, [x9, #offsetof(ResolveCacheElem, pMT) ]
-    //cmp x12, x13
-    //bne nextEntry
-    //ldr x13, [x9, #offsetof(ResolveCacheElem, token) ]
-    //cmp x15, x13
-    //bne nextEntry
-    //ldr x12, [x9, #offsetof(ResolveCacheElem, target) ]
-    //br x12
-    //nextEntry:
-    //slowEntryPoint:
-    //fall through to the slow case
-    //adr x10, #Dataregionbase
-    //ldr x13, [x10]
-    //ldr w9, [x13]
-    //subs w9,w9,#1
-    //str w9, [x13]
-    //bge resolveEntryPoint
-    //orr x11, x11, SDF_ResolveBackPatch _ASSERTE(SDF_ResolveBackPatch == 0x1);
-    //b resolveEntryPoint:
+    memcpy(pageBase + 104, pageBase, 104);
+    memcpy(pageBase + 208, pageBase, 208);
+    memcpy(pageBase + 416, pageBase, 416);
+    memcpy(pageBase + 832, pageBase, 832);
+    memcpy(pageBase + 1664, pageBase, 1664);
+    memcpy(pageBase + 3328, pageBase, 728);
 
     ClrFlushInstructionCache(pageBaseRX, 4096);
     return 0;
@@ -4274,21 +4119,14 @@ failEntryPoint :
 
 #elif defined(TARGET_ARM)
 
-extern "C" void VSDLookupStubCode();
+extern "C" void LookupStubCode();
 
 size_t LookupHolder::GenerateCodePage(uint8_t* pageBaseRX)
 {
-    /*
-0x0000000000000000:  00 BF          nop   
-0x0000000000000002:  00 BF          nop   
-0x0000000000000004:  DF F8 FC CF    ldr.w r12, [pc, #0xffc]
-0x0000000000000008:  DF F8 FC FF    ldr.w pc, [pc, #0xffc]    
-    */
-
     ExecutableWriterHolder<uint8_t> codePageWriterHolder((uint8_t*)pageBaseRX, 4096);
     uint8_t* pageBase = codePageWriterHolder.GetRW();
 
-    memcpy(pageBase, (const void*)PCODEToPINSTR((PCODE)&VSDLookupStubCode), 12);
+    memcpy(pageBase, (const void*)PCODEToPINSTR((PCODE)&LookupStubCode), 12);
     memcpy(pageBase + 12, pageBase, 12);
     memcpy(pageBase + 24, pageBase, 24);
     memcpy(pageBase + 48, pageBase, 48);
@@ -4303,24 +4141,14 @@ size_t LookupHolder::GenerateCodePage(uint8_t* pageBaseRX)
     return 0;
 }
 
-extern "C" void VSDDispatchStubCode();
+extern "C" void DispatchStubCode();
 
 size_t DispatchHolder::GenerateCodePage(uint8_t* pageBaseRX)
 {
     ExecutableWriterHolder<uint8_t> codePageWriterHolder((uint8_t*)pageBaseRX, 4096);
     uint8_t* pageBase = codePageWriterHolder.GetRW();
-/*
-0x0000000000000000:  D0 F8 00 C0    ldr.w r12, [r0]
-0x0000000000000004:  02 B4          push  {r1}
-0x0000000000000006:  DF F8 FC 1F    ldr.w r1, [pc, #0xff8]
-0x000000000000000a:  61 45          cmp   r1, r12
-0x000000000000000c:  02 BC          pop   {r1}
-0x000000000000000e:  01 D1          bne   #0x14
-0x0000000000000010:  DF F8 FC FF    ldr.w pc, [pc, #0xff4]
-0x0000000000000014:  DF F8 FC FF    ldr.w pc, [pc, #0xff4]
-*/
 
-    memcpy(pageBase, (const void*)PCODEToPINSTR((PCODE)&VSDDispatchStubCode), 24);
+    memcpy(pageBase, (const void*)PCODEToPINSTR((PCODE)&DispatchStubCode), 24);
     _ASSERTE(*(WORD*)pageBase == DISPATCH_STUB_FIRST_WORD);
     memcpy(pageBase + 24, pageBase, 24);
     memcpy(pageBase + 48, pageBase, 48);
@@ -4336,65 +4164,14 @@ size_t DispatchHolder::GenerateCodePage(uint8_t* pageBaseRX)
     return 0;
 }
 
-extern "C" void VSDResolveStubCode();
+extern "C" void ResolveStubCode();
 
 size_t ResolveHolder::GenerateCodePage(uint8_t* pageBaseRX)
 {
-
-/*
-struct ResolveStubData
-{
-    size_t CacheAddress;
-    UINT32 HashedToken;
-    UINT32 CacheMask;
-    size_t Token;
-    INT32  Counter;
-    PCODE  ResolveWorkerTarget;
-    PCODE  PatcherTarget; // Not on arm
-};
-0x0000000000000000:  D0 F8 00 C0    ldr.w  r12, [r0]
-0x0000000000000004:  60 B4          push   {r5, r6}
-0x0000000000000006:  0C EB 1C 36    add.w  r6, r12, r12, lsr #12
-0x000000000000000a:  DF F8 FC 5F    ldr.w  r5, [pc, #0xff8] <<< HashedToken - offset 4
-0x000000000000000e:  86 EA 05 06    eor.w  r6, r6, r5
-0x0000000000000012:  DF F8 FC 5F    ldr.w  r5, [pc, #0xff4] <<< CacheMask - offset 8
-0x0000000000000016:  06 EA 05 06    and.w  r6, r6, r5
-0x000000000000001a:  DF F8 FC 5F    ldr.w  r5, [pc, #0xfe4] <<< CacheAddress - offset  0
-0x000000000000001e:  AE 59          ldr    r6, [r5, r6]
-0x0000000000000020:  35 68          ldr    r5, [r6]
-0x0000000000000022:  AC 45          cmp    r12, r5
-0x0000000000000024:  09 D1          bne    #0x3a
-0x0000000000000026:  DF F8 FC 5F    ldr.w  r5, [pc, #0xfe4] <<< Token - offset 0x0c
-0x000000000000002a:  D6 F8 04 C0    ldr.w  r12, [r6, #4]
-0x000000000000002e:  AC 45          cmp    r12, r5
-0x0000000000000030:  03 D1          bne    #0x3a
-0x0000000000000032:  D6 F8 08 C0    ldr.w  r12, [r6, #8]
-0x0000000000000036:  60 BC          pop    {r5, r6}
-0x0000000000000038:  60 47          bx     r12
-0x000000000000003a:  F6 68          ldr    r6, [r6, #0xc]
-0x000000000000003c:  16 B1          cbz    r6, #0x44
-0x000000000000003e:  D0 F8 00 C0    ldr.w  r12, [r0]
-0x0000000000000042:  ED E7          b      #0x20
-0x0000000000000044:  60 BC          pop    {r5, r6}
-0x0000000000000046:  00 BF          nop    
-slowEntryPoint
-0x0000000000000048:  DF F8 FC CF    ldr.w  r12, [pc, #0xfc4] <<< Token - offset 0x0c
-0x000000000000004c:  DF F8 FC FF    ldr.w  pc, [pc, #0xfc8] <<< ResolveWorkerTarget - offset 0x14
-failEntryPoint
-0x0000000000000050:  20 B4          push   {r5}
-0x0000000000000052:  DF F8 FC 5F    ldr.w  r5, [pc, #0xfbc] <<< Counter - offset 0x10
-0x0000000000000056:  D5 F8 00 C0    ldr.w  r12, [r5]
-0x000000000000005a:  BC F1 01 0C    subs.w r12, r12, #1
-0x000000000000005e:  C5 F8 00 C0    str.w  r12, [r5]
-0x0000000000000062:  20 BC          pop    {r5}
-0x0000000000000064:  01 DA          bge    #0x6a
-0x0000000000000066:  44 F0 01 04    orr    r4, r4, #1
-0x000000000000006a:  C9 E7          b      #0
-*/
     ExecutableWriterHolder<uint8_t> codePageWriterHolder((uint8_t*)pageBaseRX, 4096);
     uint8_t* pageBase = codePageWriterHolder.GetRW();
 
-    memcpy(pageBase, (const void*)PCODEToPINSTR((PCODE)&VSDResolveStubCode), 108);
+    memcpy(pageBase, (const void*)PCODEToPINSTR((PCODE)&ResolveStubCode), 108);
     _ASSERTE(*(WORD*)pageBase == RESOLVE_STUB_FIRST_WORD);
 
     memcpy(pageBase + 108, pageBase, 108);

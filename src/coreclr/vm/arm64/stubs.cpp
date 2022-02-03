@@ -569,9 +569,11 @@ void StubPrecode::Init(StubPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator
 {
     WRAPPER_NO_CONTRACT;
 
-    *(PCODE*)((BYTE*)this + 4096) = GetPreStubEntryPoint();;
-    *(MethodDesc**)((BYTE*)this + 4096 + 8) = pMD;
-    *((BYTE*)this + 4096 + 16) = StubPrecode::Type;
+    StubPrecodeData *pStubData = GetData();
+
+    pStubData->Target = GetPreStubEntryPoint();
+    pStubData->MethodDesc = pMD;
+    pStubData->Type = StubPrecode::Type;
 }
 
 size_t StubPrecode::GenerateCodePage(uint8_t* pageBaseRX)
@@ -609,9 +611,11 @@ void NDirectImportPrecode::Init(NDirectImportPrecode* pPrecodeRX, MethodDesc* pM
 {
     WRAPPER_NO_CONTRACT;
 
-    *(PCODE*)((BYTE*)this + 4096) = GetEEFuncEntryPoint(NDirectImportThunk);
-    *(MethodDesc**)((BYTE*)this + 4096 + 8) = pMD;
-    *((BYTE*)this + 4096 + 16) = NDirectImportPrecode::Type;
+    StubPrecodeData *pStubData = GetData();
+
+    pStubData->Target = GetEEFuncEntryPoint(NDirectImportThunk);
+    pStubData->MethodDesc = pMD;
+    pStubData->Type = NDirectImportPrecode::Type;;
 }
 
 #ifdef HAS_FIXUP_PRECODE
@@ -621,13 +625,14 @@ void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocat
 
     _ASSERTE(pPrecodeRX == this);
 
-    * (MethodDesc**)((BYTE*)this + 4096 + 8) = pMD;
+    FixupPrecodeData *pData = GetData();
+    pData->MethodDesc = pMD;
 
     _ASSERTE(GetMethodDesc() == (TADDR)pMD);
 
-    PCODE target = (PCODE)pPrecodeRX + 8;
-    * (PCODE*)((BYTE*)this + 4096) = target;
-    * (PCODE*)((BYTE*)this + 4096 + 16) = (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk);
+    pData->Target = (PCODE)pPrecodeRX + 8;
+    pData->PrecodeFixupThunk = (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk);
+
 }
 
 size_t FixupPrecode::GenerateCodePage(uint8_t* pageBaseRX)
@@ -666,10 +671,13 @@ void FixupPrecode::ResetTargetInterlocked()
     }
     CONTRACTL_END;
 
-    PCODE target = (PCODE)this + 8;
+//    PCODE target = (PCODE)this + 8;
     _ASSERTE(IS_ALIGNED(this, sizeof(INT64)));
 
-    FastInterlockExchangeLong((INT64*)&GetData()->Target, (INT64)target);
+    FixupPrecodeData *pData = GetData();
+    PCODE target = (PCODE)this + 8;
+    InterlockedExchangeT<PCODE>(&pData->Target, target);
+    //FastInterlockExchangeLong((INT64*)&GetData()->Target, (INT64)target);
 }
 
 BOOL FixupPrecode::SetTargetInterlocked(TADDR target, TADDR expected)
@@ -681,7 +689,8 @@ BOOL FixupPrecode::SetTargetInterlocked(TADDR target, TADDR expected)
     }
     CONTRACTL_END;
 
-    INT64 oldTarget = (INT64)GetData()->Target;
+    FixupPrecodeData *pData = GetData();
+    PCODE oldTarget = pData->Target;
     if (oldTarget != ((PCODE)this + 8))
     {
 #ifdef FEATURE_CODE_VERSIONING
@@ -692,9 +701,10 @@ BOOL FixupPrecode::SetTargetInterlocked(TADDR target, TADDR expected)
 #endif
     }
 
-    _ASSERTE(IS_ALIGNED(this, sizeof(INT64)));
+    _ASSERTE(IS_ALIGNED(this, sizeof(PCODE)));
 
-    return FastInterlockCompareExchangeLong((INT64*)&GetData()->Target, (INT64)target, oldTarget) == oldTarget;
+//    return FastInterlockCompareExchangeLong((INT64*)&GetData()->Target, (INT64)target, oldTarget) == oldTarget;
+    return InterlockedCompareExchangeT<PCODE>(&pData->Target, (PCODE)target, oldTarget) == oldTarget;
 }
 
 #endif // HAS_FIXUP_PRECODE

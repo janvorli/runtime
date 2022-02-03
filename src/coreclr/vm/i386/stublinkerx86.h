@@ -602,7 +602,7 @@ struct NDirectImportPrecode : StubPrecode {
 
     void Init(NDirectImportPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator);
 
-    LPVOID GetEntryPoint()
+    LPVOID GetEntrypoint()
     {
         LIMITED_METHOD_CONTRACT;
         return this;

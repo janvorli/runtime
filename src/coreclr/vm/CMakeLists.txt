@@ -710,6 +710,7 @@ elseif(CLR_CMAKE_TARGET_ARCH_ARM64)
         ${ARCH_SOURCES_DIR}/CallDescrWorkerARM64.asm
         ${ARCH_SOURCES_DIR}/CrtHelpers.asm
         ${ARCH_SOURCES_DIR}/PInvokeStubs.asm
+        ${ARCH_SOURCES_DIR}/thunktemplates.asm
     )
 
     set(VM_HEADERS_WKS_ARCH_ASM
@@ -762,6 +763,7 @@ else(CLR_CMAKE_TARGET_WIN32)
             ${ARCH_SOURCES_DIR}/calldescrworkerarm64.S
             ${ARCH_SOURCES_DIR}/crthelpers.S
             ${ARCH_SOURCES_DIR}/pinvokestubs.S
+            ${ARCH_SOURCES_DIR}/thunktemplates.S
         )
     endif()
 

@@ -2954,7 +2954,7 @@ public:
 
         _ASSERTE(IsNDirect());
 
-        return (GetNDirectTarget() == (LPVOID)GetNDirectImportThunkGlue()->GetEntryPoint());
+        return (GetNDirectTarget() == (LPVOID)GetNDirectImportThunkGlue()->GetEntrypoint());
     }
 #endif // !DACCESS_COMPILE
 

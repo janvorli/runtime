@@ -292,30 +292,32 @@ size_t CallCountingStub::GenerateCodePage(uint8_t* pageBaseRX)
     ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, 4096);
     uint8_t* pageBase = codePageWriterHolder.GetRW();
 
-    pageBase[0] = 0x48;
-    pageBase[1] = 0x8b;
-    pageBase[2] = 0x05;
-    pageBase[3] = 0xf9;
-    pageBase[4] = 0x0f;
-    pageBase[5] = 0x00;
-    pageBase[6] = 0x00;
-    pageBase[7] = 0x66;
-    pageBase[8] = 0xff;
-    pageBase[9] = 0x08;
-    pageBase[10] = 0x74;
-    pageBase[11] = 0x06;
-    pageBase[12] = 0xff;
-    pageBase[13] = 0x25;
-    pageBase[14] = 0xf6;
-    pageBase[15] = 0x0f;
-    pageBase[16] = 0x00;
-    pageBase[17] = 0x00;
-    pageBase[18] = 0xff;
-    pageBase[19] = 0x15;
-    pageBase[20] = 0xf8;
-    pageBase[21] = 0x0f;
-    pageBase[22] = 0x00;
-    pageBase[23] = 0x00;
+    memcpy(pageBase, (const void*)&CallCountingStubCode, 24);
+
+    // pageBase[0] = 0x48;
+    // pageBase[1] = 0x8b;
+    // pageBase[2] = 0x05;
+    // pageBase[3] = 0xf9;
+    // pageBase[4] = 0x0f;
+    // pageBase[5] = 0x00;
+    // pageBase[6] = 0x00;
+    // pageBase[7] = 0x66;
+    // pageBase[8] = 0xff;
+    // pageBase[9] = 0x08;
+    // pageBase[10] = 0x74;
+    // pageBase[11] = 0x06;
+    // pageBase[12] = 0xff;
+    // pageBase[13] = 0x25;
+    // pageBase[14] = 0xf6;
+    // pageBase[15] = 0x0f;
+    // pageBase[16] = 0x00;
+    // pageBase[17] = 0x00;
+    // pageBase[18] = 0xff;
+    // pageBase[19] = 0x15;
+    // pageBase[20] = 0xf8;
+    // pageBase[21] = 0x0f;
+    // pageBase[22] = 0x00;
+    // pageBase[23] = 0x00;
 
 /*
     pageBase[0] = 0x66;
@@ -370,16 +372,18 @@ size_t CallCountingStub::GenerateCodePage(uint8_t* pageBaseRX)
 0x0000000000000024:  20 01 1F D6    br   x9
 */
 
-    pageBase[0] = 0x58008009;
-    pageBase[1] = 0x7940012a;
-    pageBase[2] = 0x7100054a;
-    pageBase[3] = 0x7900012a;
-    pageBase[4] = 0x54000060;
-    pageBase[5] = 0x58007fa9;
-    pageBase[6] = 0xd61f0120;
-    pageBase[7] = 0x10ffff2a;
-    pageBase[8] = 0x58007f89;
-    pageBase[9] = 0xd61f0120;
+    memcpy(pageBase, (const void*)PCODEToPINSTR((PCODE)&CallCountingStubCode), 40);
+
+    // pageBase[0] = 0x58008009;
+    // pageBase[1] = 0x7940012a;
+    // pageBase[2] = 0x7100054a;
+    // pageBase[3] = 0x7900012a;
+    // pageBase[4] = 0x54000060;
+    // pageBase[5] = 0x58007fa9;
+    // pageBase[6] = 0xd61f0120;
+    // pageBase[7] = 0x10ffff2a;
+    // pageBase[8] = 0x58007f89;
+    // pageBase[9] = 0xd61f0120;
 
     memcpy(pageBase + 10, pageBase, 40);
     memcpy(pageBase + 20, pageBase, 80);

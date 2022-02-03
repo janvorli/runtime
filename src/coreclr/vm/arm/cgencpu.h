@@ -1321,7 +1321,7 @@ struct CallCountingStubData
     PCODE TargetForMethod;
     PCODE TargetForThresholdReached;
 };
-typedef DPTR(const CallCountingStubData) PTR_CallCountingStubData;
+typedef DPTR(CallCountingStubData) PTR_CallCountingStubData;
 
 class CallCountingStub
 {
@@ -1335,6 +1335,11 @@ protected:
     static const PCODE TargetForThresholdReached;
 
     CallCountingStub() = default;
+
+    PTR_CallCountingStubData GetData() const
+    {
+        return dac_cast<PTR_CallCountingStubData>((BYTE*)this + 4096);
+    }
 
 public:
     static const CallCountingStub *From(TADDR stubIdentifyingToken);
@@ -1350,7 +1355,7 @@ public:
 #ifndef DACCESS_COMPILE
     void Initialize(PCODE targetForMethod, CallCount* remainingCallCountCell)
     {
-        CallCountingStubData* pStubData = (CallCountingStubData*)((BYTE*)this + 4096);
+        PTR_CallCountingStubData pStubData = GetData();
         // TODO: Can we keep the count in the stub? It is problematic, as we have code that
         // gets the CallCountingInfo from the count cell pointer.
         // But maybe if we made the TargetForThresholdReached a global variable, we could place 
@@ -1393,18 +1398,13 @@ inline const CallCountingStub *CallCountingStub::From(TADDR stubIdentifyingToken
 inline PTR_CallCount CallCountingStub::GetRemainingCallCountCell() const
 {
     WRAPPER_NO_CONTRACT;
-    PTR_CallCountingStubData pStubData = dac_cast<PTR_CallCountingStubData>((BYTE*)this + 4096);
-    return pStubData->RemainingCallCountCell;
-    //PTR_PTR_VOID cc = dac_cast<PTR_PTR_VOID>((UINT8*)this + 4096);
-    //return dac_cast<PTR_CallCount>(*cc);
+    return GetData()->RemainingCallCountCell;
 }
 
 inline PCODE CallCountingStub::GetTargetForMethod() const
 {
     WRAPPER_NO_CONTRACT;
-    PTR_CallCountingStubData pStubData = dac_cast<PTR_CallCountingStubData>((BYTE*)this + 4096);
-    return pStubData->TargetForMethod;
-    //return *dac_cast<PTR_PCODE>((UINT8*)this + 4096 + 4);
+    return GetData()->TargetForMethod;
 }
 
 ////////////////////////////////////////////////////////////////

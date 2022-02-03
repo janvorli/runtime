@@ -6040,7 +6040,7 @@ MethodTableBuilder::InitMethodDesc(
                 pNewNMD->SetIsEarlyBound();
             }
 
-            pNewNMD->GetWriteableData()->m_pNDirectTarget = pNewNMD->GetNDirectImportThunkGlue()->GetEntryPoint();
+            pNewNMD->GetWriteableData()->m_pNDirectTarget = (PCODE)pNewNMD->GetNDirectImportThunkGlue()->GetEntrypoint();
         }
         break;
 

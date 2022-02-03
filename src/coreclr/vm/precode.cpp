@@ -259,12 +259,12 @@ Precode* Precode::Allocate(PrecodeType t, MethodDesc* pMD,
 
     if (t == PRECODE_FIXUP)
     {
-        pPrecode = (Precode*)pLoaderAllocator->GetFixupPrecodeHeap()->Allocate();
+        pPrecode = (Precode*)pamTracker->Track(pLoaderAllocator->GetFixupPrecodeHeap()->AllocAlignedMem(size, 1));
         pPrecode->Init(pPrecode, t, pMD, pLoaderAllocator);
     }
     else if (t == PRECODE_STUB || t == PRECODE_NDIRECT_IMPORT)
     {
-        pPrecode = (Precode*)pLoaderAllocator->GetNewStubPrecodeHeap()->Allocate();
+        pPrecode = (Precode*)pamTracker->Track(pLoaderAllocator->GetNewStubPrecodeHeap()->AllocAlignedMem(size, 1));
         pPrecode->Init(pPrecode, t, pMD, pLoaderAllocator);
     }
     else
@@ -479,10 +479,11 @@ TADDR Precode::AllocateTemporaryEntryPoints(MethodDescChunk *  pChunk,
     SIZE_T oneSize = SizeOfTemporaryEntryPoint(t);
     MethodDesc * pMD = pChunk->GetFirstMethodDesc();
 
-    if (t == PRECODE_FIXUP)
+    if (t == PRECODE_FIXUP || t == PRECODE_STUB || t == PRECODE_NDIRECT_IMPORT)
     {
         // This is unfortunate, as the entrypoints needs to be sequential.
-        temporaryEntryPoints = (TADDR)pLoaderAllocator->GetFixupPrecodeHeap()->Allocate(count);
+        temporaryEntryPoints = (TADDR)pamTracker->Track(pLoaderAllocator->GetFixupPrecodeHeap()->AllocAlignedMem(totalSize, 1));
+
         TADDR entryPoint = temporaryEntryPoints;
         for (int i = 0; i < count; i++)
         {
@@ -492,20 +493,6 @@ TADDR Precode::AllocateTemporaryEntryPoints(MethodDescChunk *  pChunk,
             entryPoint += oneSize;
 
             pMD = (MethodDesc *)(dac_cast<TADDR>(pMD) + pMD->SizeOf());
-        }
-    }
-    else if (t == PRECODE_STUB || t == PRECODE_NDIRECT_IMPORT)
-    {
-        temporaryEntryPoints = (TADDR)pLoaderAllocator->GetNewStubPrecodeHeap()->Allocate(count);
-        TADDR entryPoint = temporaryEntryPoints;
-        for (int i = 0; i < count; i++)
-        {
-            ((Precode*)entryPoint)->Init((Precode*)entryPoint, t, pMD, pLoaderAllocator);
-
-            _ASSERTE((Precode*)entryPoint == GetPrecodeForTemporaryEntryPoint(temporaryEntryPoints, i));
-            entryPoint += oneSize;
-
-            pMD = (MethodDesc*)(dac_cast<TADDR>(pMD) + pMD->SizeOf());
         }
     }
     else

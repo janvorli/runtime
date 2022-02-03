@@ -9,7 +9,7 @@
 #include "eventtracebase.h"
 
 #define LHF_EXECUTABLE  0x1
-#define LHF_SEPARATE_RW_DATA 0x2
+#define LHF_SEPARATE_RW_DATA 0x2 // TODO: rename to LHF_INTERLEAVED? or LHF_INTERLEAVED_RX_RW?
 
 #ifndef DACCESS_COMPILE
 
@@ -729,15 +729,25 @@ struct LoaderHeapFreeBlock
             }
 #endif
 
-            void* pMemRW = pMem;
-            ExecutableWriterHolderC<void> memWriterHolder;
-            if (pHeap->IsExecutable())
+#ifdef DEBUG
+            if (!pHeap->IsInterleaved())
             {
-                memWriterHolder = ExecutableWriterHolderC<void>::Create(pMem, dwTotalSize);
-                pMemRW = memWriterHolder.GetRW();
-            }
+                void* pMemRW = pMem;
+                ExecutableWriterHolderC<void> memWriterHolder;
+                if (pHeap->IsExecutable())
+                {
+                    memWriterHolder = ExecutableWriterHolderC<void>::Create(pMem, dwTotalSize);
+                    pMemRW = memWriterHolder.GetRW();
+                }
 
-            INDEBUG(memset(pMemRW, 0xcc, dwTotalSize);)
+                memset(pMemRW, 0xcc, dwTotalSize);
+            }
+            else
+            {
+                memset((BYTE*)pMem + GetOsPageSize(), 0xcc, dwTotalSize);
+            }
+#endif // DEBUG            
+
             LoaderHeapFreeBlock *pNewBlock = new (nothrow) LoaderHeapFreeBlock;
             // If we fail allocating the LoaderHeapFreeBlock, ignore the failure and don't insert the free block at all.
             if (pNewBlock != NULL)
@@ -1070,12 +1080,6 @@ size_t UnlockedLoaderHeap::GetBytesAvailReservedRegion()
         return 0;
 }
 
-#define SETUP_NEW_BLOCK(pData, dwSizeToCommit, dwSizeToReserve)                     \
-        m_pPtrToEndOfCommittedRegion = (BYTE *) (pData) + (dwSizeToCommit);         \
-        m_pAllocPtr                  = (BYTE *) (pData);                            \
-        m_pEndReservedRegion         = (BYTE *) (pData) + (dwSizeToReserve);
-
-
 #ifndef DACCESS_COMPILE
 
 void ReleaseReservedMemory(BYTE* value)
@@ -1180,6 +1184,21 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
         return FALSE;
     }
 
+    if (m_Options & LHF_SEPARATE_RW_DATA)
+    {
+        _ASSERTE(dwSizeToCommitPart == GetOsPageSize());
+
+        void *pTemp = ExecutableAllocator::Instance()->Commit((BYTE*)pData + dwSizeToCommitPart, dwSizeToCommitPart, FALSE);
+        if (pTemp == NULL)
+        {
+            //_ASSERTE(!"Unable to ClrVirtualAlloc commit in a loaderheap");
+
+            return FALSE;
+        }
+
+        m_codePageGenerator(pData);
+    }
+
     // Record reserved range in range list, if one is specified
     // Do this AFTER the commit - otherwise we'll have bogus ranges included.
     if (m_pRangeList != NULL)
@@ -1190,26 +1209,6 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
         {
             return FALSE;
         }
-    }
-
-    if (m_Options & LHF_SEPARATE_RW_DATA)
-    {
-        _ASSERTE(dwSizeToCommitPart == GetOsPageSize());
-        // fill in the code page
-        // TODO: use ExecutableWriterHolder
-
-        void *pTemp = ExecutableAllocator::Instance()->Commit((BYTE*)pData + dwSizeToCommitPart, dwSizeToCommitPart, FALSE);
-        if (pTemp == NULL)
-        {
-            //_ASSERTE(!"Unable to ClrVirtualAlloc commit in a loaderheap");
-
-            return FALSE;
-        }
-
-//        ExecutableWriterHolder<BYTE> codeWriterHolder((BYTE*)pData, dwSizeToCommitPart);
-        m_codePageGenerator(pData);// codeWriterHolder.GetRW());
-
-        // TODO: flush cache here or in the generator or in the stub creation?
     }
 
     LoaderHeapBlock *pNewBlock = new (nothrow) LoaderHeapBlock;
@@ -1235,11 +1234,9 @@ BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
         dwSizeToCommit /= 2;
     }
 
-    SETUP_NEW_BLOCK(pData, dwSizeToCommit, dwSizeToReserve);
-    if ((m_Options & LHF_SEPARATE_RW_DATA) && (((TADDR)m_pPtrToEndOfCommittedRegion) & 0x1000) == 0x0000)
-    {
-        //__debugbreak();
-    }
+    m_pPtrToEndOfCommittedRegion = (BYTE *) (pData) + (dwSizeToCommit);         \
+    m_pAllocPtr                  = (BYTE *) (pData);                            \
+    m_pEndReservedRegion         = (BYTE *) (pData) + (dwSizeToReserve);
 
     return TRUE;
 }
@@ -1274,19 +1271,31 @@ BOOL UnlockedLoaderHeap::GetMoreCommittedPages(size_t dwMinSize)
     // Does this fit in the reserved region?
     if (dwMinSize <= (size_t)(m_pEndReservedRegion - m_pAllocPtr))
     {
-        SIZE_T dwSizeToCommit = (m_pAllocPtr + dwMinSize) - m_pPtrToEndOfCommittedRegion;
+        SIZE_T dwSizeToCommit;
+
+        if (m_Options & LHF_SEPARATE_RW_DATA)
+        {
+            dwSizeToCommit = dwMinSize;
+        }
+        else
+        {
+            dwSizeToCommit = (m_pAllocPtr + dwMinSize) - m_pPtrToEndOfCommittedRegion;
+        }
+        
         // TODO: make this cleaner - the end of committed region currently points to the code page end, the data page goes after
         // so we move it here 
         if (m_Options & LHF_SEPARATE_RW_DATA)
         {
             m_pPtrToEndOfCommittedRegion += GetOsPageSize();
         }
+        else
+        {
+            if (dwSizeToCommit < m_dwCommitBlockSize)
+                dwSizeToCommit = min((SIZE_T)(m_pEndReservedRegion - m_pPtrToEndOfCommittedRegion), (SIZE_T)m_dwCommitBlockSize);
 
-        if (dwSizeToCommit < m_dwCommitBlockSize)
-            dwSizeToCommit = min((SIZE_T)(m_pEndReservedRegion - m_pPtrToEndOfCommittedRegion), (SIZE_T)m_dwCommitBlockSize);
-
-        // Round to page size
-        dwSizeToCommit = ALIGN_UP(dwSizeToCommit, GetOsPageSize());
+            // Round to page size
+            dwSizeToCommit = ALIGN_UP(dwSizeToCommit, GetOsPageSize());
+        }
 
         size_t dwSizeToCommitPart = dwSizeToCommit;
         if (m_Options & LHF_SEPARATE_RW_DATA)
@@ -1299,40 +1308,31 @@ BOOL UnlockedLoaderHeap::GetMoreCommittedPages(size_t dwMinSize)
         if (pData == NULL)
             return FALSE;
 
-        m_dwTotalAlloc += dwSizeToCommitPart;
-
         m_pPtrToEndOfCommittedRegion += dwSizeToCommitPart;
 
         if (m_Options & LHF_SEPARATE_RW_DATA)
         {
-            if ((((TADDR)m_pPtrToEndOfCommittedRegion) & 0x1000) == 0x0000)
-            {
-                //__debugbreak();
-            }
             ExecutableAllocator::Instance()->Commit(m_pPtrToEndOfCommittedRegion, dwSizeToCommitPart, FALSE);
-            m_dwTotalAlloc += dwSizeToCommitPart;
 
-            //m_pPtrToEndOfCommittedRegion += dwSizeToCommit;
-            //ExecutableWriterHolder<BYTE> codeWriterHolder((BYTE*)pData, dwSizeToCommitPart);
             m_codePageGenerator((BYTE*)pData);// codeWriterHolder.GetRW());
-            //ClrFlushInstructionCache(pData, 4096);
 
+            // TODO: instead of wasting the memory, add them to a free list - but only if it is larger than the granularity
+            // Idea - reuse the alignment as a granularity?
+            //LoaderHeapFreeBlock::InsertFreeBlock(&m_pFirstFreeBlock, m_pAllocPtr, (BYTE*)pData - m_pAllocPtr, this);
+            INDEBUG(m_dwDebugWastedBytes += (size_t)((BYTE*)pData - m_pAllocPtr);)
             m_pAllocPtr = (BYTE*)pData;
         }
+
+        m_dwTotalAlloc += dwSizeToCommit;
 
         return TRUE;
     }
 
-    // Need to allocate a new set of reserved pages
+    // Need to allocate a new set of reserved pages that will be located likely at a nonconsecutive virtual address.
+    // So all the remaining bytes that are available will be wasted.
+    // TODO: instead of wasting the memory, add them to a free list
+    //LoaderHeapFreeBlock::InsertFreeBlock(&m_pFirstFreeBlock, m_pAllocPtr, m_pPtrToEndOfCommittedRegion - m_pAllocPtr, this);
     INDEBUG(m_dwDebugWastedBytes += (size_t)(m_pPtrToEndOfCommittedRegion - m_pAllocPtr);)
-
-    //if (m_Options & LHF_SEPARATE_RW_DATA)
-    //{
-    //    if (m_pPtrToEndOfCommittedRegion != NULL)
-    //    {
-    //        m_pPtrToEndOfCommittedRegion += GetOsPageSize();
-    //    }
-    //}
 
     // Note, there are unused reserved pages at end of current region -can't do much about that
     // Provide dwMinSize here since UnlockedReservePages will round up the commit size again
@@ -1414,7 +1414,7 @@ void *UnlockedLoaderHeap::UnlockedAllocMem_NoThrow(size_t dwSize
     INCONTRACT(_ASSERTE(!ARE_FAULTS_FORBIDDEN()));
 
 #ifdef RANDOMIZE_ALLOC
-    if (!m_fExplicitControl)
+    if (!m_fExplicitControl && !(m_Options & LHF_SEPARATE_RW_DATA))
         dwSize += s_random.Next() % 256;
 #endif
 
@@ -1626,17 +1626,25 @@ void UnlockedLoaderHeap::UnlockedBackoutMem(void *pMem,
 
     if (m_pAllocPtr == ( ((BYTE*)pMem) + dwSize ))
     {
-        void *pMemRW = pMem;
-        ExecutableWriterHolderC<void> memWriterHolder;
-        if (m_Options & LHF_EXECUTABLE)
+        if (!(m_Options & LHF_SEPARATE_RW_DATA))
         {
-            memWriterHolder = ExecutableWriterHolderC<void>::Create(pMem, dwSize);
-            pMemRW = memWriterHolder.GetRW();
-        }
+            void *pMemRW = pMem;
+            ExecutableWriterHolderC<void> memWriterHolder;
+            if (m_Options & LHF_EXECUTABLE)
+            {
+                memWriterHolder = ExecutableWriterHolderC<void>::Create(pMem, dwSize);
+                pMemRW = memWriterHolder.GetRW();
+            }
 
-        // Cool. This was the last block allocated. We can just undo the allocation instead
-        // of going to the freelist.
-        memset(pMemRW, 0x00, dwSize); // Fill freed region with 0
+            // Cool. This was the last block allocated. We can just undo the allocation instead
+            // of going to the freelist.
+            memset(pMemRW, 0x00, dwSize); // Fill freed region with 0
+        }
+        else
+        {
+            // Clear the RW page
+            memset((BYTE*)pMem + GetOsPageSize(), 0x00, dwSize); // Fill freed region with 0
+        }
         m_pAllocPtr = (BYTE*)pMem;
     }
     else
@@ -1713,6 +1721,7 @@ void *UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSiz
     // know whether the allocation will fit within the current reserved range.
     //
     // Thus, we'll request as much heap growth as is needed for the worst case (extra == alignment)
+    // TODO: we really need to add (alignment - 1) to the size
     size_t dwRoomSize = AllocMem_TotalSize(dwRequestedSize + alignment, this);
     if (dwRoomSize > GetBytesAvailCommittedRegion())
     {
@@ -1723,20 +1732,21 @@ void *UnlockedLoaderHeap::UnlockedAllocAlignedMem_NoThrow(size_t  dwRequestedSiz
     }
 
     pResult = m_pAllocPtr;
-    if ((m_Options & LHF_SEPARATE_RW_DATA) && (((TADDR)pResult) & 0x1000) == 0x1000)
-    {
-        //__debugbreak();
-    }
 
     size_t extra = alignment - ((size_t)pResult & ((size_t)alignment - 1));
+    if ((m_Options & LHF_SEPARATE_RW_DATA))
+    {
+        _ASSERTE(alignment == 1);
+        extra = 0;
+    }
 
 // On DEBUG, we force a non-zero extra so people don't forget to adjust for it on backout
-//#ifndef _DEBUG
+#ifndef _DEBUG
     if (extra == alignment)
     {
         extra = 0;
     }
-//#endif
+#endif
 
     S_SIZE_T cbAllocSize = S_SIZE_T( dwRequestedSize ) + S_SIZE_T( extra );
     if( cbAllocSize.IsOverflow() )
@@ -1887,6 +1897,11 @@ void *UnlockedLoaderHeap::UnlockedAllocMemForCode_NoThrow(size_t dwHeaderSize, s
 BOOL UnlockedLoaderHeap::IsExecutable()
 {
     return (m_Options & LHF_EXECUTABLE);
+}
+
+BOOL UnlockedLoaderHeap::IsInterleaved()
+{
+    return m_Options & LHF_SEPARATE_RW_DATA;
 }
 
 #ifdef DACCESS_COMPILE
@@ -2223,81 +2238,6 @@ BOOL LoaderHeapEvent::QuietValidate()
 #endif //_DEBUG
 
 #ifndef DACCESS_COMPILE
-
-void StubHeap::ReserveBlocks()
-{
-    m_currentReservation = (uint8_t*)ExecutableAllocator::Instance()->Reserve(ALIGN_UP(BlockSize, 64 * 1024));
-    _ASSERTE(m_currentReservation != NULL);
-}
-
-void StubHeap::AllocateBlock()
-{
-    uint8_t* previousBlock = m_currentBlock;
-    m_numBlocks++;
-    //fprintf(stderr, "@@@@@@@@@@@@@@@@ Allocated stub block #%d @@@@@@@@@@@@@@@\n", m_numBlocks);
-
-    if (m_currentBlock == NULL || (m_currentBlock + 2 * BlockSize) > m_currentReservation + 64 * 1024)
-    {
-        ReserveBlocks();
-        m_currentBlock = m_currentReservation;
-    }
-    else
-    {
-        m_currentBlock += BlockSize;
-    }
-
-    // TODO: this needs to be updated to separate reservation and commiting
-    // m_currentBlock = (uint8_t*)ExecutableAllocator::Instance()->Reserve(ALIGN_UP(BlockSize, 64 * 1024));
-    // if (m_currentBlock == NULL)
-    // {
-    //     throw 1;
-    // }
-
-    // TCode
-    ExecutableAllocator::Instance()->Commit(m_currentBlock, 4096, true /* isExecutable */);
-    // TData
-    ExecutableAllocator::Instance()->Commit(m_currentBlock + 4096, 4096, false /* isExecutable */);
-    if (m_thunkSize != 0)
-    {
-        // TThunk
-        ExecutableAllocator::Instance()->Commit(m_currentBlock + 4096 + 4096, m_thunkBlockSize, false /* isExecutable */);
-    }
-
-//        ExecutableWriterHolder<uint8_t> codePageWriterHolder(m_currentBlock, 4096);
-    size_t offset = m_codePageGenerator(m_currentBlock);
-/*
-    // TODO: generate the code page - need some callback, this is just a quick hack
-    int dataOffset = 8192-7+16;
-    for (uint8_t* code = codePageWriterHolder.GetRW() + m_codeSize; code < codePageWriterHolder.GetRW() + 4096; code += m_codeSize)
-    {
-        code[0] = 0x4C;
-        code[1] = 0x8D;
-        code[2] = 0x15;
-        code[3] = dataOffset & 0xFF;
-        code[4] = dataOffset >> 8;
-        code[5] = 0x00;
-        code[6] = 0x00;
-        code[7] = 0xFF;
-        code[8] = 0x25;
-        code[9] = 0xF3;
-        code[10] = 0x0F;
-        code[11] = 0x00;
-        code[12] = 0x00;
-        code[13] = 0x90;
-        code[14] = 0x90;
-        code[15] = 0x90;
-        dataOffset += 16;
-    }
-*/            
-
-    StubHeapBlockHeader* pBlockHeader = (StubHeapBlockHeader*)(m_currentBlock + 4096);
-    new (pBlockHeader) StubHeapBlockHeader();
-    pBlockHeader->pNext = (StubHeapBlockHeader*)(previousBlock + 4096);
-
-    _ASSERTE(sizeof(StubHeapBlockHeader) <= m_dataSize);
-
-    m_freeLoc = m_currentBlock + m_codeSize + offset;
-}
 
 AllocMemTracker::AllocMemTracker()
 {
