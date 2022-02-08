@@ -66,6 +66,120 @@ Miscellaneous
     T &operator =(const T &) = delete
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Call counting
+
+typedef UINT16 CallCount;
+typedef DPTR(CallCount) PTR_CallCount;
+
+////////////////////////////////////////////////////////////////
+// CallCountingStub
+
+class CallCountingStub;
+typedef DPTR(const CallCountingStub) PTR_CallCountingStub;
+
+struct CallCountingStubData
+{
+    PTR_CallCount RemainingCallCountCell;
+    PCODE TargetForMethod;
+    PCODE TargetForThresholdReached;
+};
+
+typedef DPTR(CallCountingStubData) PTR_CallCountingStubData;
+
+class CallCountingStub
+{
+#if defined(TARGET_AMD64)
+    static const int CodeSize = 24;
+#elif defined(TARGET_X86)
+    static const int CodeSize = 24;
+#elif defined(TARGET_ARM64)
+    static const int CodeSize = 40;
+#elif defined(TARGET_ARM)
+    static const int CodeSize = 32;
+#endif
+    UINT8 m_code[CodeSize];
+
+public:
+    static const SIZE_T Alignment = sizeof(void *);
+
+protected:
+    PTR_CallCountingStubData GetData() const
+    {
+        return dac_cast<PTR_CallCountingStubData>((BYTE*)this + 4096);
+    }
+
+#ifndef DACCESS_COMPILE
+    static const PCODE TargetForThresholdReached;
+
+    CallCountingStub() = default;
+
+public:
+    static const CallCountingStub *From(TADDR stubIdentifyingToken);
+
+    PCODE GetEntryPoint() const
+    {
+        WRAPPER_NO_CONTRACT;
+        return PINSTRToPCODE((TADDR)this);
+    }
+#endif // !DACCESS_COMPILE
+
+public:
+
+#ifndef DACCESS_COMPILE
+    void Initialize(PCODE targetForMethod, CallCount* remainingCallCountCell)
+    {
+        PTR_CallCountingStubData pStubData = GetData();
+        pStubData->RemainingCallCountCell = remainingCallCountCell;
+        pStubData->TargetForMethod = targetForMethod;
+        pStubData->TargetForThresholdReached = CallCountingStub::TargetForThresholdReached;
+    }
+#endif // !DACCESS_COMPILE
+
+    static size_t GenerateCodePage(uint8_t* pageBase);
+
+    PTR_CallCount GetRemainingCallCountCell() const;
+    PCODE GetTargetForMethod() const;
+
+protected:
+
+    DISABLE_COPY(CallCountingStub);
+};
+
+////////////////////////////////////////////////////////////////
+// CallCountingStub definitions
+
+#ifndef DACCESS_COMPILE
+inline const CallCountingStub *CallCountingStub::From(TADDR stubIdentifyingToken)
+{
+    WRAPPER_NO_CONTRACT;
+    _ASSERTE(stubIdentifyingToken != NULL);
+
+// TODO: unify this
+#if defined(TARGET_ARM) || defined(TARGET_ARM64)
+    const CallCountingStub* stub = (const CallCountingStub*)stubIdentifyingToken;
+#else
+    const CallCountingStub *stub =
+        (const CallCountingStub *)(stubIdentifyingToken - sizeof(CallCountingStub));
+#endif
+    _ASSERTE(IS_ALIGNED(stub, Alignment));
+    return stub;
+}
+#endif
+
+inline PTR_CallCount CallCountingStub::GetRemainingCallCountCell() const
+{
+    WRAPPER_NO_CONTRACT;
+    return GetData()->RemainingCallCountCell;
+}
+
+inline PCODE CallCountingStub::GetTargetForMethod() const
+{
+    WRAPPER_NO_CONTRACT;
+
+    return GetData()->TargetForMethod;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // CallCountingManager
 
 class CallCountingManager;
