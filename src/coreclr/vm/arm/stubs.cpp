@@ -805,7 +805,7 @@ void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocat
         pData->Target = (PCODE)pPrecodeRX + 4 + THUMB_CODE;
     }
 
-    pData->PrecodeFixupThunk = (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk);
+    pData->PrecodeFixupThunk =GetPreStubEntryPoint();
 }
 
 extern "C" void FixupPrecodeCode();

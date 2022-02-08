@@ -5,21 +5,6 @@
 #include "unixasmmacros.inc"
 #include "asmconstants.h"
 
-//////////////////////////////////////////////////////////////////////////
-//
-// PrecodeFixupThunk
-//
-// The call in fixup precode initally points to this function.
-// The pupose of this function is to load the MethodDesc and forward the call the prestub.
-//
-// EXTERN_C VOID __stdcall PrecodeFixupThunk()
-LEAF_ENTRY PrecodeFixupThunk, _TEXT
-
-        // Tail call to prestub
-        jmp C_FUNC(ThePreStub)
-
-LEAF_END PrecodeFixupThunk, _TEXT
-
 // EXTERN_C int __fastcall HelperMethodFrameRestoreState(
 //         INDEBUG_COMMA(HelperMethodFrame *pFrame)
 //         MachState *pState

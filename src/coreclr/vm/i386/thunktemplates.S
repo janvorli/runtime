@@ -10,13 +10,13 @@ LEAF_ENTRY StubPrecodeCode, _TEXT
         nop
 LEAF_END StubPrecodeCode, _TEXT
 
-PrecodeFixupThunkAddress:
-     dd C_FUNC(_PrecodeFixupThunk)
+ThePreStubAddress:
+     dd C_FUNC(ThePreStub)
 
 LEAF_ENTRY FixupPrecodeCode, _TEXT1
         jmp     dword ptr FixupPrecodeCode + 4096 + FixupPrecodeData__Target
         mov     eax, dword ptr FixupPrecodeCode + 4096 + FixupPrecodeData__MethodDesc
-        jmp     dword ptr PrecodeFixupThunkAddress; The indirect jump uses an absolute address of the indirection slot
+        jmp     dword ptr ThePreStubAddress; The indirect jump uses an absolute address of the indirection slot
         .rept  7
         nop
         .endr

@@ -210,16 +210,6 @@ Done
         NESTED_END
 
 ; ------------------------------------------------------------------
-; The call in fixup precode initally points to this function.
-; The pupose of this function is to load the MethodDesc and forward the call to prestub.
-        NESTED_ENTRY PrecodeFixupThunk
-
-        ; x12 = MethodDesc *
-
-        b ThePreStub
-
-        NESTED_END
-; ------------------------------------------------------------------
 
         NESTED_ENTRY ThePreStub
 

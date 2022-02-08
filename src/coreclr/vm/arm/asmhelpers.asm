@@ -311,13 +311,6 @@ ThePreStubPatchLabel
 
         NESTED_END
 
-; ------------------------------------------------------------------
-; The call in fixup precode initally points to this function.
-; The pupose of this function is to load the MethodDesc and forward the call the prestub.
-        LEAF_ENTRY PrecodeFixupThunk
-
-        b ThePreStub
-
         LEAF_END
 
 ; ------------------------------------------------------------------

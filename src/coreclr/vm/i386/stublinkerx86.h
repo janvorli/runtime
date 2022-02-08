@@ -465,8 +465,6 @@ BOOL rel32SetInterlocked(/*PINT32*/ PVOID pRel32, /*PINT32*/ PVOID pRel32RW, TAD
 //
 //------------------------------------------------------------------------
 
-EXTERN_C VOID STDCALL PrecodeFixupThunk();
-
 #ifdef HOST_64BIT
 
 #define OFFSETOF_PRECODE_TYPE              0

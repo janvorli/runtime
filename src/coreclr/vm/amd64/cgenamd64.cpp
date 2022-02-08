@@ -723,18 +723,6 @@ BOOL DoesSlotCallPrestub(PCODE pCode)
         PCODE pTargetCode = (PCODE) *PTR_SIZE_T(pCode + 6 + *PTR_INT32(pCode + 2));
         return pTargetCode == pCode + 6;
     }
-    //if (*PTR_BYTE(pCode) == X86_INSTR_CALL_REL32)
-    //{
-    //    // Note that call could have been patched to jmp in the meantime
-    //    pCode = rel32Decode(pCode+1);
-
-    //    // JumpStub
-    //    if (isJumpRel64(pCode)) {
-    //        pCode = decodeJump64(pCode);
-    //    }
-
-    //    return pCode == (TADDR)PrecodeFixupThunk;
-    //}
 #endif
 
     if (*PTR_USHORT(pCode) == 0x8b4c &&

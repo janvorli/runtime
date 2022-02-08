@@ -1217,18 +1217,6 @@ BOOL DoesSlotCallPrestub(PCODE pCode)
         PCODE pTargetCode = (PCODE)*PTR_SIZE_T(*PTR_DWORD(pCode + 2));
         return pTargetCode == pCode + 6;
     }
-    // if (*PTR_BYTE(pCode) == X86_INSTR_CALL_REL32)
-    // {
-    //     // Note that call could have been patched to jmp in the meantime
-    //     pCode = rel32Decode(pCode+1);
-
-    //     // NGEN case
-    //     if (*PTR_BYTE(pCode) == X86_INSTR_JMP_REL32) {
-    //         pCode = rel32Decode(pCode+1);
-    //     }
-
-    //     return pCode == (TADDR)PrecodeFixupThunk;
-    // }
 #endif
 
     if (*PTR_BYTE(pCode) != X86_INSTR_MOV_EAX_IND ||

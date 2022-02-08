@@ -19,15 +19,15 @@ _StubPrecodeCode@0 PROC PUBLIC
         nop
 _StubPrecodeCode@0 ENDP
 
-EXTERN _PrecodeFixupThunk@0:PROC
+EXTERN _ThePreStub@0:PROC
 
-PrecodeFixupThunkAddress:
-     dd _PrecodeFixupThunk@0
+ThePreStubAddress:
+     dd _ThePreStub@0
 
 _FixupPrecodeCode@0 PROC PUBLIC
         jmp     dword ptr _FixupPrecodeCode@0 + 4096 + FixupPrecodeData__Target
         mov     eax, dword ptr _FixupPrecodeCode@0 + 4096 + FixupPrecodeData__MethodDesc
-        jmp     dword ptr PrecodeFixupThunkAddress; The indirect jump uses an absolute address of the indirection slot
+        jmp     dword ptr ThePreStubAddress; The indirect jump uses an absolute address of the indirection slot
         REPEAT  7
         nop
         ENDM

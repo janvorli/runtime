@@ -479,10 +479,26 @@ TADDR Precode::AllocateTemporaryEntryPoints(MethodDescChunk *  pChunk,
     SIZE_T oneSize = SizeOfTemporaryEntryPoint(t);
     MethodDesc * pMD = pChunk->GetFirstMethodDesc();
 
-    if (t == PRECODE_FIXUP || t == PRECODE_STUB || t == PRECODE_NDIRECT_IMPORT)
+    if (t == PRECODE_FIXUP)
     {
         // This is unfortunate, as the entrypoints needs to be sequential.
         temporaryEntryPoints = (TADDR)pamTracker->Track(pLoaderAllocator->GetFixupPrecodeHeap()->AllocAlignedMem(totalSize, 1));
+
+        TADDR entryPoint = temporaryEntryPoints;
+        for (int i = 0; i < count; i++)
+        {
+            ((Precode *)entryPoint)->Init((Precode *)entryPoint, t, pMD, pLoaderAllocator);
+
+            _ASSERTE((Precode *)entryPoint == GetPrecodeForTemporaryEntryPoint(temporaryEntryPoints, i));
+            entryPoint += oneSize;
+
+            pMD = (MethodDesc *)(dac_cast<TADDR>(pMD) + pMD->SizeOf());
+        }
+    }
+    else if (t == PRECODE_STUB || t == PRECODE_NDIRECT_IMPORT)
+    {
+        // This is unfortunate, as the entrypoints needs to be sequential.
+        temporaryEntryPoints = (TADDR)pamTracker->Track(pLoaderAllocator->GetNewStubPrecodeHeap()->AllocAlignedMem(totalSize, 1));
 
         TADDR entryPoint = temporaryEntryPoints;
         for (int i = 0; i < count; i++)

@@ -39,7 +39,7 @@ LEAF_END LookupStubCode, _TEXT
 
 LEAF_ENTRY DispatchStubCode, _TEXT
        mov    rax,QWORD PTR [rip + DispatchStubCode + 4096 + DispatchStubData__ExpectedMT]
-       cmp    QWORD PTR [rcx],rax;
+       cmp    QWORD PTR [rdi],rax;
        jne    Fail
        jmp    QWORD PTR [rip + DispatchStubCode + 4096 + DispatchStubData__ImplTarget]
     Fail:
@@ -49,7 +49,7 @@ LEAF_END DispatchStubCode, _TEXT
 LEAF_ENTRY ResolveStubCode, _TEXT
         push   rdx
         mov    r10,QWORD PTR [rip + ResolveStubCode + 4096 + ResolveStubData__CacheAddress]
-        mov    rax,QWORD PTR [rcx]
+        mov    rax,QWORD PTR [rdi]
         mov    rdx,rax
         shr    rax,12
         add    rax,rdx

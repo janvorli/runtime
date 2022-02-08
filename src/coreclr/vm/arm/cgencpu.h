@@ -1020,8 +1020,6 @@ inline BOOL ClrFlushInstructionCache(LPCVOID pCodeAddr, size_t sizeOfCode)
 // Note: If you introduce new precode implementation below, then please
 //       update PrecodeStubManager::CheckIsStub_Internal to account for it.
 
-EXTERN_C VOID STDCALL PrecodeFixupThunk();
-
 #define PRECODE_ALIGNMENT           sizeof(void*)
 #define SIZEOF_PRECODE_BASE         CODE_SIZE_ALIGN
 #define OFFSETOF_PRECODE_TYPE       3

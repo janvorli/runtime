@@ -147,14 +147,6 @@ NESTED_ENTRY NDirectImportThunk, _TEXT, NoHandler
 NESTED_END NDirectImportThunk, _TEXT
 
 // ------------------------------------------------------------------
-// The call in fixup precode initally points to this function.
-// The pupose of this function is to load the MethodDesc and forward the call to prestub.
-NESTED_ENTRY PrecodeFixupThunk, _TEXT, NoHandler
-    // x12 = MethodDesc*
-
-    b       C_FUNC(ThePreStub)
-NESTED_END PrecodeFixupThunk, _TEXT
-// ------------------------------------------------------------------
 
 NESTED_ENTRY ThePreStub, _TEXT, NoHandler
 

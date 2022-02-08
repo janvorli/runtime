@@ -631,7 +631,7 @@ void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocat
     _ASSERTE(GetMethodDesc() == (TADDR)pMD);
 
     pData->Target = (PCODE)pPrecodeRX + 8;
-    pData->PrecodeFixupThunk = (PCODE)GetEEFuncEntryPoint(PrecodeFixupThunk);
+    pData->PrecodeFixupThunk = GetPreStubEntryPoint();
 
 }
 
@@ -746,7 +746,6 @@ BOOL DoesSlotCallPrestub(PCODE pCode)
             pTarget = decodeJump(pTarget);
         }
 
-        //return pTarget == (TADDR)PrecodeFixupThunk;
         return pTarget == (TADDR)pCode + 8;
     }
 #endif

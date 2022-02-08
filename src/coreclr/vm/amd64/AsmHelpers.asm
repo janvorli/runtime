@@ -239,24 +239,6 @@ NESTED_ENTRY JIT_RareDisableHelper, _TEXT
 NESTED_END JIT_RareDisableHelper, _TEXT
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
-;; PrecodeFixupThunk
-;;
-;; The call in fixup precode initally points to this function.
-;; The pupose of this function is to load the MethodDesc and forward the call the prestub.
-;;
-; EXTERN_C VOID __stdcall PrecodeFixupThunk();
-LEAF_ENTRY PrecodeFixupThunk, _TEXT
-
-        ;mov     METHODDESC_REGISTER, qword ptr [rax+8]
-
-        ; Tail call to prestub
-        jmp     ThePreStub
-
-LEAF_END PrecodeFixupThunk, _TEXT
-
-
 ; extern "C" void setFPReturn(int fpSize, INT64 retVal);
 LEAF_ENTRY setFPReturn, _TEXT
         cmp     ecx, 4
