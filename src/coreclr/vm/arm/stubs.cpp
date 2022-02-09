@@ -721,123 +721,7 @@ void HelperMethodFrame::UpdateRegDisplay(const PREGDISPLAY pRD)
     pRD->pCurrentContextPointers->Lr = NULL;
 }
 
-#ifdef DACCESS_COMPILE
-void FixupPrecode::EnumMemoryRegions(CLRDataEnumMemoryFlags flags)
-{
-    SUPPORTS_DAC;
-    DacEnumMemoryRegion(dac_cast<TADDR>(this), sizeof(FixupPrecode));
-
-    //??? DacEnumMemoryRegion(GetBase(), sizeof(TADDR));
-}
-#endif // DACCESS_COMPILE
-
 #ifndef DACCESS_COMPILE
-
-void StubPrecode::Init(StubPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator)
-{
-    WRAPPER_NO_CONTRACT;
-
-    StubPrecodeData *pStubData = GetData();
-
-    pStubData->Target = GetPreStubEntryPoint();
-    pStubData->MethodDesc = pMD;
-    pStubData->Type = StubPrecode::Type;
-}
-
-extern "C" void StubPrecodeCode();
-
-size_t StubPrecode::GenerateCodePage(uint8_t* pageBaseRX)
-{
-    /*
-    nop; nop; this is needed to allow the relative offset to reach the slot. Other option would be to have the data page first
-    Consider doing that for all archs
-    But also consider if VSD and call counting stubs would actually not have a problem with the distances that way
-    However, we need three slots anyways.
-    We can also make the entry point after the nops so that they cost nothing but the memory
-    ldr r12, [pc, #4092]
-    ldr pc, [pc, #4092]    
-    */
-    ExecutableWriterHolder<uint8_t> codePageWriterHolder((uint8_t*)pageBaseRX, 4096);
-    uint8_t* pageBase = codePageWriterHolder.GetRW();
-
-    memcpy(pageBase, (const void*)PCODEToPINSTR((PCODE)&StubPrecodeCode), 12);
-    memcpy(pageBase + 12, pageBase, 12);
-    memcpy(pageBase + 24, pageBase, 24);
-    memcpy(pageBase + 48, pageBase, 48);
-    memcpy(pageBase + 96, pageBase, 96);
-    memcpy(pageBase + 192, pageBase, 192);
-    memcpy(pageBase + 384, pageBase, 384);
-    memcpy(pageBase + 768, pageBase, 768);
-    memcpy(pageBase + 1536, pageBase, 1536);
-    memcpy(pageBase + 3072, pageBase, 1020);
-
-    ClrFlushInstructionCache(pageBaseRX, 4096);
-
-    return 0;
-}
-
-void NDirectImportPrecode::Init(NDirectImportPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator)
-{
-    WRAPPER_NO_CONTRACT;
-
-    StubPrecodeData *pStubData = GetData();
-
-    pStubData->Target = GetEEFuncEntryPoint(NDirectImportThunk);
-    pStubData->MethodDesc = pMD;
-    pStubData->Type = NDirectImportPrecode::Type;;
-}
-
-void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator, int iMethodDescChunkIndex /*=0*/, int iPrecodeChunkIndex /*=0*/)
-{
-    WRAPPER_NO_CONTRACT;
-
-    WRAPPER_NO_CONTRACT;
-
-    _ASSERTE(pPrecodeRX == this);
-
-    FixupPrecodeData *pData = GetData();
-    pData->MethodDesc = pMD;
-
-    _ASSERTE(GetMethodDesc() == (TADDR)pMD);
-
-    if (pLoaderAllocator != NULL)
-    {
-        pData->Target = (PCODE)pPrecodeRX + 4 + THUMB_CODE;
-    }
-
-    pData->PrecodeFixupThunk =GetPreStubEntryPoint();
-}
-
-extern "C" void FixupPrecodeCode();
-
-size_t FixupPrecode::GenerateCodePage(uint8_t* pageBaseRX)
-{
-/*    
-0x0000000000000000:  DF F8 FC FF    ldr.w pc, [pc, #0xffc]
-0x0000000000000004:  DF F8 FC CF    ldr.w ip, [pc, #0xffc]
-0x0000000000000008:  DF F8 FC FF    ldr.w pc, [pc, #0xffc]
-        ldr pc, [pc, #4092]
-        ldr r12, [pc, #4092]
-        ldr pc, [pc, #4092]    
-*/
-
-    ExecutableWriterHolder<uint8_t> codePageWriterHolder((uint8_t*)pageBaseRX, 4096);
-    uint8_t* pageBase = codePageWriterHolder.GetRW();
-
-    memcpy(pageBase, (const void*)PCODEToPINSTR((PCODE)&FixupPrecodeCode), 12);
-    memcpy(pageBase + 12, pageBase, 12);
-    memcpy(pageBase + 24, pageBase, 24);
-    memcpy(pageBase + 48, pageBase, 48);
-    memcpy(pageBase + 96, pageBase, 96);
-    memcpy(pageBase + 192, pageBase, 192);
-    memcpy(pageBase + 384, pageBase, 384);
-    memcpy(pageBase + 768, pageBase, 768);
-    memcpy(pageBase + 1536, pageBase, 1536);
-    memcpy(pageBase + 3072, pageBase, 1020);
-    ClrFlushInstructionCache(pageBaseRX, 4096);
-
-    return 0;
-}
 
 void ThisPtrRetBufPrecode::Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocator)
 {
@@ -951,7 +835,7 @@ BOOL DoesSlotCallPrestub(PCODE pCode)
             pTarget = decodeJump(pTarget);
         }
 
-        return pTarget == (TADDR)pInstr + 4 + THUMB_CODE;
+        return pTarget == (TADDR)pInstr + FixupPrecode::FixupCodeOffset;
     }
 
     // StubPrecode

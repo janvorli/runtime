@@ -1024,20 +1024,6 @@ inline BOOL ClrFlushInstructionCache(LPCVOID pCodeAddr, size_t sizeOfCode)
 #define SIZEOF_PRECODE_BASE         CODE_SIZE_ALIGN
 #define OFFSETOF_PRECODE_TYPE       3
 
-// Invalid precode type
-struct InvalidPrecode {
-    static const int Type = 0;
-};
-
-struct StubPrecodeData
-{
-    PTR_MethodDesc MethodDesc;
-    PCODE Target;
-    BYTE Type;
-};
-
-typedef DPTR(StubPrecodeData) PTR_StubPrecodeData;
-
 struct StubPrecode 
 {
     static const int Type = 0xcf;

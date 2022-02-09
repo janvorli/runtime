@@ -35,20 +35,20 @@ _FixupPrecodeCode@0 ENDP
 
 _CallCountingStubCode@0 PROC PUBLIC
         mov    eax, dword ptr _CallCountingStubCode@0 + 4096 +  CallCountingStubData__RemainingCallCountCell
-_RemainingCallCountCellOffset EQU $-4-_CallCountingStubCode@0
+_CallCountingStubCode_RemainingCallCountCellOffset EQU $-4-_CallCountingStubCode@0
         dec    WORD PTR [eax]
         je     CountReachedZero
         jmp    dword ptr  _CallCountingStubCode@0 + 4096 +  CallCountingStubData__TargetForMethod
-_TargetForMethodOffset EQU $-4-_CallCountingStubCode@0
+_CallCountingStubCode_TargetForMethodOffset EQU $-4-_CallCountingStubCode@0
 CountReachedZero:
         call   dword ptr  _CallCountingStubCode@0 + 4096 +  CallCountingStubData__TargetForThresholdReached
-_TargetForThresholdReachedOffset EQU $-4-_CallCountingStubCode@0
+_CallCountingStubCode_TargetForThresholdReachedOffset EQU $-4-_CallCountingStubCode@0
         int    3
 _CallCountingStubCode@0 ENDP
 
-PUBLIC _RemainingCallCountCellOffset
-PUBLIC _TargetForMethodOffset
-PUBLIC _TargetForThresholdReachedOffset
+PUBLIC _CallCountingStubCode_RemainingCallCountCellOffset
+PUBLIC _CallCountingStubCode_TargetForMethodOffset
+PUBLIC _CallCountingStubCode_TargetForThresholdReachedOffset
 
 _LookupStubCode@0 PROC PUBLIC
         push   eax

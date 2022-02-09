@@ -554,20 +554,6 @@ struct HijackArgs
 
 EXTERN_C VOID STDCALL PrecodeFixupThunk();
 
-// Invalid precode type
-struct InvalidPrecode {
-    static const int Type = 0;
-};
-
-struct StubPrecodeData
-{
-    PCODE Target;
-    PTR_MethodDesc MethodDesc;
-    BYTE Type;
-};
-
-typedef DPTR(StubPrecodeData) PTR_StubPrecodeData;
-
 struct StubPrecode {
 
     static const int Type = 0x0A; // assumes the two ldr version

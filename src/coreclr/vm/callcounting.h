@@ -90,12 +90,16 @@ class CallCountingStub
 {
 #if defined(TARGET_AMD64)
     static const int CodeSize = 24;
+    static const int StubIdentifyingTokenOffset = sizeof(CallCountingStub);
 #elif defined(TARGET_X86)
     static const int CodeSize = 24;
+    static const int StubIdentifyingTokenOffset = 22;
 #elif defined(TARGET_ARM64)
     static const int CodeSize = 40;
+    static const int StubIdentifyingTokenOffset = 0;
 #elif defined(TARGET_ARM)
     static const int CodeSize = 32;
+    static const int StubIdentifyingTokenOffset = 0;
 #endif
     UINT8 m_code[CodeSize];
 
@@ -154,17 +158,8 @@ inline const CallCountingStub *CallCountingStub::From(TADDR stubIdentifyingToken
     WRAPPER_NO_CONTRACT;
     _ASSERTE(stubIdentifyingToken != NULL);
 
-// TODO: unify this
-#if defined(TARGET_ARM) || defined(TARGET_ARM64)
-    const CallCountingStub* stub = (const CallCountingStub*)stubIdentifyingToken;
-#elif defined(TARGET_ARM64)
-    const CallCountingStub *stub =
-        (const CallCountingStub *)(stubIdentifyingToken - sizeof(CallCountingStub));
-#else
-    const CallCountingStub *stub =
-        (const CallCountingStub *)(stubIdentifyingToken - 22);
+    const CallCountingStub *stub = (const CallCountingStub *)(stubIdentifyingToken - StubIdentifyingTokenOffset);
 
-#endif
     _ASSERTE(IS_ALIGNED(stub, Alignment));
     return stub;
 }
@@ -179,7 +174,6 @@ inline PTR_CallCount CallCountingStub::GetRemainingCallCountCell() const
 inline PCODE CallCountingStub::GetTargetForMethod() const
 {
     WRAPPER_NO_CONTRACT;
-
     return GetData()->TargetForMethod;
 }
 

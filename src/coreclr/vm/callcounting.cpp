@@ -271,9 +271,9 @@ const CallCountingStub *CallCountingManager::CallCountingStubAllocator::Allocate
 extern "C" void CallCountingStubCode();
 
 #ifdef TARGET_X86
-extern "C" size_t RemainingCallCountCellOffset;
-extern "C" size_t TargetForMethodOffset;
-extern "C" size_t TargetForThresholdReachedOffset;
+extern "C" size_t CallCountingStubCode_RemainingCallCountCellOffset;
+extern "C" size_t CallCountingStubCode_TargetForMethodOffset;
+extern "C" size_t CallCountingStubCode_TargetForThresholdReachedOffset;
 #endif
 
 #define SYMBOL_VALUE(name) ((size_t)&name)
@@ -287,19 +287,19 @@ size_t CallCountingStub::GenerateCodePage(uint8_t* pageBaseRX)
     int totalCodeSize = (pageSize / CallCountingStub::CodeSize) * CallCountingStub::CodeSize;
 
 #ifdef TARGET_X86
-    for (int i = 0; i < totalCodeSize; i += 24)
+    for (int i = 0; i < totalCodeSize; i += CallCountingStub::CodeSize)
     {
         memcpy(pageBase + i, (const void*)&CallCountingStubCode, CallCountingStub::CodeSize);
 
         // Set absolute addresses of the slots in the stub
         uint8_t* pCounterSlot = pageBase + i + pageSize + offsetof(CallCountingStubData, RemainingCallCountCell);
-        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(RemainingCallCountCellOffset)) = pCounterSlot;
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(CallCountingStubCode_RemainingCallCountCellOffset)) = pCounterSlot;
 
         uint8_t* pTargetSlot = pageBase + i + pageSize + offsetof(CallCountingStubData, TargetForMethod);
-        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(TargetForMethodOffset)) = pTargetSlot;
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(CallCountingStubCode_TargetForMethodOffset)) = pTargetSlot;
 
         uint8_t* pCountReachedZeroSlot = pageBase + i + pageSize + offsetof(CallCountingStubData, TargetForThresholdReached);
-        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(TargetForThresholdReachedOffset)) = pCountReachedZeroSlot;
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(CallCountingStubCode_TargetForThresholdReachedOffset)) = pCountReachedZeroSlot;
     }
 #else // TARGET_X86
     memcpy(pageBase, (const void*)&CallCountingStubCode, CallCountingStub::CodeSize);

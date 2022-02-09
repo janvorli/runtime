@@ -1215,7 +1215,7 @@ BOOL DoesSlotCallPrestub(PCODE pCode)
     if (*PTR_WORD(pCode) == X86_INSTR_JMP_IND)
     {
         PCODE pTargetCode = (PCODE)*PTR_SIZE_T(*PTR_DWORD(pCode + 2));
-        return pTargetCode == pCode + 6;
+        return pTargetCode == pCode + FixupPrecode::FixupCodeOffset;
     }
 #endif
 

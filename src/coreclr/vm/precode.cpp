@@ -551,3 +551,147 @@ void Precode::EnumMemoryRegions(CLRDataEnumMemoryFlags flags)
 }
 #endif
 
+#ifdef HAS_FIXUP_PRECODE
+
+#ifdef DACCESS_COMPILE
+void FixupPrecode::EnumMemoryRegions(CLRDataEnumMemoryFlags flags)
+{
+    SUPPORTS_DAC;
+    DacEnumMemoryRegion(dac_cast<TADDR>(this), sizeof(FixupPrecode));
+
+    // TODO: enumerate the data part
+//    ??DacEnumMemoryRegion(dac_cast<TADDR>(GetData()), sizeof(FixupPrecodeData));
+}
+#endif // DACCESS_COMPILE
+
+#endif // HAS_FIXUP_PRECODE
+
+#ifndef DACCESS_COMPILE
+
+void StubPrecode::Init(StubPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator /* = NULL */,
+    BYTE type /* = StubPrecode::Type */, TADDR target /* = NULL */)
+{
+    WRAPPER_NO_CONTRACT;
+
+    StubPrecodeData *pStubData = GetData();
+
+    if (pLoaderAllocator != NULL)
+    {
+        // Use pMD == NULL in all precode initialization methods to allocate the initial jump stub in non-dynamic heap
+        // that has the same lifetime like as the precode itself
+        if (target == NULL)
+            target = GetPreStubEntryPoint();
+        pStubData->Target = target;
+    }
+
+    pStubData->MethodDesc = pMD;
+    pStubData->Type = type;
+}
+
+extern "C" void StubPrecodeCode();
+
+size_t StubPrecode::GenerateCodePage(uint8_t* pageBaseRX)
+{
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, 4096);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
+    int pageSize = GetOsPageSize();
+
+    int totalCodeSize = (pageSize / StubPrecode::CodeSize) * StubPrecode::CodeSize;
+
+#ifdef TARGET_X86
+    for (int i = 0; i < totalCodeSize; i += StubPrecode::CodeSize)
+    {
+        memcpy(pageBase + i, (const void*)&StubPrecodeCode, StubPrecode::CodeSize);
+        uint8_t* pTargetSlot = pageBase + i + 4096 + offsetof(StubPrecodeData, Target);
+        *(uint8_t**)(pageBase + i + 7) = pTargetSlot;
+        uint8_t* pMethodDescSlot = pageBase + i + 4096 + offsetof(StubPrecodeData, MethodDesc);
+        *(uint8_t**)(pageBase + i + 1) = pMethodDescSlot;
+    }
+#else // TARGET_X86
+    memcpy(pageBase, (const void*)&StubPrecodeCode, StubPrecode::CodeSize);
+
+    // TODO: create an universal method for all stubs and use it 
+    int i;
+    for (i = StubPrecode::CodeSize; i < pageSize / 2; i *= 2)
+    {
+        memcpy(pageBase + i, pageBase, i);
+    }
+    memcpy(pageBase + i, pageBase, totalCodeSize - i);
+#endif // TARGET_X86
+
+    ClrFlushInstructionCache(pageBaseRX, pageSize);
+
+    return 0;
+}
+
+#ifdef HAS_NDIRECT_IMPORT_PRECODE
+
+void NDirectImportPrecode::Init(NDirectImportPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator)
+{
+    WRAPPER_NO_CONTRACT;
+    StubPrecode::Init(pPrecodeRX, pMD, pLoaderAllocator, NDirectImportPrecode::Type, GetEEFuncEntryPoint(NDirectImportThunk));
+}
+
+#endif // HAS_NDIRECT_IMPORT_PRECODE
+
+#ifdef HAS_FIXUP_PRECODE
+void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator *pLoaderAllocator)
+{
+    WRAPPER_NO_CONTRACT;
+
+    _ASSERTE(pPrecodeRX == this);
+
+    FixupPrecodeData *pData = GetData();
+    pData->MethodDesc = pMD;
+
+    _ASSERTE(GetMethodDesc() == (TADDR)pMD);
+
+    pData->Target = (PCODE)pPrecodeRX + FixupPrecode::FixupCodeOffset;
+    pData->PrecodeFixupThunk = GetPreStubEntryPoint();
+}
+
+extern "C" void FixupPrecodeCode();
+
+size_t FixupPrecode::GenerateCodePage(uint8_t* pageBaseRX)
+{
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, 4096);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
+    int pageSize = GetOsPageSize();
+
+    int totalCodeSize = (pageSize / FixupPrecode::CodeSize) * FixupPrecode::CodeSize;
+
+#ifdef TARGET_X86
+    for (int i = 0; i < totalCodeSize; i += FixupPrecode::CodeSize)
+    {
+        memcpy(pageBase + i, (const void*)&FixupPrecodeCode, FixupPrecode::CodeSize);
+        uint8_t* pTargetSlot = pageBase + i + 4096 + offsetof(FixupPrecodeData, Target);
+
+        // TODO: get the offset in the assembler code
+        *(uint8_t**)(pageBase + i + 2) = pTargetSlot;
+        uint8_t* pMethodDescSlot = pageBase + i + 4096 + offsetof(FixupPrecodeData, MethodDesc);
+        *(uint8_t**)(pageBase + i + 7) = pMethodDescSlot;
+    }
+#else // TARGET_X86
+    memcpy(pageBase, (const void*)&FixupPrecodeCode, FixupPrecode::CodeSize);
+
+    // TODO: create an universal method for all stubs and use it 
+    int i;
+    for (i = FixupPrecode::CodeSize; i < pageSize / 2; i *= 2)
+    {
+        memcpy(pageBase + i, pageBase, i);
+    }
+
+    memcpy(pageBase + i, pageBase, totalCodeSize - i);
+#endif // TARGET_X86
+    ClrFlushInstructionCache(pageBaseRX, pageSize);
+
+    return 0;
+// #ifndef INDIRECTION_SLOT_FROM_JIT
+//     return 0;
+// #else
+//     return 24;
+// #endif
+}
+
+#endif // HAS_FIXUP_PRECODE
+#endif // !DACCESS_COMPILE
