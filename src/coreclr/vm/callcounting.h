@@ -157,9 +157,13 @@ inline const CallCountingStub *CallCountingStub::From(TADDR stubIdentifyingToken
 // TODO: unify this
 #if defined(TARGET_ARM) || defined(TARGET_ARM64)
     const CallCountingStub* stub = (const CallCountingStub*)stubIdentifyingToken;
-#else
+#elif defined(TARGET_ARM64)
     const CallCountingStub *stub =
         (const CallCountingStub *)(stubIdentifyingToken - sizeof(CallCountingStub));
+#else
+    const CallCountingStub *stub =
+        (const CallCountingStub *)(stubIdentifyingToken - 22);
+
 #endif
     _ASSERTE(IS_ALIGNED(stub, Alignment));
     return stub;

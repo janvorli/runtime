@@ -270,222 +270,51 @@ const CallCountingStub *CallCountingManager::CallCountingStubAllocator::Allocate
 
 extern "C" void CallCountingStubCode();
 
-size_t CallCountingStub::GenerateCodePage(uint8_t* pageBaseRX)
-{
-#if TARGET_AMD64
-    /*
-    0:  66 ff 0d f9 0f 00 00    dec    WORD PTR [rip+0xff9]        # 1000 <l0+0xff1>
-    7:  74 06                   je     f <l0>
-    9:  ff 25 f9 0f 00 00       jmp    QWORD PTR [rip+0xff9]        # 1008 <l0+0xff9>
-    000000000000000f <l0>:
-    f:  ff 15 fb 0f 00 00       call   QWORD PTR [rip+0xffb]        # 1010 <l0+0x1001>
-    15: cc                      int3
-
-
-    0:  48 8b 05 f9 0f 00 00    mov    rax,QWORD PTR [rip+0xff9]        # 1000 <l0+0xfee>
-    7:  66 ff 08                dec    WORD PTR [rax]
-    a:  74 06                   je     12 <l0>
-    c:  ff 25 f6 0f 00 00       jmp    QWORD PTR [rip+0xff6]        # 1008 <l0+0xff6>
-    0000000000000012 <l0>:
-    12: ff 15 f8 0f 00 00       call   QWORD PTR [rip+0xff8]        # 1010 <l0+0xffe>
-*/
-    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, 4096);
-    uint8_t* pageBase = codePageWriterHolder.GetRW();
-
-    memcpy(pageBase, (const void*)&CallCountingStubCode, 24);
-
-    // pageBase[0] = 0x48;
-    // pageBase[1] = 0x8b;
-    // pageBase[2] = 0x05;
-    // pageBase[3] = 0xf9;
-    // pageBase[4] = 0x0f;
-    // pageBase[5] = 0x00;
-    // pageBase[6] = 0x00;
-    // pageBase[7] = 0x66;
-    // pageBase[8] = 0xff;
-    // pageBase[9] = 0x08;
-    // pageBase[10] = 0x74;
-    // pageBase[11] = 0x06;
-    // pageBase[12] = 0xff;
-    // pageBase[13] = 0x25;
-    // pageBase[14] = 0xf6;
-    // pageBase[15] = 0x0f;
-    // pageBase[16] = 0x00;
-    // pageBase[17] = 0x00;
-    // pageBase[18] = 0xff;
-    // pageBase[19] = 0x15;
-    // pageBase[20] = 0xf8;
-    // pageBase[21] = 0x0f;
-    // pageBase[22] = 0x00;
-    // pageBase[23] = 0x00;
-
-/*
-    pageBase[0] = 0x66;
-    pageBase[1] = 0xff;
-    pageBase[2] = 0x0d;
-    pageBase[3] = 0xf9;
-    pageBase[4] = 0x0f;
-    pageBase[5] = 0x00;
-    pageBase[6] = 0x00;
-    pageBase[7] = 0x74;
-    pageBase[8] = 0x06;
-    pageBase[9] = 0xff;
-    pageBase[10] = 0x25;
-    pageBase[11] = 0xf9;
-    pageBase[12] = 0x0f;
-    pageBase[13] = 0x00;
-    pageBase[14] = 0x00;
-    pageBase[15] = 0xff;
-    pageBase[16] = 0x15;
-    pageBase[17] = 0xfb;
-    pageBase[18] = 0x0f;
-    pageBase[19] = 0x00;
-    pageBase[20] = 0x00;
-    pageBase[21] = 0xcc;
-    pageBase[22] = 0x90;
-    pageBase[23] = 0x90;
-*/
-    // Copy the same two instructions to the whole page
-    memcpy(pageBase + 24, pageBase, 24);
-    memcpy(pageBase + 48, pageBase, 48);
-    memcpy(pageBase + 96, pageBase, 96);
-    memcpy(pageBase + 192, pageBase, 192);
-    memcpy(pageBase + 384, pageBase, 384);
-    memcpy(pageBase + 768, pageBase, 768);
-    memcpy(pageBase + 1536, pageBase, 1536);
-    memcpy(pageBase + 3072, pageBase, 1008);
-
-#elif TARGET_ARM64
-    ExecutableWriterHolder<uint32_t> codePageWriterHolder((uint32_t*)pageBaseRX, 4096 / 4);
-    uint32_t* pageBase = codePageWriterHolder.GetRW();
-
-/*
-0x0000000000000000:  09 80 00 58    ldr  x9, #0x1000
-0x0000000000000004:  2A 01 40 79    ldrh w10, [x9]
-0x0000000000000008:  4A 05 00 71    subs w10, w10, #1
-0x000000000000000c:  2A 01 00 79    strh w10, [x9]
-0x0000000000000010:  60 00 00 54    b.eq #0x1c
-0x0000000000000014:  A9 7F 00 58    ldr  x9, #0x1008
-0x0000000000000018:  20 01 1F D6    br   x9
-0x000000000000001c:  2A FF FF 10    adr  x10, #0
-0x0000000000000020:  89 7F 00 58    ldr  x9, #0x1010
-0x0000000000000024:  20 01 1F D6    br   x9
-*/
-
-    memcpy(pageBase, (const void*)PCODEToPINSTR((PCODE)&CallCountingStubCode), 40);
-
-    // pageBase[0] = 0x58008009;
-    // pageBase[1] = 0x7940012a;
-    // pageBase[2] = 0x7100054a;
-    // pageBase[3] = 0x7900012a;
-    // pageBase[4] = 0x54000060;
-    // pageBase[5] = 0x58007fa9;
-    // pageBase[6] = 0xd61f0120;
-    // pageBase[7] = 0x10ffff2a;
-    // pageBase[8] = 0x58007f89;
-    // pageBase[9] = 0xd61f0120;
-
-    memcpy(pageBase + 10, pageBase, 40);
-    memcpy(pageBase + 20, pageBase, 80);
-    memcpy(pageBase + 40, pageBase, 160);
-    memcpy(pageBase + 80, pageBase, 320);
-    memcpy(pageBase + 160, pageBase, 640);
-    memcpy(pageBase + 320, pageBase, 1280);
-    memcpy(pageBase + 640, pageBase, 1520);
-
-#elif TARGET_X86
-    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, 4096);
-    uint8_t* pageBase = codePageWriterHolder.GetRW();
-/*
-0:  a1 fb 0f 00 00          mov    eax,ds:0xffb
-5:  66 ff 08                dec    WORD PTR [eax]
-8:  74 06                   je     f <CountReachedZero>
-a:  ff 25 f5 0f 00 00       jmp    DWORD PTR ds:0xff5
-0000000f <CountReachedZero>:
-10: ff 15 f3 0f 00 00       call   DWORD PTR ds:0xff3
-16: cc                       int    3
-*/
-    for (int i = 0; i <= 4096 - 24; i += 24)
-    {
-        pageBase[i + 0] = 0xa1;
-
-        uint8_t* pCounterSlot = pageBase + i + 4096;
-        *(uint8_t**)(pageBase + i + 1) = pCounterSlot;
-
-        pageBase[i + 5] = 0x66;
-        pageBase[i + 6] = 0xff;
-        pageBase[i + 7] = 0x08;
-        pageBase[i + 8] = 0x74;
-        pageBase[i + 9] = 0x06;
-        pageBase[i + 10] = 0xff;
-        pageBase[i + 11] = 0x25;
-
-        uint8_t* pTargetSlot = pageBase + i + 4096 + 4;
-        *(uint8_t**)(pageBase + i + 12) = pTargetSlot;
-
-        pageBase[i + 16] = 0xff;
-        pageBase[i + 17] = 0x15;
-
-        uint8_t* pCountReachedZeroSlot = pageBase + i + 4096 + 8;
-        *(uint8_t**)(pageBase + i + 18) = pCountReachedZeroSlot;
-
-        pageBase[i + 22] = 0xcc;
-        pageBase[i + 23] = 0x90;
-    }
-
-    // Copy the same instructions to the whole page
-    // memcpy(pageBase + 24, pageBase, 24);
-    // memcpy(pageBase + 48, pageBase, 48);
-    // memcpy(pageBase + 96, pageBase, 96);
-    // memcpy(pageBase + 192, pageBase, 192);
-    // memcpy(pageBase + 384, pageBase, 384);
-    // memcpy(pageBase + 768, pageBase, 768);
-    // memcpy(pageBase + 1536, pageBase, 1536);
-    // memcpy(pageBase + 3072, pageBase, 1008);
-
-#elif TARGET_ARM
-/*    
-start:
-push {r0}
-ldr r12, [pc, #0xffc]
-ldrh r0, [r12]
-subs r0, #1
-strh r0, [r12]
-pop {r0}
-beq 0f
-ldr pc, [pc, #0xff0]
-0:
-adr r12, start
-ldr pc, [pc, #0xfec]
-
-0x0000000000000000:  01 B4          push   {r0}
-0x0000000000000002:  DF F8 FC CF    ldr.w  ip, [pc, #0xffc]
-0x0000000000000006:  BC F8 00 00    ldrh.w r0, [ip]
-0x000000000000000a:  01 38          subs   r0, #1
-0x000000000000000c:  AC F8 00 00    strh.w r0, [ip]
-0x0000000000000010:  01 BC          pop    {r0}
-0x0000000000000012:  01 D0          beq    #0x18
-0x0000000000000014:  DF F8 F0 FF    ldr.w  pc, [pc, #0xff0]
-0x0000000000000018:  AF F2 1C 0C    subw   ip, pc, #0x1c
-0x000000000000001c:  DF F8 EC FF    ldr.w  pc, [pc, #0xfec]
-*/
-    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, 4096);
-    uint8_t* pageBase = codePageWriterHolder.GetRW();
-
-    memcpy(pageBase, (const void*)PCODEToPINSTR((PCODE)&CallCountingStubCode), 32);
-    memcpy(pageBase + 32, pageBase, 32);
-    memcpy(pageBase + 64, pageBase, 64);
-    memcpy(pageBase + 128, pageBase, 128);
-    memcpy(pageBase + 256, pageBase, 256);
-    memcpy(pageBase + 512, pageBase, 512);
-    memcpy(pageBase + 1024, pageBase, 1024);
-    memcpy(pageBase + 2048, pageBase, 2048);
-
-#else
-#error Not implemented yet
+#ifdef TARGET_X86
+extern "C" size_t RemainingCallCountCellOffset;
+extern "C" size_t TargetForMethodOffset;
+extern "C" size_t TargetForThresholdReachedOffset;
 #endif
 
-    ClrFlushInstructionCache(pageBaseRX, 4096);
+#define SYMBOL_VALUE(name) ((size_t)&name)
+
+size_t CallCountingStub::GenerateCodePage(uint8_t* pageBaseRX)
+{
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, 4096);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
+    int pageSize = GetOsPageSize();
+
+    int totalCodeSize = (pageSize / CallCountingStub::CodeSize) * CallCountingStub::CodeSize;
+
+#ifdef TARGET_X86
+    for (int i = 0; i < totalCodeSize; i += 24)
+    {
+        memcpy(pageBase + i, (const void*)&CallCountingStubCode, CallCountingStub::CodeSize);
+
+        // Set absolute addresses of the slots in the stub
+        uint8_t* pCounterSlot = pageBase + i + pageSize + offsetof(CallCountingStubData, RemainingCallCountCell);
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(RemainingCallCountCellOffset)) = pCounterSlot;
+
+        uint8_t* pTargetSlot = pageBase + i + pageSize + offsetof(CallCountingStubData, TargetForMethod);
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(TargetForMethodOffset)) = pTargetSlot;
+
+        uint8_t* pCountReachedZeroSlot = pageBase + i + pageSize + offsetof(CallCountingStubData, TargetForThresholdReached);
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(TargetForThresholdReachedOffset)) = pCountReachedZeroSlot;
+    }
+#else // TARGET_X86
+    memcpy(pageBase, (const void*)&CallCountingStubCode, CallCountingStub::CodeSize);
+
+    // TODO: create an universal method for all stubs and use it 
+    int i;
+    for (i = CallCountingStub::CodeSize; i < pageSize / 2; i *= 2)
+    {
+        memcpy(pageBase + i, pageBase, i);
+    }
+
+    memcpy(pageBase + i, pageBase, totalCodeSize - i);
+#endif
+
+    ClrFlushInstructionCache(pageBaseRX, pageSize);
 
     return 0;
 }

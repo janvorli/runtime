@@ -3504,9 +3504,10 @@ AdjustContextForVirtualStub(
     {
         ENABLE_FORBID_GC_LOADER_USE_IN_THIS_SCOPE();
 
-        DispatchHolder *holder = DispatchHolder::FromDispatchEntry(f_IP);
+        PCODE dispatchEntry = f_IP - DispatchStub::offsetOfThisDeref();
+        DispatchHolder *holder = DispatchHolder::FromDispatchEntry(dispatchEntry);
         MethodTable *pMT = (MethodTable*)holder->stub()->expectedMT();
-        DispatchToken token(VirtualCallStubManager::GetTokenFromStubQuick(pMgr, f_IP - DispatchStub::offsetOfThisDeref(), sk));
+        DispatchToken token(VirtualCallStubManager::GetTokenFromStubQuick(pMgr, dispatchEntry, sk));
         MethodDesc* pMD = VirtualCallStubManager::GetRepresentativeMethodDescFromToken(token, pMT);
         stackArgumentsSize = pMD->SizeOfArgStack();
     }
