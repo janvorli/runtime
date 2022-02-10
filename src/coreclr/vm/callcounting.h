@@ -90,7 +90,7 @@ class CallCountingStub
 {
 #if defined(TARGET_AMD64)
     static const int CodeSize = 24;
-    static const int StubIdentifyingTokenOffset = sizeof(CallCountingStub);
+    static const int StubIdentifyingTokenOffset = 24;
 #elif defined(TARGET_X86)
     static const int CodeSize = 24;
     static const int StubIdentifyingTokenOffset = 22;

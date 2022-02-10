@@ -1059,6 +1059,736 @@ public:
 
 #include <virtualcallstubcpu.hpp>
 
+//#ifdef TARGET_AMD64
+#pragma pack(push, 1)
+// since we are placing code, we want byte packing of the structs
+
+// Codes of the instruction in the stub where the instruction access violation
+// is converted to NullReferenceException at the caller site.
+#ifdef UNIX_AMD64_ABI
+#define X64_INSTR_CMP_IND_THIS_REG_RAX 0x073948
+#define X64_INSTR_MOV_RAX_IND_THIS_REG 0x078b48
+#else // UNIX_AMD64_ABI
+#define X64_INSTR_CMP_IND_THIS_REG_RAX 0x013948
+#define X64_INSTR_MOV_RAX_IND_THIS_REG 0x018b48
+#endif // UNIX_AMD64_ABI
+
+#define USES_LOOKUP_STUBS       1
+
+/*********************************************************************************************
+Stubs that contain code are all part of larger structs called Holders.  There is a
+Holder for each kind of stub, i.e XXXStub is contained with XXXHolder.  Holders are
+essentially an implementation trick that allowed rearranging the code sequences more
+easily while trying out different alternatives, and for dealing with any alignment
+issues in a way that was mostly immune to the actually code sequences.  These Holders
+should be revisited when the stub code sequences are fixed, since in many cases they
+add extra space to a stub that is not really needed.
+
+Stubs are placed in cache and hash tables.  Since unaligned access of data in memory
+is very slow, the keys used in those tables should be aligned.  The things used as keys
+typically also occur in the generated code, e.g. a token as an immediate part of an instruction.
+For now, to avoid alignment computations as different code strategies are tried out, the key
+fields are all in the Holders.  Eventually, many of these fields should be dropped, and the instruction
+streams aligned so that the immediate fields fall on aligned boundaries.
+*/
+
+#if USES_LOOKUP_STUBS
+
+struct LookupStub;
+struct LookupHolder;
+
+/*LookupStub**************************************************************************************
+Virtual and interface call sites are initially setup to point at LookupStubs.
+This is because the runtime type of the <this> pointer is not yet known,
+so the target cannot be resolved.  Note: if the jit is able to determine the runtime type
+of the <this> pointer, it should be generating a direct call not a virtual or interface call.
+This stub pushes a lookup token onto the stack to identify the sought after method, and then
+jumps into the EE (VirtualCallStubManager::ResolveWorkerStub) to effectuate the lookup and
+transfer of control to the appropriate target method implementation, perhaps patching of the call site
+along the way to point to a more appropriate stub.  Hence callsites that point to LookupStubs
+get quickly changed to point to another kind of stub.
+*/
+struct LookupStubData
+{
+    size_t DispatchToken;
+    PCODE  ResolveWorkerTarget;
+};
+
+typedef DPTR(LookupStubData) PTR_LookupStubData;
+
+struct LookupStub
+{
+    inline PCODE entryPoint() { LIMITED_METHOD_CONTRACT; return (PCODE)this; }
+    inline size_t token()           { LIMITED_METHOD_CONTRACT; return GetData()->DispatchToken; }
+    inline size_t  size() { LIMITED_METHOD_CONTRACT; return sizeof(LookupStub); }
+
+private:
+    friend struct LookupHolder;
+
+    PTR_LookupStubData GetData() const
+    {
+        return dac_cast<PTR_LookupStubData>((uint8_t*)this + 4096);
+    }
+    // The lookup entry point starts with a nop in order to allow us to quickly see
+    // if the stub is lookup stub or a dispatch stub.  We can read thye first byte
+    // of a stub to find out what kind of a stub we have.
+
+    BYTE _code[16];
+};
+
+/* LookupHolders are the containers for LookupStubs, they provide for any alignment of
+stubs as necessary.  In the case of LookupStubs, alignment is necessary since
+LookupStubs are placed in a hash table keyed by token. */
+struct LookupHolder
+{
+#if defined(HOST_AMD64)
+    static const int CodeSize = 16;
+#elif defined(HOST_X86)
+    static const int CodeSize = 16;
+#elif defined(HOST_ARM64)
+    static const int CodeSize = 16;
+#elif defined(HOST_ARM)
+    static const int CodeSize = 12;
+#endif // HOST_AMD64
+
+    void  Initialize(LookupHolder* pLookupHolderRX, PCODE resolveWorkerTarget, size_t dispatchToken);
+
+    LookupStub*    stub()         { LIMITED_METHOD_CONTRACT;  return &_stub;    }
+
+    static LookupHolder* FromLookupEntry(PCODE lookupEntry);
+
+    static size_t GenerateCodePage(uint8_t* pageBase);
+
+private:
+    friend struct LookupStub;
+
+    LookupStub _stub;
+};
+
+#endif // USES_LOOKUP_STUBS
+
+struct DispatchStub;
+struct DispatchStubShort;
+struct DispatchStubLong;
+struct DispatchHolder;
+
+/*DispatchStub**************************************************************************************
+The structure of a full dispatch stub in memory is a DispatchStub followed contiguously in memory
+by either a DispatchStubShort of a DispatchStubLong. DispatchStubShort is used when the resolve
+stub (failTarget()) is reachable by a rel32 (DISPL) jump. We make a pretty good effort to make sure
+that the stub heaps are set up so that this is the case. If we allocate enough stubs that the heap
+end up allocating in a new block that is further away than a DISPL jump can go, then we end up using
+a DispatchStubLong which is bigger but is a full 64-bit jump. */
+
+/*DispatchStub**************************************************************************************
+Monomorphic and mostly monomorphic call sites eventually point to DispatchStubs.
+A dispatch stub has an expected type (expectedMT), target address (target) and fail address (failure).
+If the calling frame does in fact have the <this> type be of the expected type, then
+control is transfered to the target address, the method implementation.  If not,
+then control is transfered to the fail address, a fail stub (see below) where a polymorphic
+lookup is done to find the correct address to go to.
+
+implementation note: Order, choice of instructions, and branch directions
+should be carefully tuned since it can have an inordinate effect on performance.  Particular
+attention needs to be paid to the effects on the BTB and branch prediction, both in the small
+and in the large, i.e. it needs to run well in the face of BTB overflow--using static predictions.
+Note that since this stub is only used for mostly monomorphic callsites (ones that are not, get patched
+to something else), therefore the conditional jump "jne failure" is mostly not taken, and hence it is important
+that the branch prediction staticly predict this, which means it must be a forward jump.  The alternative
+is to reverse the order of the jumps and make sure that the resulting conditional jump "je implTarget"
+is statically predicted as taken, i.e a backward jump. The current choice was taken since it was easier
+to control the placement of the stubs than control the placement of the jitted code and the stubs. */
+struct DispatchStubData
+{
+    size_t ExpectedMT;
+    PCODE ImplTarget;
+    PCODE FailTarget;
+};
+
+typedef DPTR(DispatchStubData) PTR_DispatchStubData;
+
+struct DispatchStub
+{
+    friend struct DispatchHolder;
+
+    inline PCODE        entryPoint() const { LIMITED_METHOD_CONTRACT;  return (PCODE)((BYTE*)this); }
+    inline size_t       expectedMT() const { LIMITED_METHOD_CONTRACT;  return GetData()->ExpectedMT; }
+    inline size_t       size()       const { WRAPPER_NO_CONTRACT; return sizeof(DispatchStub); }
+
+    inline static size_t offsetOfThisDeref()
+    {
+        LIMITED_METHOD_CONTRACT; 
+#if defined(HOST_AMD64)
+        return 0;
+#elif defined(HOST_X86)
+        return 6;
+#elif defined(HOST_ARM64)
+        return 0;
+#elif defined(HOST_ARM)
+        return 0;
+#endif // HOST_AMD64
+    }
+
+    inline PCODE implTarget() const
+    {
+        LIMITED_METHOD_CONTRACT;
+        return GetData()->ImplTarget;
+    }
+
+    inline TADDR implTargetSlot(EntryPointSlots::SlotType *slotTypeRef) const
+    {
+        LIMITED_METHOD_CONTRACT;
+        _ASSERTE(slotTypeRef != nullptr);
+
+        *slotTypeRef = EntryPointSlots::SlotType_Normal;
+        return (TADDR)&GetData()->ImplTarget;
+    }
+
+    inline PCODE failTarget() const
+    {
+        return GetData()->FailTarget;
+    }
+
+private:
+    BYTE code[24];
+
+    PTR_DispatchStubData GetData() const
+    {
+        return dac_cast<PTR_DispatchStubData>((uint8_t*)this + 4096);
+    }
+};
+
+/* DispatchHolders are the containers for DispatchStubs, they provide for any alignment of
+stubs as necessary.  DispatchStubs are placed in a hashtable and in a cache.  The keys for both
+are the pair expectedMT and token.  Efficiency of the of the hash table is not a big issue,
+since lookups in it are fairly rare.  Efficiency of the cache is paramount since it is accessed frequently
+(see ResolveStub below).  Currently we are storing both of these fields in the DispatchHolder to simplify
+alignment issues.  If inlineMT in the stub itself was aligned, then it could be the expectedMT field.
+While the token field can be logically gotten by following the failure target to the failEntryPoint
+of the ResolveStub and then to the token over there, for perf reasons of cache access, it is duplicated here.
+This allows us to use DispatchStubs in the cache.  The alternative is to provide some other immutable struct
+for the cache composed of the triplet (expectedMT, token, target) and some sort of reclaimation scheme when
+they are thrown out of the cache via overwrites (since concurrency will make the obvious approaches invalid).
+*/
+
+/* @workaround for ee resolution - Since the EE does not currently have a resolver function that
+does what we want, see notes in implementation of VirtualCallStubManager::Resolver, we are
+using dispatch stubs to siumulate what we want.  That means that inlineTarget, which should be immutable
+is in fact written.  Hence we have moved target out into the holder and aligned it so we can
+atomically update it.  When we get a resolver function that does what we want, we can drop this field,
+and live with just the inlineTarget field in the stub itself, since immutability will hold.*/
+struct DispatchHolder
+{
+#if defined(HOST_AMD64)
+    static const int CodeSize = 24;
+#elif defined(HOST_X86)
+    static const int CodeSize = 24;
+#elif defined(HOST_ARM64)
+    static const int CodeSize = 32;
+#elif defined(HOST_ARM)
+    static const int CodeSize = 24;
+#endif // HOST_AMD64
+
+    void  Initialize(DispatchHolder* pDispatchHolderRX, PCODE implTarget, PCODE failTarget, size_t expectedMT);
+
+    static size_t GetHolderSize()
+        { STATIC_CONTRACT_WRAPPER; return sizeof(DispatchStub); }
+
+    DispatchStub* stub()      { LIMITED_METHOD_CONTRACT;  return reinterpret_cast<DispatchStub *>(this); }
+
+    static DispatchHolder* FromDispatchEntry(PCODE dispatchEntry);
+    static size_t GenerateCodePage(uint8_t* pageBase);
+};
+
+struct ResolveStub;
+struct ResolveHolder;
+
+/*ResolveStub**************************************************************************************
+Polymorphic call sites and monomorphic calls that fail end up in a ResolverStub.  There is only
+one resolver stub built for any given token, even though there may be many call sites that
+use that token and many distinct <this> types that are used in the calling call frames.  A resolver stub
+actually has two entry points, one for polymorphic call sites and one for dispatch stubs that fail on their
+expectedMT test.  There is a third part of the resolver stub that enters the ee when a decision should
+be made about changing the callsite.  Therefore, we have defined the resolver stub as three distinct pieces,
+even though they are actually allocated as a single contiguous block of memory.  These pieces are:
+
+A ResolveStub has two entry points:
+
+FailEntry - where the dispatch stub goes if the expected MT test fails.  This piece of the stub does
+a check to see how often we are actually failing. If failures are frequent, control transfers to the
+patch piece to cause the call site to be changed from a mostly monomorphic callsite
+(calls dispatch stub) to a polymorphic callsize (calls resolve stub).  If failures are rare, control
+transfers to the resolve piece (see ResolveStub).  The failEntryPoint decrements a counter
+every time it is entered.  The ee at various times will add a large chunk to the counter.
+
+ResolveEntry - does a lookup via in a cache by hashing the actual type of the calling frame s
+<this> and the token identifying the (contract,method) pair desired.  If found, control is transfered
+to the method implementation.  If not found in the cache, the token is pushed and the ee is entered via
+the ResolveWorkerStub to do a full lookup and eventual transfer to the correct method implementation.  Since
+there is a different resolve stub for every token, the token can be inlined and the token can be pre-hashed.
+The effectiveness of this approach is highly sensitive to the effectiveness of the hashing algorithm used,
+as well as its speed.  It turns out it is very important to make the hash function sensitive to all
+of the bits of the method table, as method tables are laid out in memory in a very non-random way.  Before
+making any changes to the code sequences here, it is very important to measure and tune them as perf
+can vary greatly, in unexpected ways, with seeming minor changes.
+
+Implementation note - Order, choice of instructions, and branch directions
+should be carefully tuned since it can have an inordinate effect on performance.  Particular
+attention needs to be paid to the effects on the BTB and branch prediction, both in the small
+and in the large, i.e. it needs to run well in the face of BTB overflow--using static predictions.
+Note that this stub is called in highly polymorphic cases, but the cache should have been sized
+and the hash function chosen to maximize the cache hit case.  Hence the cmp/jcc instructions should
+mostly be going down the cache hit route, and it is important that this be statically predicted as so.
+Hence the 3 jcc instrs need to be forward jumps.  As structured, there is only one jmp/jcc that typically
+gets put in the BTB since all the others typically fall straight thru.  Minimizing potential BTB entries
+is important. */
+
+struct ResolveStubData
+{
+    size_t CacheAddress;
+    UINT32 HashedToken;
+    UINT32 CacheMask;
+    size_t Token;
+    INT32  Counter;
+#ifdef HOST_64BIT    
+    INT32  _dummy;
+#endif    
+    PCODE  ResolveWorkerTarget;
+    PCODE  PatcherTarget;
+#if defined(TARGET_X86) && !defined(UNIX_X86_ABI)
+    size_t StackArgumentsSize;
+#endif
+};
+
+typedef DPTR(ResolveStubData) PTR_ResolveStubData;
+
+extern "C" void ResolveStubCode();
+extern "C" void ResolveStubCode_FailEntry();
+extern "C" void ResolveStubCode_SlowEntry();
+
+struct ResolveStub
+{
+    inline PCODE failEntryPoint()       { LIMITED_METHOD_CONTRACT; return (PCODE)((BYTE*)this + ((BYTE*)ResolveStubCode_FailEntry - (BYTE*)ResolveStubCode)); }
+    inline PCODE resolveEntryPoint()    { LIMITED_METHOD_CONTRACT; return (PCODE)((BYTE*)this); }
+    inline PCODE slowEntryPoint()       { LIMITED_METHOD_CONTRACT; return (PCODE)((BYTE*)this + ((BYTE*)ResolveStubCode_SlowEntry - (BYTE*)ResolveStubCode)); }
+
+    inline INT32* pCounter()            { LIMITED_METHOD_CONTRACT; return &GetData()->Counter; }
+    inline UINT32 hashedToken()         { LIMITED_METHOD_CONTRACT; return GetData()->HashedToken >> LOG2_PTRSIZE; }
+    inline size_t cacheAddress()        { LIMITED_METHOD_CONTRACT; return GetData()->CacheAddress; }
+    inline size_t token()               { LIMITED_METHOD_CONTRACT; return GetData()->Token; }
+    inline size_t size()                { LIMITED_METHOD_CONTRACT; return sizeof(ResolveStub); }
+
+    inline static size_t offsetOfThisDeref()
+    {
+        LIMITED_METHOD_CONTRACT; 
+#if defined(HOST_AMD64)
+        return 0;
+#elif defined(HOST_X86)
+        return 1;
+#elif defined(HOST_ARM64)
+        return 0;
+#elif defined(HOST_ARM)
+        return 0;
+#endif // HOST_AMD64
+    }
+
+#if defined(TARGET_X86) && !defined(UNIX_X86_ABI)
+    inline size_t stackArgumentsSize() { LIMITED_METHOD_CONTRACT; return GetData()->StackArgumentsSize; }
+#endif
+
+private:
+    friend struct ResolveHolder;
+
+    PTR_ResolveStubData GetData() const
+    {
+        return dac_cast<PTR_ResolveStubData>((uint8_t*)this + 4096);
+    }
+
+    BYTE code[96];
+};
+
+/* ResolveHolders are the containers for ResolveStubs,  They provide
+for any alignment of the stubs as necessary. The stubs are placed in a hash table keyed by
+the token for which they are built.  Efficiency of access requires that this token be aligned.
+For now, we have copied that field into the ResolveHolder itself, if the resolve stub is arranged such that
+any of its inlined tokens (non-prehashed) is aligned, then the token field in the ResolveHolder
+is not needed. */
+struct ResolveHolder
+{
+#if defined(HOST_AMD64)
+    static const int CodeSize = 88;
+#elif defined(HOST_X86)
+    static const int CodeSize = 88;
+#elif defined(HOST_ARM64)
+    static const int CodeSize = 128;
+#elif defined(HOST_ARM)
+    static const int CodeSize = 108;
+#endif // HOST_AMD64
+
+    void  Initialize(ResolveHolder* pResolveHolderRX, 
+                     PCODE resolveWorkerTarget, PCODE patcherTarget,
+                     size_t dispatchToken, UINT32 hashedToken,
+                     void * cacheAddr, INT32 counterValue
+#if defined(TARGET_X86) && !defined(UNIX_X86_ABI)
+                     , size_t stackArgumentsSize
+#endif
+                     );
+
+    ResolveStub* stub()      { LIMITED_METHOD_CONTRACT;  return &_stub; }
+
+    static ResolveHolder* FromFailEntry(PCODE resolveEntry);
+    static ResolveHolder* FromResolveEntry(PCODE resolveEntry);
+
+    static size_t GenerateCodePage(uint8_t* pageBase);
+
+private:
+    ResolveStub _stub;
+};
+
+//#endif // TARGET_AMD64
+#pragma pack(pop)
+
+#ifdef DECLARE_DATA
+
+#ifndef DACCESS_COMPILE
+
+//#include "asmconstants.h"
+
+#ifdef STUB_LOGGING
+extern size_t g_lookup_inline_counter;
+extern size_t g_call_inline_counter;
+extern size_t g_miss_inline_counter;
+extern size_t g_call_cache_counter;
+extern size_t g_miss_cache_counter;
+#endif
+
+void  LookupHolder::Initialize(LookupHolder* pLookupHolderRX, PCODE resolveWorkerTarget, size_t dispatchToken)
+{
+    LookupStubData *pData = stub()->GetData();
+    pData->DispatchToken = dispatchToken;
+    pData->ResolveWorkerTarget = resolveWorkerTarget;
+}
+
+void  DispatchHolder::Initialize(DispatchHolder* pDispatchHolderRX, PCODE implTarget, PCODE failTarget, size_t expectedMT)
+{
+    DispatchStubData *pData = stub()->GetData();
+    pData->ExpectedMT = expectedMT;
+    pData->ImplTarget = implTarget;
+    pData->FailTarget = failTarget;
+}
+
+extern "C" void LookupStubCode();
+
+size_t LookupHolder::GenerateCodePage(uint8_t* pageBaseRX)
+{
+    int pageSize = GetOsPageSize();
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, pageSize);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
+    int totalCodeSize = (pageSize / LookupHolder::CodeSize) * LookupHolder::CodeSize;
+
+#ifdef TARGET_X86
+    for (int i = 0; i < 4096; i += LookupHolder::CodeSize)
+    {
+        memcpy(pageBase + i, (const void*)&LookupStubCode, LookupHolder::CodeSize);
+        pageBase[i + 0] = 0x50;
+        pageBase[i + 1] = 0xff;
+        pageBase[i + 2] = 0x35;
+        uint8_t* pDispatchTokenSlot = pageBase + i + 4096 + offsetof(LookupStubData, DispatchToken);
+        *(uint8_t**)(pageBase + i + 3) = pDispatchTokenSlot;
+
+        pageBase[i + 7] = 0xFF;
+        pageBase[i + 8] = 0x25;
+        uint8_t* pResolveWorkerTargetSlot = pageBase + i + 4096 + offsetof(LookupStubData, ResolveWorkerTarget);
+        *(uint8_t**)(pageBase + i + 9) = pResolveWorkerTargetSlot;
+
+        pageBase[i + 13] = 0x90;
+        pageBase[i + 14] = 0x90;
+        pageBase[i + 15] = 0x90;
+    }
+#else // TARGET_X86
+    memcpy(pageBase, (const void*)&LookupStubCode, LookupHolder::CodeSize);
+
+    int i;
+    for (i = LookupHolder::CodeSize; i < pageSize / 2; i *= 2)
+    {
+        memcpy(pageBase + i, pageBase, i);
+    }
+
+    if (i != totalCodeSize)
+    {
+        memcpy(pageBase + i, pageBase, totalCodeSize - i);
+    }
+#endif // TARGET_X86
+
+    ClrFlushInstructionCache(pageBaseRX, pageSize);
+
+    return 0;
+}
+
+extern "C" void DispatchStubCode();
+
+size_t DispatchHolder::GenerateCodePage(uint8_t* pageBaseRX)
+{
+    int pageSize = GetOsPageSize();
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, pageSize);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
+    int totalCodeSize = (pageSize / DispatchHolder::CodeSize) * DispatchHolder::CodeSize;
+
+#ifdef TARGET_X86
+    for (int i = 0; i <= 4096 - DispatchHolder::CodeSize; i += DispatchHolder::CodeSize)
+    {
+        memcpy(pageBase + i, (const void*)&DispatchStubCode, DispatchHolder::CodeSize);
+
+        pageBase[i + 0] = 0x50;
+        pageBase[i + 1] = 0xa1;
+
+        uint8_t* pExpectedMTSlot = pageBase + i + 4096 + offsetof(DispatchStubData, ExpectedMT);
+        *(uint8_t**)(pageBase + i + 2) = pExpectedMTSlot;
+
+        pageBase[i + 6] = 0x39;
+        pageBase[i + 7] = 0x01;
+        pageBase[i + 8] = 0x58;
+        pageBase[i + 9] = 0x75;
+        pageBase[i + 10] = 0x06;
+        pageBase[i + 11] = 0xff;
+        pageBase[i + 12] = 0x25;
+
+        uint8_t* pImplTargetSlot = pageBase + i + 4096 + offsetof(DispatchStubData, ImplTarget);
+        *(uint8_t**)(pageBase + i + 13) = pImplTargetSlot;
+
+        pageBase[i + 17] = 0xff;
+        pageBase[i + 18] = 0x25;
+
+        uint8_t* pFailTargetSlot = pageBase + i + 4096 + offsetof(DispatchStubData, FailTarget);
+        *(uint8_t**)(pageBase + i + 19) = pFailTargetSlot;
+
+        pageBase[i + 23] = 0x90;
+    }
+#else // TARGET_X86
+    memcpy(pageBase, (const void*)&DispatchStubCode, DispatchHolder::CodeSize);
+
+    int i;
+    for (i = DispatchHolder::CodeSize; i < pageSize / 2; i *= 2)
+    {
+        memcpy(pageBase + i, pageBase, i);
+    }
+
+    if (i != totalCodeSize)
+    {
+        memcpy(pageBase + i, pageBase, totalCodeSize - i);
+    }
+#endif // TARGET_X86
+
+    ClrFlushInstructionCache(pageBaseRX, pageSize);
+
+    return 0;
+}
+
+extern "C" void ResolveStubCode();
+
+size_t ResolveHolder::GenerateCodePage(uint8_t* pageBaseRX)
+{
+    int pageSize = GetOsPageSize();
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, pageSize);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
+    int totalCodeSize = (pageSize / ResolveHolder::CodeSize) * ResolveHolder::CodeSize;
+
+#ifdef TARGET_X86
+    for (int i = 0; i <= 4096 - ResolveHolder::CodeSize; i += ResolveHolder::CodeSize)
+    {
+        memcpy(pageBase, (const void*)&ResolveStubCode, ResolveHolder::CodeSize);
+
+        pageBase[i + 0] = 0x83;
+        pageBase[i + 1] = 0x2d; 
+
+        uint8_t* pCounterSlot = pageBase + i + 4096 + offsetof(ResolveStubData, Counter);
+        *(uint8_t**)(pageBase + i + 2) = pCounterSlot;
+
+        pageBase[i + 6] = 0x01;
+        pageBase[i + 7] = 0x7c;
+        pageBase[i + 8] = 0x44;
+        pageBase[i + 9] = 0x50;
+        pageBase[i + 10] = 0x8b;
+        pageBase[i + 11] = 0x01;
+        pageBase[i + 12] = 0x52;
+        pageBase[i + 13] = 0x89;
+        pageBase[i + 14] = 0xc2;
+        pageBase[i + 15] = 0xc1;
+        pageBase[i + 16] = 0xe8;
+        pageBase[i + 17] = CALL_STUB_CACHE_NUM_BITS;
+        pageBase[i + 18] = 0x01;
+        pageBase[i + 19] = 0xd0;
+        pageBase[i + 20] = 0x33;
+        pageBase[i + 21] = 0x05;
+
+        uint8_t* pHashedTokenSlot = pageBase + i + 4096 + offsetof(ResolveStubData, HashedToken);
+        *(uint8_t**)(pageBase + i + 22) = pHashedTokenSlot;
+
+        pageBase[i + 26] = 0x23;
+        pageBase[i + 27] = 0x05;
+
+        uint8_t* pCacheMaskSlot = pageBase + i + 4096 + offsetof(ResolveStubData, CacheMask);
+        *(uint8_t**)(pageBase + i + 28) = pCacheMaskSlot;
+
+        pageBase[i + 32] = 0x03;
+        pageBase[i + 33] = 0x05;
+
+        uint8_t* pLookupCacheSlot = pageBase + i + 4096 + offsetof(ResolveStubData, CacheAddress);
+        *(uint8_t**)(pageBase + i + 34) = pLookupCacheSlot;
+
+        pageBase[i + 38] = 0x8b;
+        pageBase[i + 39] = 0x00;
+        static_assert_no_msg(offsetof(ResolveCacheElem, pMT) == 0);
+        pageBase[i + 40] = 0x3b;
+        pageBase[i + 41] = 0x10;
+        pageBase[i + 42] = 0x75;
+        pageBase[i + 43] = 0x14;
+        pageBase[i + 44] = 0x8b;
+        pageBase[i + 45] = 0x15;
+
+        uint8_t* pTokenSlot = pageBase + i + 4096 + offsetof(ResolveStubData, Token);
+        *(uint8_t**)(pageBase + i + 46) = pTokenSlot;
+
+        pageBase[i + 50] = 0x3b;
+        pageBase[i + 51] = 0x50;
+        pageBase[i + 52] = offsetof(ResolveCacheElem, token);
+        pageBase[i + 53] = 0x75;
+        pageBase[i + 54] = 0x09;
+        pageBase[i + 55] = 0x8b;
+        pageBase[i + 56] = 0x40;
+        pageBase[i + 57] = offsetof(ResolveCacheElem, target);
+        pageBase[i + 58] = 0x5a;
+        pageBase[i + 59] = 0x83;
+        pageBase[i + 60] = 0xc4;
+        pageBase[i + 61] = 0x04;
+        pageBase[i + 62] = 0xff;
+        pageBase[i + 63] = 0xe0;
+        pageBase[i + 64] = 0x5a;
+
+        pageBase[i + 65] = 0xff;
+        pageBase[i + 66] = 0x35;
+
+        *(uint8_t**)(pageBase + i + 67) = pTokenSlot;
+
+        pageBase[i + 71] = 0xff;
+        pageBase[i + 72] = 0x25;
+
+        uint8_t* pResolveWorkerSlot = pageBase + i + 4096 + offsetof(ResolveStubData, ResolveWorkerTarget);
+        *(uint8_t**)(pageBase + i + 73) = pResolveWorkerSlot;
+
+        pageBase[i + 77] = 0xff;
+        pageBase[i + 78] = 0x15;
+
+        uint8_t* pBackpatcherSlot = pageBase + i + 4096 + offsetof(ResolveStubData, PatcherTarget);
+        *(uint8_t**)(pageBase + i + 79) = pBackpatcherSlot;
+
+        pageBase[i + 83] = 0xeb;
+        pageBase[i + 84] = 0xb4;
+        pageBase[i + 85] = 0x90;
+        pageBase[i + 86] = 0x90;
+        pageBase[i + 87] = 0x90;
+    }
+#else // TARGET_X86
+    memcpy(pageBase, (const void*)&ResolveStubCode, ResolveHolder::CodeSize);
+
+    int i;
+    for (i = ResolveHolder::CodeSize; i < pageSize / 2; i *= 2)
+    {
+        memcpy(pageBase + i, pageBase, i);
+    }
+
+    if (i != totalCodeSize)
+    {
+        memcpy(pageBase + i, pageBase, totalCodeSize - i);
+    }
+#endif // TARGET_X86
+
+    ClrFlushInstructionCache(pageBaseRX, pageSize);
+    return 0;
+}
+
+void  ResolveHolder::Initialize(ResolveHolder* pResolveHolderRX, 
+                                PCODE resolveWorkerTarget, PCODE patcherTarget,
+                                size_t dispatchToken, UINT32 hashedToken,
+                                void * cacheAddr, INT32 counterValue
+#if defined(TARGET_X86) && !defined(UNIX_X86_ABI)
+                                , size_t stackArgumentsSize
+#endif
+                                )
+{
+    ResolveStubData *pData = stub()->GetData();
+
+    pData->CacheAddress = (size_t)cacheAddr;
+    pData->HashedToken = hashedToken << LOG2_PTRSIZE;
+    pData->CacheMask = CALL_STUB_CACHE_MASK * sizeof(void*);
+    pData->Token = dispatchToken;
+    pData->Counter = counterValue;
+    pData->ResolveWorkerTarget = resolveWorkerTarget;
+    pData->PatcherTarget = patcherTarget;
+#if defined(TARGET_X86) && !defined(UNIX_X86_ABI)
+    pData->StackArgumentsSize = stackArgumentsSize;
+#endif
+}
+
+ResolveHolder* ResolveHolder::FromFailEntry(PCODE failEntry)
+{
+    LIMITED_METHOD_CONTRACT;
+#if defined(TARGET_AMD64)
+    ResolveHolder* resolveHolder = (ResolveHolder*) ( failEntry - ((BYTE*)ResolveStubCode_FailEntry - (BYTE*)ResolveStubCode));
+#elif defined(TARGET_X86)
+    ResolveHolder* resolveHolder = (ResolveHolder*)failEntry;
+#elif defined(TARGET_ARM64)
+    ResolveHolder* resolveHolder = (ResolveHolder*) ( failEntry - ((BYTE*)ResolveStubCode_FailEntry - (BYTE*)ResolveStubCode));
+#elif defined(TARGET_ARM)
+    failEntry = failEntry & ~THUMB_CODE;
+    ResolveHolder* resolveHolder = (ResolveHolder*) ( failEntry - 0x50);
+#endif
+
+    return resolveHolder;
+}
+
+LookupHolder* LookupHolder::FromLookupEntry(PCODE lookupEntry)
+{
+    LIMITED_METHOD_CONTRACT;
+#if defined(TARGET_ARM)
+    lookupEntry = lookupEntry & ~THUMB_CODE;
+#endif
+    LookupHolder* lookupHolder = (LookupHolder*)lookupEntry;
+    return lookupHolder;
+}
+
+
+DispatchHolder* DispatchHolder::FromDispatchEntry(PCODE dispatchEntry)
+{
+    LIMITED_METHOD_CONTRACT;
+#if defined(TARGET_ARM)
+    dispatchEntry = dispatchEntry & ~THUMB_CODE;
+#endif
+    DispatchHolder* dispatchHolder = (DispatchHolder*)dispatchEntry;
+    return dispatchHolder;
+}
+
+
+ResolveHolder* ResolveHolder::FromResolveEntry(PCODE resolveEntry)
+{
+    LIMITED_METHOD_CONTRACT;
+#if defined(TARGET_AMD64)
+    ResolveHolder* resolveHolder = (ResolveHolder*)resolveEntry;
+#elif defined(TARGET_X86)
+    ResolveHolder* resolveHolder = (ResolveHolder*) ( resolveEntry - 9 );
+#elif defined(TARGET_ARM64)
+    ResolveHolder* resolveHolder = (ResolveHolder*)resolveEntry;
+#elif defined(TARGET_ARM)
+    resolveEntry = resolveEntry & ~THUMB_CODE;
+    ResolveHolder* resolveHolder = (ResolveHolder*)resolveEntry;
+#endif
+    return resolveHolder;
+}
+
+#endif // DECLARE_DATA
+
+#endif // DACCESS_COMPILE
+
 #if USES_LOOKUP_STUBS
 /**********************************************************************************************
 LookupEntry wraps LookupStubs and provide the concrete implementation of the abstract class Entry.

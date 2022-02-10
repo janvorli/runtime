@@ -96,7 +96,8 @@ slowEntryPoint2
 slowEntryPoint
         ldr r12, ResolveStubCode + 4096 + ResolveStubData__Token
         ldr pc, ResolveStubCode + 4096 + ResolveStubData__ResolveWorkerTarget
-failEntryPoint
+ResolveStubCode_FailEntry
+    EXPORT ResolveStubCode_FailEntry
         push {r5}
         adr r5, ResolveStubCode + 4096 + ResolveStubData__Counter
         ldr r12, [r5]

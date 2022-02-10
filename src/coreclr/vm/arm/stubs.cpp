@@ -773,39 +773,6 @@ Note that ResolveWorkerChainLookupAsmStub currently points directly
 to ResolveWorkerAsmStub; in the future, this could be separate.
 */
 
-void  LookupHolder::Initialize(LookupHolder* pLookupHolderRX, PCODE resolveWorkerTarget, size_t dispatchToken)
-{
-    LookupStubData *pData = stub()->GetData();
-    pData->DispatchToken = dispatchToken;
-    pData->ResolveWorkerTarget = resolveWorkerTarget;   
-}
-
-void  DispatchHolder::Initialize(DispatchHolder* pDispatchHolderRX, PCODE implTarget, PCODE failTarget, size_t expectedMT)
-{
-    DispatchStubData *pData = stub()->GetData();
-    pData->ExpectedMT = expectedMT;
-    pData->ImplTarget = implTarget;
-    pData->FailTarget = failTarget;
-}
-
-void ResolveHolder::Initialize(ResolveHolder* pResolveHolderRX,
-                               PCODE resolveWorkerTarget, PCODE patcherTarget,
-                                size_t dispatchToken, UINT32 hashedToken,
-                                void * cacheAddr, INT32 counterValue)
-{
-    ResolveStubData *pData = stub()->GetData();
-
-    pData->CacheAddress = (size_t)cacheAddr;
-    pData->HashedToken = hashedToken << LOG2_PTRSIZE;
-    pData->CacheMask = CALL_STUB_CACHE_MASK * sizeof(void*);
-    pData->Token = dispatchToken;
-    pData->Counter = counterValue;
-    pData->ResolveWorkerTarget = resolveWorkerTarget;
-
-    _ASSERTE(resolveWorkerTarget == (PCODE)ResolveWorkerChainLookupAsmStub);
-    _ASSERTE(patcherTarget == NULL);
-}
-
 BOOL DoesSlotCallPrestub(PCODE pCode)
 {
     PTR_WORD pInstr = dac_cast<PTR_WORD>(PCODEToPINSTR(pCode));

@@ -31,7 +31,7 @@ LEAF_ENTRY CallCountingStubCode, _TEXT
 LEAF_END CallCountingStubCode, _TEXT
 
 LEAF_ENTRY LookupStubCode, _TEXT
-       nop
+       nop ; TODO: remove this? update the predictStubKind then
        push   QWORD PTR [LookupStubCode + 4096 + LookupStubData__DispatchToken]        ; 1000 <_main+0x1000>
        jmp    QWORD PTR [LookupStubCode + 4096 + LookupStubData__ResolveWorkerTarget]        ; 1008 <_main+0x1008>
 LEAF_END LookupStubCode, _TEXT

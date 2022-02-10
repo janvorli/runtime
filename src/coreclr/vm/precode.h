@@ -58,8 +58,13 @@ struct InvalidPrecode
 
 struct StubPrecodeData
 {
+#ifdef TARGET_ARM
+    PTR_MethodDesc MethodDesc;
+    PCODE Target;
+#else    
     PCODE Target;
     PTR_MethodDesc MethodDesc;
+#endif    
     BYTE Type;
 };
 
@@ -119,6 +124,16 @@ struct StubPrecode
     //     return PINSTRToPCODE(dac_cast<TADDR>(this));
     // }
 
+#ifdef TARGET_ARM64
+    static BOOL IsStubPrecodeByASM(PCODE addr)
+    {
+        PTR_DWORD pInstr = dac_cast<PTR_DWORD>(PCODEToPINSTR(addr));
+        return
+            (pInstr[0] == 0x5800800A) &&
+            (pInstr[1] == 0x5800802C) &&
+            (pInstr[2] == 0xD61F0140);
+    }
+#endif // TARGET_ARM64
 
 #ifndef DACCESS_COMPILE
     void ResetTargetInterlocked()

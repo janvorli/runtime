@@ -68,6 +68,8 @@ NoMatch:
 _DispatchStubCode@0 ENDP
 
 _ResolveStubCode@0 PROC PUBLIC
+_ResolveStubCode_FailEntry@0:
+PUBLIC _ResolveStubCode_FailEntry@0
         sub dword ptr _ResolveStubCode@0 + 1010h, 1
         jl Backpatcher
 Resolve:

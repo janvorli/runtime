@@ -311,8 +311,6 @@ ThePreStubPatchLabel
 
         NESTED_END
 
-        LEAF_END
-
 ; ------------------------------------------------------------------
 ; void ResolveWorkerAsmStub(r0, r1, r2, r3, r4:IndirectionCellAndFlags, r12:DispatchToken)
 ;
