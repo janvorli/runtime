@@ -22,7 +22,7 @@
         ldr pc, DATA_SLOT(FixupPrecode, Target)
         ldr r12, DATA_SLOT(FixupPrecode, MethodDesc)
         ldr pc, DATA_SLOT(FixupPrecode, PrecodeFixupThunk)
-    LEAF_END FixupPrecodeCode
+    LEAF_END_MARKED FixupPrecodeCode
 
     .align 4
 
@@ -38,14 +38,14 @@
 LCountReachedZero:
         adr r12, CallCountingStubCode
         ldr pc, DATA_SLOT(CallCountingStub, TargetForThresholdReached)
-    LEAF_END CallCountingStubCode
+    LEAF_END_MARKED CallCountingStubCode
 
     .align 4
 
     LEAF_ENTRY LookupStubCode
         ldr r12, LookupStubCode + 4096 + LookupStubData__DispatchToken
         ldr pc, LookupStubCode + 4096 + LookupStubData__ResolveWorkerTarget
-    LEAF_END LookupStubCode
+    LEAF_END_MARKED LookupStubCode
 
     .align 4
 
@@ -59,7 +59,7 @@ LCountReachedZero:
         ldr pc, DispatchStubCode + 4096 + DispatchStubData__ImplTarget
 LFailTarget:
         ldr pc, DispatchStubCode + 4096 + DispatchStubData__FailTarget
-    LEAF_END DispatchStubCode
+    LEAF_END_MARKED DispatchStubCode
 
     .align 4
 
@@ -95,7 +95,7 @@ slowEntryPoint2:
 slowEntryPoint:
         ldr r12, ResolveStubCode + 4096 + ResolveStubData__Token
         ldr pc, ResolveStubCode + 4096 + ResolveStubData__ResolveWorkerTarget
-failEntryPoint:
+PATCH_LABEL ResolveStubCode_FailEntry
         push {r5}
         adr r5, ResolveStubCode + 4096 + ResolveStubData__Counter
         ldr r12, [r5]
@@ -106,6 +106,6 @@ failEntryPoint:
         bge ResolveStubCode
         orr r4, r4, #1 // SDF_ResolveBackPatch
         b ResolveStubCode
-    LEAF_END ResolveStubCode
+    LEAF_END_MARKED ResolveStubCode
 
 

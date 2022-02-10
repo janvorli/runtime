@@ -11,7 +11,7 @@ LEAF_ENTRY StubPrecodeCode, _TEXT
         .rept 11
         nop
         .endr
-LEAF_END StubPrecodeCode, _TEXT
+LEAF_END_MARKED StubPrecodeCode, _TEXT
 
 LEAF_ENTRY FixupPrecodeCode, _TEXT
         jmp    [rip + FixupPrecodeCode + 4096 + FixupPrecodeData__Target]
@@ -20,7 +20,7 @@ LEAF_ENTRY FixupPrecodeCode, _TEXT
         .rept 5
         nop
         .endr
-LEAF_END FixupPrecodeCode, _TEXT
+LEAF_END_MARKED FixupPrecodeCode, _TEXT
 
 LEAF_ENTRY CallCountingStubCode, _TEXT
         mov    rax,QWORD PTR [rip + CallCountingStubCode + 4096 + CallCountingStubData__RemainingCallCountCell]
@@ -29,13 +29,13 @@ LEAF_ENTRY CallCountingStubCode, _TEXT
         jmp    QWORD PTR [rip + CallCountingStubCode + 4096 + CallCountingStubData__TargetForMethod]
     CountReachedZero:
         call   QWORD PTR [rip + CallCountingStubCode + 4096 + CallCountingStubData__TargetForThresholdReached]
-LEAF_END CallCountingStubCode, _TEXT
+LEAF_END_MARKED CallCountingStubCode, _TEXT
 
 LEAF_ENTRY LookupStubCode, _TEXT
        nop
        push   QWORD PTR [rip + LookupStubCode + 4096 + LookupStubData__DispatchToken]
        jmp    QWORD PTR [rip + LookupStubCode + 4096 + LookupStubData__ResolveWorkerTarget]
-LEAF_END LookupStubCode, _TEXT
+LEAF_END_MARKED LookupStubCode, _TEXT
 
 LEAF_ENTRY DispatchStubCode, _TEXT
        mov    rax,QWORD PTR [rip + DispatchStubCode + 4096 + DispatchStubData__ExpectedMT]
@@ -44,7 +44,7 @@ LEAF_ENTRY DispatchStubCode, _TEXT
        jmp    QWORD PTR [rip + DispatchStubCode + 4096 + DispatchStubData__ImplTarget]
     Fail:
        jmp    QWORD PTR [rip + DispatchStubCode + 4096 + DispatchStubData__FailTarget]
-LEAF_END DispatchStubCode, _TEXT
+LEAF_END_MARKED DispatchStubCode, _TEXT
 
 LEAF_ENTRY ResolveStubCode, _TEXT
         push   rdx
@@ -65,7 +65,8 @@ LEAF_ENTRY ResolveStubCode, _TEXT
         jmp    QWORD PTR [rax+0x10]
 PATCH_LABEL ResolveStubCode_FailEntry
         add    DWORD PTR [rip + ResolveStubCode + 4096 + ResolveStubData__Counter], -1
-        jge    ResolveStubCode
+        //jge    ResolveStubCode
+        .byte 0x7d, 0xbc
         or     r11, 1 // SDF_ResolveBackPatch
 PATCH_LABEL ResolveStubCode_SlowEntry
         push   rdx
@@ -73,4 +74,4 @@ PATCH_LABEL ResolveStubCode_SlowEntry
 miss:
         push   rax
         jmp    QWORD PTR [rip + ResolveStubCode + 4096 + ResolveStubData__ResolveWorkerTarget]
-LEAF_END ResolveStubCode, _TEXT
+LEAF_END_MARKED ResolveStubCode, _TEXT
