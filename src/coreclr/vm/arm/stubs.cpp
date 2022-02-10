@@ -752,20 +752,20 @@ Rough pseudo-code of interface dispatching:
   // jitted code calls *indirectionCell
   switch (*indirectionCell)
   {
-      case LookupHolder._stub:
+      case LookupStub:
           // ResolveWorkerAsmStub:
-          *indirectionCell = DispatchHolder._stub;
+          *indirectionCell = DispatchStub;
           call ResolveWorkerStatic, jump to target method;
-      case DispatchHolder._stub:
+      case DispatchStub:
           if (r0.methodTable == expectedMethodTable) jump to target method;
-          // ResolveHolder._stub._failEntryPoint:
-          jump to case ResolveHolder._stub._resolveEntryPoint;
-      case ResolveHolder._stub._resolveEntryPoint:
+          // ResolveStub._failEntryPoint:
+          jump to case ResolveStub._resolveEntryPoint;
+      case ResolveStub._resolveEntryPoint:
           if (r0.methodTable in hashTable) jump to target method;
-          // ResolveHolder._stub._slowEntryPoint:
+          // ResolveStub._slowEntryPoint:
           // ResolveWorkerChainLookupAsmStub:
           // ResolveWorkerAsmStub:
-          if (_failEntryPoint called too many times) *indirectionCell = ResolveHolder._stub._resolveEntryPoint;
+          if (_failEntryPoint called too many times) *indirectionCell = ResolveStub._resolveEntryPoint;
           call ResolveWorkerStatic, jump to target method;
   }
 

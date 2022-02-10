@@ -11,7 +11,7 @@
         ldr x10, DATA_SLOT(StubPrecode, Target)
         ldr x12, DATA_SLOT(StubPrecode, MethodDesc)
         br x10
-    LEAF_END StubPrecodeCode
+    LEAF_END_MARKED StubPrecodeCode
 
     LEAF_ENTRY FixupPrecodeCode
         ldr x11, DATA_SLOT(FixupPrecode, Target)
@@ -19,7 +19,7 @@
         ldr x12, DATA_SLOT(FixupPrecode, MethodDesc)
         ldr x11, DATA_SLOT(FixupPrecode, PrecodeFixupThunk)
         br  x11        
-    LEAF_END FixupPrecodeCode
+    LEAF_END_MARKED FixupPrecodeCode
 
     LEAF_ENTRY CallCountingStubCode
         ldr  x9, DATA_SLOT(CallCountingStub, RemainingCallCountCell)
@@ -33,14 +33,14 @@ CountReachedZero
         adr  x10, CallCountingStubCode
         ldr  x9, DATA_SLOT(CallCountingStub, TargetForThresholdReached)
         br   x9
-    LEAF_END CallCountingStubCode
+    LEAF_END_MARKED CallCountingStubCode
 
 
     LEAF_ENTRY LookupStubCode
         ldr x12, DATA_SLOT(LookupStub, DispatchToken)
         ldr x10, DATA_SLOT(LookupStub, ResolveWorkerTarget)
         br x10
-    LEAF_END LookupStubCode
+    LEAF_END_MARKED LookupStubCode
 
     LEAF_ENTRY DispatchStubCode
         ldr x13, [x0] ; methodTable from object in x0
@@ -52,7 +52,7 @@ CountReachedZero
 Fail
         ldr x9, DATA_SLOT(DispatchStub, FailTarget)
         br x9
-    LEAF_END DispatchStubCode
+    LEAF_END_MARKED DispatchStubCode
 
     LEAF_ENTRY ResolveStubCode
         ldr x12, [x0]
@@ -83,6 +83,6 @@ Fail
         bge ResolveStubCode
         orr x11, x11, #1; SDF_ResolveBackPatch
         b ResolveStubCode    
-    LEAF_END ResolveStubCode
+    LEAF_END_MARKED ResolveStubCode
 
     END

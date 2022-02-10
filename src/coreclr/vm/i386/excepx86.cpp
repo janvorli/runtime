@@ -3505,8 +3505,8 @@ AdjustContextForVirtualStub(
         ENABLE_FORBID_GC_LOADER_USE_IN_THIS_SCOPE();
 
         PCODE dispatchEntry = f_IP - DispatchStub::offsetOfThisDeref();
-        DispatchHolder *holder = DispatchHolder::FromDispatchEntry(dispatchEntry);
-        MethodTable *pMT = (MethodTable*)holder->stub()->expectedMT();
+        DispatchStub *pStub = DispatchStub::FromDispatchEntry(dispatchEntry);
+        MethodTable *pMT = (MethodTable*)pStub->expectedMT();
         DispatchToken token(VirtualCallStubManager::GetTokenFromStubQuick(pMgr, dispatchEntry, sk));
         MethodDesc* pMD = VirtualCallStubManager::GetRepresentativeMethodDescFromToken(token, pMT);
         stackArgumentsSize = pMD->SizeOfArgStack();
@@ -3514,8 +3514,8 @@ AdjustContextForVirtualStub(
     else
     {
         // Compute the stub entry address from the address of failure (location of dereferencing of "this" pointer)
-        ResolveHolder *holder = ResolveHolder::FromResolveEntry(f_IP - ResolveStub::offsetOfThisDeref());
-        stackArgumentsSize = holder->stub()->stackArgumentsSize();
+        ResolveStub *pResolveStub = ResolveStub::FromResolveEntry(f_IP - ResolveStub::offsetOfThisDeref());
+        stackArgumentsSize = pResolveStub->stackArgumentsSize();
     }
 
     sp += stackArgumentsSize;

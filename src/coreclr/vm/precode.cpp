@@ -592,9 +592,9 @@ extern "C" void StubPrecodeCode();
 
 size_t StubPrecode::GenerateCodePage(uint8_t* pageBaseRX)
 {
-    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, 4096);
-    uint8_t* pageBase = codePageWriterHolder.GetRW();
     int pageSize = GetOsPageSize();
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, pageSize);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
 
     int totalCodeSize = (pageSize / StubPrecode::CodeSize) * StubPrecode::CodeSize;
 
@@ -602,9 +602,9 @@ size_t StubPrecode::GenerateCodePage(uint8_t* pageBaseRX)
     for (int i = 0; i < totalCodeSize; i += StubPrecode::CodeSize)
     {
         memcpy(pageBase + i, (const void*)&StubPrecodeCode, StubPrecode::CodeSize);
-        uint8_t* pTargetSlot = pageBase + i + 4096 + offsetof(StubPrecodeData, Target);
+        uint8_t* pTargetSlot = pageBase + i + pageSize + offsetof(StubPrecodeData, Target);
         *(uint8_t**)(pageBase + i + 7) = pTargetSlot;
-        uint8_t* pMethodDescSlot = pageBase + i + 4096 + offsetof(StubPrecodeData, MethodDesc);
+        uint8_t* pMethodDescSlot = pageBase + i + pageSize + offsetof(StubPrecodeData, MethodDesc);
         *(uint8_t**)(pageBase + i + 1) = pMethodDescSlot;
     }
 #else // TARGET_X86
@@ -654,9 +654,9 @@ extern "C" void FixupPrecodeCode();
 
 size_t FixupPrecode::GenerateCodePage(uint8_t* pageBaseRX)
 {
-    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, 4096);
-    uint8_t* pageBase = codePageWriterHolder.GetRW();
     int pageSize = GetOsPageSize();
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, pageSize);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
 
     int totalCodeSize = (pageSize / FixupPrecode::CodeSize) * FixupPrecode::CodeSize;
 
@@ -664,11 +664,11 @@ size_t FixupPrecode::GenerateCodePage(uint8_t* pageBaseRX)
     for (int i = 0; i < totalCodeSize; i += FixupPrecode::CodeSize)
     {
         memcpy(pageBase + i, (const void*)&FixupPrecodeCode, FixupPrecode::CodeSize);
-        uint8_t* pTargetSlot = pageBase + i + 4096 + offsetof(FixupPrecodeData, Target);
+        uint8_t* pTargetSlot = pageBase + i + pageSize + offsetof(FixupPrecodeData, Target);
 
         // TODO: get the offset in the assembler code
         *(uint8_t**)(pageBase + i + 2) = pTargetSlot;
-        uint8_t* pMethodDescSlot = pageBase + i + 4096 + offsetof(FixupPrecodeData, MethodDesc);
+        uint8_t* pMethodDescSlot = pageBase + i + pageSize + offsetof(FixupPrecodeData, MethodDesc);
         *(uint8_t**)(pageBase + i + 7) = pMethodDescSlot;
     }
 #else // TARGET_X86

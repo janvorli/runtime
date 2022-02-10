@@ -13,61 +13,72 @@ include AsmConstants.inc
 .686P
 .XMM
 
-_StubPrecodeCode@0 PROC PUBLIC
-        mov     eax, dword ptr _StubPrecodeCode@0 + 4096 + StubPrecodeData__MethodDesc
-        jmp     dword ptr ds:_StubPrecodeCode@0 + 4096 + StubPrecodeData__Target
+PAGE_SIZE EQU 4096
+
+DATA_SLOT macro stub, field
+    exitm @CatStr(<_>, stub, <Code@0 + 4096 + >, stub, <Data__>, field)
+endm
+
+SLOT_ADDRESS_PATCH_LABEL macro stub, field
+    <_>&stub&_&field&_Offset EQU $-4-<_>&stub&<@0>
+    PUBLIC <_>&stub&_&field&_Offset
+endm
+
+LEAF_ENTRY _StubPrecodeCode@0
+        mov     eax, dword ptr DATA_SLOT(StubPrecode, MethodDesc)
+        jmp     dword ptr DATA_SLOT(StubPrecode, Target)
         nop
-_StubPrecodeCode@0 ENDP
+LEAF_END_MARKED _StubPrecodeCode@0
 
 EXTERN _ThePreStub@0:PROC
 
 ThePreStubAddress:
         dd _ThePreStub@0
 
-_FixupPrecodeCode@0 PROC PUBLIC
-        jmp     dword ptr _FixupPrecodeCode@0 + 4096 + FixupPrecodeData__Target
-        mov     eax, dword ptr _FixupPrecodeCode@0 + 4096 + FixupPrecodeData__MethodDesc
+LEAF_ENTRY _FixupPrecodeCode@0
+        jmp     dword ptr DATA_SLOT(FixupPrecode, Target)
+        mov     eax, dword ptr DATA_SLOT(FixupPrecode, MethodDesc)
         jmp     dword ptr ThePreStubAddress; The indirect jump uses an absolute address of the indirection slot
         REPEAT  7
         nop
         ENDM
-_FixupPrecodeCode@0 ENDP
+LEAF_END_MARKED _FixupPrecodeCode@0
 
-_CallCountingStubCode@0 PROC PUBLIC
-        mov    eax, dword ptr _CallCountingStubCode@0 + 4096 +  CallCountingStubData__RemainingCallCountCell
-_CallCountingStubCode_RemainingCallCountCellOffset EQU $-4-_CallCountingStubCode@0
+LEAF_ENTRY _CallCountingStubCode@0
+        mov    eax, dword ptr DATA_SLOT(CallCountingStub, RemainingCallCountCell)
+SLOT_ADDRESS_PATCH_LABEL CallCountingStub, RemainingCallCountCell
+;_CallCountingStubCode_RemainingCallCountCellOffset EQU $-4-_CallCountingStubCode@0
+;PUBLIC _CallCountingStubCode_RemainingCallCountCellOffset
         dec    WORD PTR [eax]
         je     CountReachedZero
-        jmp    dword ptr  _CallCountingStubCode@0 + 4096 +  CallCountingStubData__TargetForMethod
+        jmp    dword ptr  DATA_SLOT(CallCountingStub, TargetForMethod)
 _CallCountingStubCode_TargetForMethodOffset EQU $-4-_CallCountingStubCode@0
-CountReachedZero:
-        call   dword ptr  _CallCountingStubCode@0 + 4096 +  CallCountingStubData__TargetForThresholdReached
-_CallCountingStubCode_TargetForThresholdReachedOffset EQU $-4-_CallCountingStubCode@0
-        int    3
-_CallCountingStubCode@0 ENDP
-
-PUBLIC _CallCountingStubCode_RemainingCallCountCellOffset
 PUBLIC _CallCountingStubCode_TargetForMethodOffset
+CountReachedZero:
+        call   dword ptr  DATA_SLOT(CallCountingStub, TargetForThresholdReached)
+_CallCountingStubCode_TargetForThresholdReachedOffset EQU $-4-_CallCountingStubCode@0
 PUBLIC _CallCountingStubCode_TargetForThresholdReachedOffset
+        int    3
+LEAF_END_MARKED _CallCountingStubCode@0
 
-_LookupStubCode@0 PROC PUBLIC
+LEAF_ENTRY _LookupStubCode@0
         push   eax
-        push   dword ptr _LookupStubCode@0 + 4096 + LookupStubData__DispatchToken
-        jmp    dword ptr _LookupStubCode@0 + 4096 + LookupStubData__ResolveWorkerTarget
-_LookupStubCode@0 ENDP
+        push   dword ptr DATA_SLOT(LookupStub, DispatchToken)
+        jmp    dword ptr DATA_SLOT(LookupStub, ResolveWorkerTarget)
+LEAF_END_MARKED _LookupStubCode@0
 
-_DispatchStubCode@0 PROC PUBLIC
+LEAF_ENTRY _DispatchStubCode@0
         push   eax
-        mov    eax, dword ptr _DispatchStubCode@0 + 4096 + DispatchStubData__ExpectedMT
+        mov    eax, dword ptr DATA_SLOT(DispatchStub, ExpectedMT)
         cmp    dword ptr [ecx],eax
         pop    eax
         jne    NoMatch
-        jmp    dword ptr _DispatchStubCode@0 + 4096 + DispatchStubData__ImplTarget
+        jmp    dword ptr DATA_SLOT(DispatchStub, ImplTarget)
 NoMatch:
-        jmp    dword ptr _DispatchStubCode@0 + 4096 + DispatchStubData__FailTarget
-_DispatchStubCode@0 ENDP
+        jmp    dword ptr DATA_SLOT(DispatchStub, FailTarget)
+LEAF_END_MARKED _DispatchStubCode@0
 
-_ResolveStubCode@0 PROC PUBLIC
+LEAF_ENTRY _ResolveStubCode@0
 _ResolveStubCode_FailEntry@0:
 PUBLIC _ResolveStubCode_FailEntry@0
         sub dword ptr _ResolveStubCode@0 + 1010h, 1
@@ -79,16 +90,16 @@ Resolve:
         mov     edx,eax
         shr     eax, 12
         add     eax,edx
-        xor     eax,dword ptr _ResolveStubCode@0 + 4096 + ResolveStubData__HashedToken
+        xor     eax,dword ptr DATA_SLOT(ResolveStub, HashedToken)
 HashedTokenAddr EQU .-4
-        and     eax,dword ptr _ResolveStubCode@0 + 4096 + ResolveStubData__CacheMask
+        and     eax,dword ptr DATA_SLOT(ResolveStub, CacheMask)
 CacheMaskAddr EQU .-4
-        add     eax,dword ptr _ResolveStubCode@0 + 4096 + ResolveStubData__CacheAddress
+        add     eax,dword ptr DATA_SLOT(ResolveStub, CacheAddress)
 LookupCacheAddr EQU .-4
         mov     eax,dword ptr [eax]
         cmp     edx,dword ptr [eax]
         jne     Miss
-        mov     edx,dword ptr _ResolveStubCode@0 + 4096 + ResolveStubData__Token
+        mov     edx,dword ptr DATA_SLOT(ResolveStub, Token)
 TokenAddr1 EQU .-4
         cmp     edx,dword ptr [eax + 4]
         jne     Miss
@@ -99,14 +110,14 @@ TokenAddr1 EQU .-4
 Miss:
         pop     edx
 Slow:
-        push    dword ptr _ResolveStubCode@0 + 4096 + ResolveStubData__Token
+        push    dword ptr DATA_SLOT(ResolveStub, Token)
 TokenAddr2 EQU .-4
-        jmp     dword ptr _ResolveStubCode@0 + 4096 + ResolveStubData__ResolveWorkerTarget; <<< resolveWorker == ResolveWorkerChainLookupAsmStub or ResolveWorkerAsmStub
+        jmp     dword ptr DATA_SLOT(ResolveStub, ResolveWorkerTarget); <<< resolveWorker == ResolveWorkerChainLookupAsmStub or ResolveWorkerAsmStub
 ResolveWorkerAddr EQU .-4
 Backpatcher:
-        call    dword ptr _ResolveStubCode@0 + 4096 + ResolveStubData__PatcherTarget; <<< backpatcherWorker == BackPatchWorkerAsmStub
+        call    dword ptr DATA_SLOT(ResolveStub, PatcherTarget); <<< backpatcherWorker == BackPatchWorkerAsmStub
 BackpatcherWorkerAddr EQU .-4
         jmp     Resolve
-_ResolveStubCode@0 ENDP
+LEAF_END_MARKED _ResolveStubCode@0
 
         end

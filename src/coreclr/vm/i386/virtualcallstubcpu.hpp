@@ -63,6 +63,7 @@ struct VTableCallHolder
 
     VTableCallStub* stub() { LIMITED_METHOD_CONTRACT;  return reinterpret_cast<VTableCallStub *>(this); }
 
+    size_t size() { return stub()->size(); }
     static size_t GetHolderSize(unsigned slot)
     {
         STATIC_CONTRACT_WRAPPER;

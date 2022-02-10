@@ -241,7 +241,7 @@ struct FixupPrecode
     PTR_FixupPrecodeData GetData() const
     {
         LIMITED_METHOD_CONTRACT;
-        return dac_cast<PTR_FixupPrecodeData>((BYTE*)this + 4096);
+        return dac_cast<PTR_FixupPrecodeData>((BYTE*)this + GetOsPageSize());
     }
 
     TADDR GetMethodDesc()
