@@ -16,18 +16,22 @@ include AsmConstants.inc
 PAGE_SIZE EQU 4096
 
 DATA_SLOT macro stub, field
-    exitm @CatStr(<_>, stub, <Code@0 + 4096 + >, stub, <Data__>, field)
+    exitm @CatStr(<_>, stub, <Code@0 + PAGE_SIZE + >, stub, <Data__>, field)
 endm
 
-SLOT_ADDRESS_PATCH_LABEL macro stub, field
-    <_>&stub&_&field&_Offset EQU $-4-<_>&stub&<@0>
-    PUBLIC <_>&stub&_&field&_Offset
+SLOT_ADDRESS_PATCH_LABEL macro stub, field, offset:=<-4>, index:=<>
+    LOCAL labelName, labelValue
+labelName TEXTEQU @CatStr(<_>, stub, <Code_>, field, <_Offset>, index)
+labelValue TEXTEQU @CatStr(<$>, offset, <-_>, stub, <Code@0>)
+    %labelName EQU labelValue
+    PUBLIC labelName
 endm
 
 LEAF_ENTRY _StubPrecodeCode@0
         mov     eax, dword ptr DATA_SLOT(StubPrecode, MethodDesc)
+SLOT_ADDRESS_PATCH_LABEL StubPrecode, MethodDesc
         jmp     dword ptr DATA_SLOT(StubPrecode, Target)
-        nop
+SLOT_ADDRESS_PATCH_LABEL StubPrecode, Target
 LEAF_END_MARKED _StubPrecodeCode@0
 
 EXTERN _ThePreStub@0:PROC
@@ -37,70 +41,73 @@ ThePreStubAddress:
 
 LEAF_ENTRY _FixupPrecodeCode@0
         jmp     dword ptr DATA_SLOT(FixupPrecode, Target)
+SLOT_ADDRESS_PATCH_LABEL FixupPrecode, Target
         mov     eax, dword ptr DATA_SLOT(FixupPrecode, MethodDesc)
+SLOT_ADDRESS_PATCH_LABEL FixupPrecode, MethodDesc
         jmp     dword ptr ThePreStubAddress; The indirect jump uses an absolute address of the indirection slot
-        REPEAT  7
-        nop
-        ENDM
 LEAF_END_MARKED _FixupPrecodeCode@0
 
 LEAF_ENTRY _CallCountingStubCode@0
         mov    eax, dword ptr DATA_SLOT(CallCountingStub, RemainingCallCountCell)
 SLOT_ADDRESS_PATCH_LABEL CallCountingStub, RemainingCallCountCell
-;_CallCountingStubCode_RemainingCallCountCellOffset EQU $-4-_CallCountingStubCode@0
-;PUBLIC _CallCountingStubCode_RemainingCallCountCellOffset
         dec    WORD PTR [eax]
         je     CountReachedZero
         jmp    dword ptr  DATA_SLOT(CallCountingStub, TargetForMethod)
-_CallCountingStubCode_TargetForMethodOffset EQU $-4-_CallCountingStubCode@0
-PUBLIC _CallCountingStubCode_TargetForMethodOffset
+SLOT_ADDRESS_PATCH_LABEL CallCountingStub, TargetForMethod
 CountReachedZero:
         call   dword ptr  DATA_SLOT(CallCountingStub, TargetForThresholdReached)
-_CallCountingStubCode_TargetForThresholdReachedOffset EQU $-4-_CallCountingStubCode@0
-PUBLIC _CallCountingStubCode_TargetForThresholdReachedOffset
+SLOT_ADDRESS_PATCH_LABEL CallCountingStub, TargetForThresholdReached
         int    3
 LEAF_END_MARKED _CallCountingStubCode@0
 
 LEAF_ENTRY _LookupStubCode@0
         push   eax
         push   dword ptr DATA_SLOT(LookupStub, DispatchToken)
+SLOT_ADDRESS_PATCH_LABEL LookupStub, DispatchToken
         jmp    dword ptr DATA_SLOT(LookupStub, ResolveWorkerTarget)
+SLOT_ADDRESS_PATCH_LABEL LookupStub, ResolveWorkerTarget
 LEAF_END_MARKED _LookupStubCode@0
 
 LEAF_ENTRY _DispatchStubCode@0
         push   eax
         mov    eax, dword ptr DATA_SLOT(DispatchStub, ExpectedMT)
+SLOT_ADDRESS_PATCH_LABEL DispatchStub, ExpectedMT
+PATCH_LABEL _DispatchStubCode_ThisDeref@0
         cmp    dword ptr [ecx],eax
         pop    eax
         jne    NoMatch
         jmp    dword ptr DATA_SLOT(DispatchStub, ImplTarget)
+SLOT_ADDRESS_PATCH_LABEL DispatchStub, ImplTarget
 NoMatch:
         jmp    dword ptr DATA_SLOT(DispatchStub, FailTarget)
+SLOT_ADDRESS_PATCH_LABEL DispatchStub, FailTarget
 LEAF_END_MARKED _DispatchStubCode@0
 
 LEAF_ENTRY _ResolveStubCode@0
 _ResolveStubCode_FailEntry@0:
 PUBLIC _ResolveStubCode_FailEntry@0
-        sub dword ptr _ResolveStubCode@0 + 1010h, 1
+        sub dword ptr DATA_SLOT(ResolveStub, Counter), 1
+SLOT_ADDRESS_PATCH_LABEL ResolveStub, Counter, -5
         jl Backpatcher
-Resolve:
+PATCH_LABEL _ResolveStubCode_ResolveEntry@0
         push    eax
+PATCH_LABEL _ResolveStubCode_ThisDeref@0
         mov     eax,dword ptr [ecx]
         push    edx
         mov     edx,eax
         shr     eax, 12
         add     eax,edx
         xor     eax,dword ptr DATA_SLOT(ResolveStub, HashedToken)
-HashedTokenAddr EQU .-4
+SLOT_ADDRESS_PATCH_LABEL ResolveStub, HashedToken
         and     eax,dword ptr DATA_SLOT(ResolveStub, CacheMask)
-CacheMaskAddr EQU .-4
+SLOT_ADDRESS_PATCH_LABEL ResolveStub, CacheMask
         add     eax,dword ptr DATA_SLOT(ResolveStub, CacheAddress)
-LookupCacheAddr EQU .-4
+SLOT_ADDRESS_PATCH_LABEL ResolveStub, CacheAddress
         mov     eax,dword ptr [eax]
         cmp     edx,dword ptr [eax]
         jne     Miss
         mov     edx,dword ptr DATA_SLOT(ResolveStub, Token)
-TokenAddr1 EQU .-4
+SLOT_ADDRESS_PATCH_LABEL ResolveStub, Token,, 1
         cmp     edx,dword ptr [eax + 4]
         jne     Miss
         mov     eax,dword ptr [eax + 8]
@@ -111,13 +118,13 @@ Miss:
         pop     edx
 Slow:
         push    dword ptr DATA_SLOT(ResolveStub, Token)
-TokenAddr2 EQU .-4
+SLOT_ADDRESS_PATCH_LABEL ResolveStub, Token,, 2
         jmp     dword ptr DATA_SLOT(ResolveStub, ResolveWorkerTarget); <<< resolveWorker == ResolveWorkerChainLookupAsmStub or ResolveWorkerAsmStub
-ResolveWorkerAddr EQU .-4
+SLOT_ADDRESS_PATCH_LABEL ResolveStub, ResolveWorkerTarget
 Backpatcher:
         call    dword ptr DATA_SLOT(ResolveStub, PatcherTarget); <<< backpatcherWorker == BackPatchWorkerAsmStub
-BackpatcherWorkerAddr EQU .-4
-        jmp     Resolve
+SLOT_ADDRESS_PATCH_LABEL ResolveStub, PatcherTarget
+        jmp     _ResolveStubCode_ResolveEntry@0
 LEAF_END_MARKED _ResolveStubCode@0
 
         end

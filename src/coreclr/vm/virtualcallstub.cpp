@@ -3939,3 +3939,256 @@ BOOL VirtualCallStubManagerManager::TraceManager(
     // Forward the call to the appropriate manager.
     return pMgr->TraceManager(thread, trace, pContext, pRetAddr);
 }
+
+
+#ifndef DACCESS_COMPILE
+
+//#include "asmconstants.h"
+
+#ifdef STUB_LOGGING
+extern size_t g_lookup_inline_counter;
+extern size_t g_call_inline_counter;
+extern size_t g_miss_inline_counter;
+extern size_t g_call_cache_counter;
+extern size_t g_miss_cache_counter;
+#endif
+
+void  LookupStub::Initialize(PCODE resolveWorkerTarget, size_t dispatchToken)
+{
+    LookupStubData *pData = GetData();
+    pData->DispatchToken = dispatchToken;
+    pData->ResolveWorkerTarget = resolveWorkerTarget;
+}
+
+void  DispatchStub::Initialize(PCODE implTarget, PCODE failTarget, size_t expectedMT)
+{
+    DispatchStubData *pData = GetData();
+    pData->ExpectedMT = expectedMT;
+    pData->ImplTarget = implTarget;
+    pData->FailTarget = failTarget;
+}
+
+extern "C" void LookupStubCode();
+extern "C" void LookupStubCode_End();
+
+#ifdef TARGET_X86
+extern "C" size_t LookupStubCode_DispatchToken_Offset;
+extern "C" size_t LookupStubCode_ResolveWorkerTarget_Offset;
+
+#define SYMBOL_VALUE(name) ((size_t)&name)
+
+#endif
+
+size_t LookupStub::GenerateCodePage(uint8_t* pageBaseRX)
+{
+    int pageSize = GetOsPageSize();
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, pageSize);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
+    int totalCodeSize = (pageSize / LookupStub::CodeSize) * LookupStub::CodeSize;
+
+    _ASSERTE((BYTE*)LookupStubCode_End - (BYTE*)LookupStubCode <= LookupStub::CodeSize);
+
+#ifdef TARGET_X86
+    for (int i = 0; i < pageSize; i += LookupStub::CodeSize)
+    {
+        memcpy(pageBase + i, (const void*)&LookupStubCode, LookupStub::CodeSize);
+
+        uint8_t* pDispatchTokenSlot = pageBase + i + pageSize + offsetof(LookupStubData, DispatchToken);
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(LookupStubCode_DispatchToken_Offset)) = pDispatchTokenSlot;
+
+        uint8_t* pResolveWorkerTargetSlot = pageBase + i + pageSize + offsetof(LookupStubData, ResolveWorkerTarget);
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(LookupStubCode_ResolveWorkerTarget_Offset)) = pResolveWorkerTargetSlot;
+    }
+#else // TARGET_X86
+    memcpy(pageBase, (const void*)&LookupStubCode, LookupStub::CodeSize);
+
+    int i;
+    for (i = LookupStub::CodeSize; i < pageSize / 2; i *= 2)
+    {
+        memcpy(pageBase + i, pageBase, i);
+    }
+
+    if (i != totalCodeSize)
+    {
+        memcpy(pageBase + i, pageBase, totalCodeSize - i);
+    }
+#endif // TARGET_X86
+
+    ClrFlushInstructionCache(pageBaseRX, pageSize);
+
+    return 0;
+}
+
+extern "C" void DispatchStubCode_End();
+
+#ifdef TARGET_X86
+extern "C" size_t DispatchStubCode_ExpectedMT_Offset;
+extern "C" size_t DispatchStubCode_ImplTarget_Offset;
+extern "C" size_t DispatchStubCode_FailTarget_Offset;
+#endif
+
+size_t DispatchStub::GenerateCodePage(uint8_t* pageBaseRX)
+{
+    int pageSize = GetOsPageSize();
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, pageSize);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
+    int totalCodeSize = (pageSize / DispatchStub::CodeSize) * DispatchStub::CodeSize;
+
+    _ASSERTE((BYTE*)DispatchStubCode_End - (BYTE*)DispatchStubCode <= DispatchStub::CodeSize);
+
+#ifdef TARGET_X86
+    for (int i = 0; i <= pageSize - DispatchStub::CodeSize; i += DispatchStub::CodeSize)
+    {
+        memcpy(pageBase + i, (const void*)&DispatchStubCode, DispatchStub::CodeSize);
+
+        uint8_t* pExpectedMTSlot = pageBase + i + pageSize + offsetof(DispatchStubData, ExpectedMT);
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(DispatchStubCode_ExpectedMT_Offset)) = pExpectedMTSlot;
+
+        uint8_t* pImplTargetSlot = pageBase + i + pageSize + offsetof(DispatchStubData, ImplTarget);
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(DispatchStubCode_ImplTarget_Offset)) = pImplTargetSlot;
+
+        uint8_t* pFailTargetSlot = pageBase + i + pageSize + offsetof(DispatchStubData, FailTarget);
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(DispatchStubCode_FailTarget_Offset)) = pFailTargetSlot;
+    }
+#else // TARGET_X86
+    memcpy(pageBase, (const void*)&DispatchStubCode, DispatchStub::CodeSize);
+
+    int i;
+    for (i = DispatchStub::CodeSize; i < pageSize / 2; i *= 2)
+    {
+        memcpy(pageBase + i, pageBase, i);
+    }
+
+    if (i != totalCodeSize)
+    {
+        memcpy(pageBase + i, pageBase, totalCodeSize - i);
+    }
+#endif // TARGET_X86
+
+    ClrFlushInstructionCache(pageBaseRX, pageSize);
+
+    return 0;
+}
+
+extern "C" void ResolveStubCode();
+extern "C" void ResolveStubCode_End();
+
+#ifdef TARGET_X86
+extern "C" size_t ResolveStubCode_Counter_Offset;
+extern "C" size_t ResolveStubCode_HashedToken_Offset;
+extern "C" size_t ResolveStubCode_CacheMask_Offset;
+extern "C" size_t ResolveStubCode_CacheAddress_Offset;
+extern "C" size_t ResolveStubCode_Token_Offset1;
+extern "C" size_t ResolveStubCode_Token_Offset2;
+extern "C" size_t ResolveStubCode_ResolveWorkerTarget_Offset;
+extern "C" size_t ResolveStubCode_PatcherTarget_Offset;
+#endif
+
+size_t ResolveStub::GenerateCodePage(uint8_t* pageBaseRX)
+{
+    int pageSize = GetOsPageSize();
+    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, pageSize);
+    uint8_t* pageBase = codePageWriterHolder.GetRW();
+    int totalCodeSize = (pageSize / ResolveStub::CodeSize) * ResolveStub::CodeSize;
+
+    _ASSERTE((BYTE*)ResolveStubCode_End - (BYTE*)ResolveStubCode_End <= ResolveStub::CodeSize);
+
+#ifdef TARGET_X86
+    for (int i = 0; i <= pageSize - ResolveStub::CodeSize; i += ResolveStub::CodeSize)
+    {
+        memcpy(pageBase + i, (const void*)&ResolveStubCode, ResolveStub::CodeSize);
+
+        uint8_t* pCounterSlot = pageBase + i + pageSize + offsetof(ResolveStubData, Counter);
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(ResolveStubCode_Counter_Offset)) = pCounterSlot;
+
+        uint8_t* pHashedTokenSlot = pageBase + i + pageSize + offsetof(ResolveStubData, HashedToken);
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(ResolveStubCode_HashedToken_Offset)) = pHashedTokenSlot;
+
+        uint8_t* pCacheMaskSlot = pageBase + i + pageSize + offsetof(ResolveStubData, CacheMask);
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(ResolveStubCode_CacheMask_Offset)) = pCacheMaskSlot;
+
+        uint8_t* pLookupCacheSlot = pageBase + i + pageSize + offsetof(ResolveStubData, CacheAddress);
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(ResolveStubCode_CacheAddress_Offset)) = pLookupCacheSlot;
+
+        uint8_t* pTokenSlot = pageBase + i + pageSize + offsetof(ResolveStubData, Token);
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(ResolveStubCode_Token_Offset1)) = pTokenSlot;
+
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(ResolveStubCode_Token_Offset2)) = pTokenSlot;
+
+        uint8_t* pResolveWorkerSlot = pageBase + i + pageSize + offsetof(ResolveStubData, ResolveWorkerTarget);
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(ResolveStubCode_ResolveWorkerTarget_Offset)) = pResolveWorkerSlot;
+
+        uint8_t* pBackpatcherSlot = pageBase + i + pageSize + offsetof(ResolveStubData, PatcherTarget);
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(ResolveStubCode_PatcherTarget_Offset)) = pBackpatcherSlot;
+    }
+#else // TARGET_X86
+    memcpy(pageBase, (const void*)&ResolveStubCode, ResolveStub::CodeSize);
+
+    int i;
+    for (i = ResolveStub::CodeSize; i < pageSize / 2; i *= 2)
+    {
+        memcpy(pageBase + i, pageBase, i);
+    }
+
+    if (i != totalCodeSize)
+    {
+        memcpy(pageBase + i, pageBase, totalCodeSize - i);
+    }
+#endif // TARGET_X86
+
+    ClrFlushInstructionCache(pageBaseRX, pageSize);
+    return 0;
+}
+
+void  ResolveStub::Initialize(PCODE resolveWorkerTarget, PCODE patcherTarget,
+                                size_t dispatchToken, UINT32 hashedToken,
+                                void * cacheAddr, INT32 counterValue
+#if defined(TARGET_X86) && !defined(UNIX_X86_ABI)
+                                , size_t stackArgumentsSize
+#endif
+                                )
+{
+    ResolveStubData *pData = GetData();
+
+    pData->CacheAddress = (size_t)cacheAddr;
+    pData->HashedToken = hashedToken << LOG2_PTRSIZE;
+    pData->CacheMask = CALL_STUB_CACHE_MASK * sizeof(void*);
+    pData->Token = dispatchToken;
+    pData->Counter = counterValue;
+    pData->ResolveWorkerTarget = resolveWorkerTarget;
+    pData->PatcherTarget = patcherTarget;
+#if defined(TARGET_X86) && !defined(UNIX_X86_ABI)
+    pData->StackArgumentsSize = stackArgumentsSize;
+#endif
+}
+
+ResolveStub* ResolveStub::FromFailEntry(PCODE failEntry)
+{
+    LIMITED_METHOD_CONTRACT;
+    ResolveStub* pResolveStub = (ResolveStub*) (PCODEToPINSTR(failEntry) - ((BYTE*)ResolveStubCode_FailEntry - (BYTE*)ResolveStubCode));
+    return pResolveStub;
+}
+
+LookupStub* LookupStub::FromLookupEntry(PCODE lookupEntry)
+{
+    LIMITED_METHOD_CONTRACT;
+    LookupStub* pLookupStub = (LookupStub*)PCODEToPINSTR(lookupEntry);
+    return pLookupStub;
+}
+
+
+DispatchStub* DispatchStub::FromDispatchEntry(PCODE dispatchEntry)
+{
+    LIMITED_METHOD_CONTRACT;
+    DispatchStub* pDispatchStub = (DispatchStub*)PCODEToPINSTR(dispatchEntry);
+    return pDispatchStub;
+}
+
+ResolveStub* ResolveStub::FromResolveEntry(PCODE resolveEntry)
+{
+    LIMITED_METHOD_CONTRACT;
+    ResolveStub* pResolveStub = (ResolveStub*) (PCODEToPINSTR(resolveEntry) - ((BYTE*)ResolveStubCode_ResolveEntry - (BYTE*)ResolveStubCode));
+    return pResolveStub;
+}
+
+#endif // DACCESS_COMPILE

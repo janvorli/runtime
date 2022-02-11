@@ -590,6 +590,14 @@ void StubPrecode::Init(StubPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocator
 
 extern "C" void StubPrecodeCode();
 
+#ifdef TARGET_X86
+extern "C" size_t StubPrecodeCode_MethodDesc_Offset;
+extern "C" size_t StubPrecodeCode_Target_Offset;
+
+#define SYMBOL_VALUE(name) ((size_t)&name)
+
+#endif
+
 size_t StubPrecode::GenerateCodePage(uint8_t* pageBaseRX)
 {
     int pageSize = GetOsPageSize();
@@ -602,10 +610,12 @@ size_t StubPrecode::GenerateCodePage(uint8_t* pageBaseRX)
     for (int i = 0; i < totalCodeSize; i += StubPrecode::CodeSize)
     {
         memcpy(pageBase + i, (const void*)&StubPrecodeCode, StubPrecode::CodeSize);
+
         uint8_t* pTargetSlot = pageBase + i + pageSize + offsetof(StubPrecodeData, Target);
-        *(uint8_t**)(pageBase + i + 7) = pTargetSlot;
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(StubPrecodeCode_Target_Offset)) = pTargetSlot;
+
         uint8_t* pMethodDescSlot = pageBase + i + pageSize + offsetof(StubPrecodeData, MethodDesc);
-        *(uint8_t**)(pageBase + i + 1) = pMethodDescSlot;
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(StubPrecodeCode_MethodDesc_Offset)) = pMethodDescSlot;
     }
 #else // TARGET_X86
     memcpy(pageBase, (const void*)&StubPrecodeCode, StubPrecode::CodeSize);
@@ -652,6 +662,11 @@ void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocat
 
 extern "C" void FixupPrecodeCode();
 
+#ifdef TARGET_X86
+extern "C" size_t FixupPrecodeCode_MethodDesc_Offset;
+extern "C" size_t FixupPrecodeCode_Target_Offset;
+#endif
+
 size_t FixupPrecode::GenerateCodePage(uint8_t* pageBaseRX)
 {
     int pageSize = GetOsPageSize();
@@ -665,11 +680,10 @@ size_t FixupPrecode::GenerateCodePage(uint8_t* pageBaseRX)
     {
         memcpy(pageBase + i, (const void*)&FixupPrecodeCode, FixupPrecode::CodeSize);
         uint8_t* pTargetSlot = pageBase + i + pageSize + offsetof(FixupPrecodeData, Target);
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(FixupPrecodeCode_Target_Offset)) = pTargetSlot;
 
-        // TODO: get the offset in the assembler code
-        *(uint8_t**)(pageBase + i + 2) = pTargetSlot;
         uint8_t* pMethodDescSlot = pageBase + i + pageSize + offsetof(FixupPrecodeData, MethodDesc);
-        *(uint8_t**)(pageBase + i + 7) = pMethodDescSlot;
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(FixupPrecodeCode_MethodDesc_Offset)) = pMethodDescSlot;
     }
 #else // TARGET_X86
     memcpy(pageBase, (const void*)&FixupPrecodeCode, FixupPrecode::CodeSize);

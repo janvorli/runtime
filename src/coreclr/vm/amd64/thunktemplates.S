@@ -39,6 +39,7 @@ LEAF_END_MARKED LookupStubCode, _TEXT
 
 LEAF_ENTRY DispatchStubCode, _TEXT
        mov    rax,QWORD PTR [rip + DispatchStubCode + 4096 + DispatchStubData__ExpectedMT]
+PATCH_LABEL DispatchStubCode_ThisDeref
        cmp    QWORD PTR [rdi],rax;
        jne    Fail
        jmp    QWORD PTR [rip + DispatchStubCode + 4096 + DispatchStubData__ImplTarget]
@@ -47,8 +48,10 @@ LEAF_ENTRY DispatchStubCode, _TEXT
 LEAF_END_MARKED DispatchStubCode, _TEXT
 
 LEAF_ENTRY ResolveStubCode, _TEXT
+PATCH_LABEL ResolveStubCode_ResolveEntry
         push   rdx
         mov    r10,QWORD PTR [rip + ResolveStubCode + 4096 + ResolveStubData__CacheAddress]
+PATCH_LABEL ResolveStubCode_ThisDeref
         mov    rax,QWORD PTR [rdi]
         mov    rdx,rax
         shr    rax,12

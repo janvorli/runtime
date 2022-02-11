@@ -1203,6 +1203,9 @@ is in fact written.  Hence we have moved target out into the holder and aligned 
 atomically update it.  When we get a resolver function that does what we want, we can drop this field,
 and live with just the inlineTarget field in the stub itself, since immutability will hold.*/
 
+extern "C" void DispatchStubCode();
+extern "C" void DispatchStubCode_ThisDeref();
+
 struct DispatchStub
 {
 #if defined(HOST_AMD64)
@@ -1227,15 +1230,7 @@ struct DispatchStub
     inline static size_t offsetOfThisDeref()
     {
         LIMITED_METHOD_CONTRACT; 
-#if defined(HOST_AMD64)
-        return 0;
-#elif defined(HOST_X86)
-        return 6;
-#elif defined(HOST_ARM64)
-        return 0;
-#elif defined(HOST_ARM)
-        return 0;
-#endif // HOST_AMD64
+        return (BYTE*)DispatchStubCode_ThisDeref - (BYTE*)DispatchStubCode;
     }
 
     inline PCODE implTarget() const
@@ -1327,8 +1322,10 @@ struct ResolveStubData
 typedef DPTR(ResolveStubData) PTR_ResolveStubData;
 
 extern "C" void ResolveStubCode();
+extern "C" void ResolveStubCode_ResolveEntry();
 extern "C" void ResolveStubCode_FailEntry();
 extern "C" void ResolveStubCode_SlowEntry();
+extern "C" void ResolveStubCode_ThisDeref();
 
 struct ResolveStub
 {
@@ -1356,7 +1353,7 @@ struct ResolveStub
     static size_t GenerateCodePage(uint8_t* pageBase);
 
     inline PCODE failEntryPoint()       { LIMITED_METHOD_CONTRACT; return (PCODE)((BYTE*)this + ((BYTE*)ResolveStubCode_FailEntry - (BYTE*)ResolveStubCode)); }
-    inline PCODE resolveEntryPoint()    { LIMITED_METHOD_CONTRACT; return (PCODE)((BYTE*)this); }
+    inline PCODE resolveEntryPoint()    { LIMITED_METHOD_CONTRACT; return (PCODE)((BYTE*)this + ((BYTE*)ResolveStubCode_ResolveEntry - (BYTE*)ResolveStubCode)); }
     inline PCODE slowEntryPoint()       { LIMITED_METHOD_CONTRACT; return (PCODE)((BYTE*)this + ((BYTE*)ResolveStubCode_SlowEntry - (BYTE*)ResolveStubCode)); }
 
     inline INT32* pCounter()            { LIMITED_METHOD_CONTRACT; return &GetData()->Counter; }
@@ -1368,15 +1365,7 @@ struct ResolveStub
     inline static size_t offsetOfThisDeref()
     {
         LIMITED_METHOD_CONTRACT; 
-#if defined(HOST_AMD64)
-        return 0;
-#elif defined(HOST_X86)
-        return 1;
-#elif defined(HOST_ARM64)
-        return 0;
-#elif defined(HOST_ARM)
-        return 0;
-#endif // HOST_AMD64
+        return (BYTE*)ResolveStubCode_ThisDeref - (BYTE*)ResolveStubCode;
     }
 
 #if defined(TARGET_X86) && !defined(UNIX_X86_ABI)
@@ -1394,349 +1383,6 @@ private:
 
 //#endif // TARGET_AMD64
 #pragma pack(pop)
-
-#ifdef DECLARE_DATA
-
-#ifndef DACCESS_COMPILE
-
-//#include "asmconstants.h"
-
-#ifdef STUB_LOGGING
-extern size_t g_lookup_inline_counter;
-extern size_t g_call_inline_counter;
-extern size_t g_miss_inline_counter;
-extern size_t g_call_cache_counter;
-extern size_t g_miss_cache_counter;
-#endif
-
-void  LookupStub::Initialize(PCODE resolveWorkerTarget, size_t dispatchToken)
-{
-    LookupStubData *pData = GetData();
-    pData->DispatchToken = dispatchToken;
-    pData->ResolveWorkerTarget = resolveWorkerTarget;
-}
-
-void  DispatchStub::Initialize(PCODE implTarget, PCODE failTarget, size_t expectedMT)
-{
-    DispatchStubData *pData = GetData();
-    pData->ExpectedMT = expectedMT;
-    pData->ImplTarget = implTarget;
-    pData->FailTarget = failTarget;
-}
-
-extern "C" void LookupStubCode();
-extern "C" void LookupStubCode_End();
-
-size_t LookupStub::GenerateCodePage(uint8_t* pageBaseRX)
-{
-    int pageSize = GetOsPageSize();
-    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, pageSize);
-    uint8_t* pageBase = codePageWriterHolder.GetRW();
-    int totalCodeSize = (pageSize / LookupStub::CodeSize) * LookupStub::CodeSize;
-
-    _ASSERTE((BYTE*)LookupStubCode_End - (BYTE*)LookupStubCode <= LookupStub::CodeSize);
-
-#ifdef TARGET_X86
-    for (int i = 0; i < pageSize; i += LookupStub::CodeSize)
-    {
-        memcpy(pageBase + i, (const void*)&LookupStubCode, LookupStub::CodeSize);
-        pageBase[i + 0] = 0x50;
-        pageBase[i + 1] = 0xff;
-        pageBase[i + 2] = 0x35;
-        uint8_t* pDispatchTokenSlot = pageBase + i + pageSize + offsetof(LookupStubData, DispatchToken);
-        *(uint8_t**)(pageBase + i + 3) = pDispatchTokenSlot;
-
-        pageBase[i + 7] = 0xFF;
-        pageBase[i + 8] = 0x25;
-        uint8_t* pResolveWorkerTargetSlot = pageBase + i + pageSize + offsetof(LookupStubData, ResolveWorkerTarget);
-        *(uint8_t**)(pageBase + i + 9) = pResolveWorkerTargetSlot;
-
-        pageBase[i + 13] = 0x90;
-        pageBase[i + 14] = 0x90;
-        pageBase[i + 15] = 0x90;
-    }
-#else // TARGET_X86
-    memcpy(pageBase, (const void*)&LookupStubCode, LookupStub::CodeSize);
-
-    int i;
-    for (i = LookupStub::CodeSize; i < pageSize / 2; i *= 2)
-    {
-        memcpy(pageBase + i, pageBase, i);
-    }
-
-    if (i != totalCodeSize)
-    {
-        memcpy(pageBase + i, pageBase, totalCodeSize - i);
-    }
-#endif // TARGET_X86
-
-    ClrFlushInstructionCache(pageBaseRX, pageSize);
-
-    return 0;
-}
-
-extern "C" void DispatchStubCode();
-extern "C" void DispatchStubCode_End();
-
-size_t DispatchStub::GenerateCodePage(uint8_t* pageBaseRX)
-{
-    int pageSize = GetOsPageSize();
-    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, pageSize);
-    uint8_t* pageBase = codePageWriterHolder.GetRW();
-    int totalCodeSize = (pageSize / DispatchStub::CodeSize) * DispatchStub::CodeSize;
-
-    _ASSERTE((BYTE*)DispatchStubCode_End - (BYTE*)DispatchStubCode <= DispatchStub::CodeSize);
-
-#ifdef TARGET_X86
-    for (int i = 0; i <= pageSize - DispatchStub::CodeSize; i += DispatchStub::CodeSize)
-    {
-        memcpy(pageBase + i, (const void*)&DispatchStubCode, DispatchStub::CodeSize);
-
-        pageBase[i + 0] = 0x50;
-        pageBase[i + 1] = 0xa1;
-
-        uint8_t* pExpectedMTSlot = pageBase + i + pageSize + offsetof(DispatchStubData, ExpectedMT);
-        *(uint8_t**)(pageBase + i + 2) = pExpectedMTSlot;
-
-        pageBase[i + 6] = 0x39;
-        pageBase[i + 7] = 0x01;
-        pageBase[i + 8] = 0x58;
-        pageBase[i + 9] = 0x75;
-        pageBase[i + 10] = 0x06;
-        pageBase[i + 11] = 0xff;
-        pageBase[i + 12] = 0x25;
-
-        uint8_t* pImplTargetSlot = pageBase + i + pageSize + offsetof(DispatchStubData, ImplTarget);
-        *(uint8_t**)(pageBase + i + 13) = pImplTargetSlot;
-
-        pageBase[i + 17] = 0xff;
-        pageBase[i + 18] = 0x25;
-
-        uint8_t* pFailTargetSlot = pageBase + i + pageSize + offsetof(DispatchStubData, FailTarget);
-        *(uint8_t**)(pageBase + i + 19) = pFailTargetSlot;
-
-        pageBase[i + 23] = 0x90;
-    }
-#else // TARGET_X86
-    memcpy(pageBase, (const void*)&DispatchStubCode, DispatchStub::CodeSize);
-
-    int i;
-    for (i = DispatchStub::CodeSize; i < pageSize / 2; i *= 2)
-    {
-        memcpy(pageBase + i, pageBase, i);
-    }
-
-    if (i != totalCodeSize)
-    {
-        memcpy(pageBase + i, pageBase, totalCodeSize - i);
-    }
-#endif // TARGET_X86
-
-    ClrFlushInstructionCache(pageBaseRX, pageSize);
-
-    return 0;
-}
-
-extern "C" void ResolveStubCode();
-extern "C" void ResolveStubCode_End();
-
-size_t ResolveStub::GenerateCodePage(uint8_t* pageBaseRX)
-{
-    int pageSize = GetOsPageSize();
-    ExecutableWriterHolder<uint8_t> codePageWriterHolder(pageBaseRX, pageSize);
-    uint8_t* pageBase = codePageWriterHolder.GetRW();
-    int totalCodeSize = (pageSize / ResolveStub::CodeSize) * ResolveStub::CodeSize;
-
-    _ASSERTE((BYTE*)ResolveStubCode_End - (BYTE*)ResolveStubCode_End <= ResolveStub::CodeSize);
-
-#ifdef TARGET_X86
-    for (int i = 0; i <= pageSize - ResolveStub::CodeSize; i += ResolveStub::CodeSize)
-    {
-        memcpy(pageBase, (const void*)&ResolveStubCode, ResolveStub::CodeSize);
-
-        pageBase[i + 0] = 0x83;
-        pageBase[i + 1] = 0x2d; 
-
-        uint8_t* pCounterSlot = pageBase + i + pageSize + offsetof(ResolveStubData, Counter);
-        *(uint8_t**)(pageBase + i + 2) = pCounterSlot;
-
-        pageBase[i + 6] = 0x01;
-        pageBase[i + 7] = 0x7c;
-        pageBase[i + 8] = 0x44;
-        pageBase[i + 9] = 0x50;
-        pageBase[i + 10] = 0x8b;
-        pageBase[i + 11] = 0x01;
-        pageBase[i + 12] = 0x52;
-        pageBase[i + 13] = 0x89;
-        pageBase[i + 14] = 0xc2;
-        pageBase[i + 15] = 0xc1;
-        pageBase[i + 16] = 0xe8;
-        pageBase[i + 17] = CALL_STUB_CACHE_NUM_BITS;
-        pageBase[i + 18] = 0x01;
-        pageBase[i + 19] = 0xd0;
-        pageBase[i + 20] = 0x33;
-        pageBase[i + 21] = 0x05;
-
-        uint8_t* pHashedTokenSlot = pageBase + i + pageSize + offsetof(ResolveStubData, HashedToken);
-        *(uint8_t**)(pageBase + i + 22) = pHashedTokenSlot;
-
-        pageBase[i + 26] = 0x23;
-        pageBase[i + 27] = 0x05;
-
-        uint8_t* pCacheMaskSlot = pageBase + i + pageSize + offsetof(ResolveStubData, CacheMask);
-        *(uint8_t**)(pageBase + i + 28) = pCacheMaskSlot;
-
-        pageBase[i + 32] = 0x03;
-        pageBase[i + 33] = 0x05;
-
-        uint8_t* pLookupCacheSlot = pageBase + i + pageSize + offsetof(ResolveStubData, CacheAddress);
-        *(uint8_t**)(pageBase + i + 34) = pLookupCacheSlot;
-
-        pageBase[i + 38] = 0x8b;
-        pageBase[i + 39] = 0x00;
-        static_assert_no_msg(offsetof(ResolveCacheElem, pMT) == 0);
-        pageBase[i + 40] = 0x3b;
-        pageBase[i + 41] = 0x10;
-        pageBase[i + 42] = 0x75;
-        pageBase[i + 43] = 0x14;
-        pageBase[i + 44] = 0x8b;
-        pageBase[i + 45] = 0x15;
-
-        uint8_t* pTokenSlot = pageBase + i + pageSize + offsetof(ResolveStubData, Token);
-        *(uint8_t**)(pageBase + i + 46) = pTokenSlot;
-
-        pageBase[i + 50] = 0x3b;
-        pageBase[i + 51] = 0x50;
-        pageBase[i + 52] = offsetof(ResolveCacheElem, token);
-        pageBase[i + 53] = 0x75;
-        pageBase[i + 54] = 0x09;
-        pageBase[i + 55] = 0x8b;
-        pageBase[i + 56] = 0x40;
-        pageBase[i + 57] = offsetof(ResolveCacheElem, target);
-        pageBase[i + 58] = 0x5a;
-        pageBase[i + 59] = 0x83;
-        pageBase[i + 60] = 0xc4;
-        pageBase[i + 61] = 0x04;
-        pageBase[i + 62] = 0xff;
-        pageBase[i + 63] = 0xe0;
-        pageBase[i + 64] = 0x5a;
-
-        pageBase[i + 65] = 0xff;
-        pageBase[i + 66] = 0x35;
-
-        *(uint8_t**)(pageBase + i + 67) = pTokenSlot;
-
-        pageBase[i + 71] = 0xff;
-        pageBase[i + 72] = 0x25;
-
-        uint8_t* pResolveWorkerSlot = pageBase + i + pageSize + offsetof(ResolveStubData, ResolveWorkerTarget);
-        *(uint8_t**)(pageBase + i + 73) = pResolveWorkerSlot;
-
-        pageBase[i + 77] = 0xff;
-        pageBase[i + 78] = 0x15;
-
-        uint8_t* pBackpatcherSlot = pageBase + i + pageSize + offsetof(ResolveStubData, PatcherTarget);
-        *(uint8_t**)(pageBase + i + 79) = pBackpatcherSlot;
-
-        pageBase[i + 83] = 0xeb;
-        pageBase[i + 84] = 0xb4;
-        pageBase[i + 85] = 0x90;
-        pageBase[i + 86] = 0x90;
-        pageBase[i + 87] = 0x90;
-    }
-#else // TARGET_X86
-    memcpy(pageBase, (const void*)&ResolveStubCode, ResolveStub::CodeSize);
-
-    int i;
-    for (i = ResolveStub::CodeSize; i < pageSize / 2; i *= 2)
-    {
-        memcpy(pageBase + i, pageBase, i);
-    }
-
-    if (i != totalCodeSize)
-    {
-        memcpy(pageBase + i, pageBase, totalCodeSize - i);
-    }
-#endif // TARGET_X86
-
-    ClrFlushInstructionCache(pageBaseRX, pageSize);
-    return 0;
-}
-
-void  ResolveStub::Initialize(PCODE resolveWorkerTarget, PCODE patcherTarget,
-                                size_t dispatchToken, UINT32 hashedToken,
-                                void * cacheAddr, INT32 counterValue
-#if defined(TARGET_X86) && !defined(UNIX_X86_ABI)
-                                , size_t stackArgumentsSize
-#endif
-                                )
-{
-    ResolveStubData *pData = GetData();
-
-    pData->CacheAddress = (size_t)cacheAddr;
-    pData->HashedToken = hashedToken << LOG2_PTRSIZE;
-    pData->CacheMask = CALL_STUB_CACHE_MASK * sizeof(void*);
-    pData->Token = dispatchToken;
-    pData->Counter = counterValue;
-    pData->ResolveWorkerTarget = resolveWorkerTarget;
-    pData->PatcherTarget = patcherTarget;
-#if defined(TARGET_X86) && !defined(UNIX_X86_ABI)
-    pData->StackArgumentsSize = stackArgumentsSize;
-#endif
-}
-
-ResolveStub* ResolveStub::FromFailEntry(PCODE failEntry)
-{
-    LIMITED_METHOD_CONTRACT;
-    failEntry = PCODEToPINSTR(failEntry);
-#if defined(TARGET_AMD64)
-    ResolveStub* pResolveStub = (ResolveStub*) ( failEntry - ((BYTE*)ResolveStubCode_FailEntry - (BYTE*)ResolveStubCode));
-#elif defined(TARGET_X86)
-    ResolveStub* pResolveStub = (ResolveStub*)failEntry;
-#elif defined(TARGET_ARM64)
-    ResolveStub* pResolveStub = (ResolveStub*) ( failEntry - ((BYTE*)ResolveStubCode_FailEntry - (BYTE*)ResolveStubCode));
-#elif defined(TARGET_ARM)
-    ResolveStub* pResolveStub = (ResolveStub*) ( failEntry - 0x50);
-#endif
-
-    return pResolveStub;
-}
-
-LookupStub* LookupStub::FromLookupEntry(PCODE lookupEntry)
-{
-    LIMITED_METHOD_CONTRACT;
-    LookupStub* pLookupStub = (LookupStub*)PCODEToPINSTR(lookupEntry);
-    return pLookupStub;
-}
-
-
-DispatchStub* DispatchStub::FromDispatchEntry(PCODE dispatchEntry)
-{
-    LIMITED_METHOD_CONTRACT;
-    DispatchStub* pDispatchStub = (DispatchStub*)PCODEToPINSTR(dispatchEntry);
-    return pDispatchStub;
-}
-
-
-ResolveStub* ResolveStub::FromResolveEntry(PCODE resolveEntry)
-{
-    LIMITED_METHOD_CONTRACT;
-    resolveEntry = PCODEToPINSTR(resolveEntry);
-#if defined(TARGET_AMD64)
-    ResolveStub* pResolveStub = (ResolveStub*)resolveEntry;
-#elif defined(TARGET_X86)
-    ResolveStub* pResolveStub = (ResolveStub*) ( resolveEntry - 9 );
-#elif defined(TARGET_ARM64)
-    ResolveStub* pResolveStub = (ResolveStub*)resolveEntry;
-#elif defined(TARGET_ARM)
-    ResolveStub* pResolveStub = (ResolveStub*)resolveEntry;
-#endif
-    return pResolveStub;
-}
-
-#endif // DECLARE_DATA
-
-#endif // DACCESS_COMPILE
 
 #if USES_LOOKUP_STUBS
 /**********************************************************************************************

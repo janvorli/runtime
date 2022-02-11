@@ -11,18 +11,12 @@ endm
 LEAF_ENTRY StubPrecodeCode, _TEXT
         mov    r10, QWORD PTR [DATA_SLOT(StubPrecode, MethodDesc)]
         jmp    QWORD PTR [DATA_SLOT(StubPrecode, Target)]
-        REPEAT 11
-        nop
-        ENDM
 LEAF_END_MARKED StubPrecodeCode, _TEXT
 
 LEAF_ENTRY FixupPrecodeCode, _TEXT
         jmp QWORD PTR [DATA_SLOT(FixupPrecode, Target)]
         mov    r10, QWORD PTR [DATA_SLOT(FixupPrecode, MethodDesc)]
         jmp    QWORD PTR [DATA_SLOT(FixupPrecode, PrecodeFixupThunk)]
-        REPEAT 5
-        nop
-        ENDM
 LEAF_END_MARKED FixupPrecodeCode, _TEXT
 
 LEAF_ENTRY CallCountingStubCode, _TEXT
@@ -42,6 +36,7 @@ LEAF_END_MARKED LookupStubCode, _TEXT
 
 LEAF_ENTRY DispatchStubCode, _TEXT
        mov    rax,QWORD PTR [DATA_SLOT(DispatchStub, ExpectedMT)]
+PATCH_LABEL DispatchStubCode_ThisDeref
        cmp    QWORD PTR [rcx],rax;
        jne    Fail
        jmp    QWORD PTR [DATA_SLOT(DispatchStub, ImplTarget)]
@@ -50,8 +45,10 @@ LEAF_ENTRY DispatchStubCode, _TEXT
 LEAF_END_MARKED DispatchStubCode, _TEXT
 
 LEAF_ENTRY ResolveStubCode, _TEXT
+PATCH_LABEL ResolveStubCode_ResolveEntry
         push   rdx
         mov    r10,QWORD PTR [DATA_SLOT(ResolveStub, CacheAddress)]
+PATCH_LABEL ResolveStubCode_ThisDeref
         mov    rax,QWORD PTR [rcx]
         mov    rdx,rax
         shr    rax,12

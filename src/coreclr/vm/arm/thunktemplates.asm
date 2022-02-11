@@ -15,7 +15,7 @@
     LEAF_ENTRY StubPrecodeCode
         ldr r12, DATA_SLOT(StubPrecode, MethodDesc)
         ldr pc, DATA_SLOT(StubPrecode, Target)
-    LEAF_END StubPrecodeCode
+    LEAF_END_MARKED StubPrecodeCode
 
     ALIGN 4
 
@@ -23,7 +23,7 @@
         ldr pc, DATA_SLOT(FixupPrecode, Target)
         ldr r12, DATA_SLOT(FixupPrecode, MethodDesc)
         ldr pc, DATA_SLOT(FixupPrecode, PrecodeFixupThunk)
-    LEAF_END FixupPrecodeCode
+    LEAF_END_MARKED FixupPrecodeCode
 
     ALIGN 4
 
@@ -39,18 +39,19 @@
 LCountReachedZero
         adr r12, CallCountingStubCode
         ldr pc, DATA_SLOT(CallCountingStub, TargetForThresholdReached)
-    LEAF_END CallCountingStubCode
+    LEAF_END_MARKED CallCountingStubCode
 
     ALIGN 4
 
     LEAF_ENTRY LookupStubCode
         ldr r12, LookupStubCode + 4096 + LookupStubData__DispatchToken
         ldr pc, LookupStubCode + 4096 + LookupStubData__ResolveWorkerTarget
-    LEAF_END LookupStubCode
+    LEAF_END_MARKED LookupStubCode
 
     ALIGN 4
 
     LEAF_ENTRY DispatchStubCode
+    PATCH_LABEL DispatchStubCode_ThisDeref
         ldr r12, [r0]
         push {r5}
         ldr r5, DispatchStubCode + 4096 + DispatchStubData__ExpectedMT
@@ -60,11 +61,13 @@ LCountReachedZero
         ldr pc, DispatchStubCode + 4096 + DispatchStubData__ImplTarget
 LFailTarget
         ldr pc, DispatchStubCode + 4096 + DispatchStubData__FailTarget
-    LEAF_END DispatchStubCode
+    LEAF_END_MARKED DispatchStubCode
 
     ALIGN 4
 
     LEAF_ENTRY ResolveStubCode
+    PATCH_LABEL ResolveStubCode_ResolveEntry
+    PATCH_LABEL ResolveStubCode_ThisDeref
         ldr r12, [r0]
         push {r5, r6}
         add r6, r12, r12 lsr #12
@@ -96,8 +99,7 @@ slowEntryPoint2
 slowEntryPoint
         ldr r12, ResolveStubCode + 4096 + ResolveStubData__Token
         ldr pc, ResolveStubCode + 4096 + ResolveStubData__ResolveWorkerTarget
-ResolveStubCode_FailEntry
-    EXPORT ResolveStubCode_FailEntry
+    PATCH_LABEL ResolveStubCode_FailEntry
         push {r5}
         adr r5, ResolveStubCode + 4096 + ResolveStubData__Counter
         ldr r12, [r5]
@@ -107,6 +109,6 @@ ResolveStubCode_FailEntry
         bge ResolveStubCode
         orr r4, r4, #1; SDF_ResolveBackPatch
         b ResolveStubCode
-    LEAF_END ResolveStubCode
+    LEAF_END_MARKED ResolveStubCode
 
     END

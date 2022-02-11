@@ -39,3 +39,8 @@ LEAF_END_MARKED macro functionName
     PUBLIC endMarkerName
     functionName ENDP
 endm
+
+PATCH_LABEL macro labelName
+    labelName:
+    PUBLIC labelName
+endm

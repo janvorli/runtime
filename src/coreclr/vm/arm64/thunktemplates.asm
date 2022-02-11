@@ -43,6 +43,7 @@ CountReachedZero
     LEAF_END_MARKED LookupStubCode
 
     LEAF_ENTRY DispatchStubCode
+    PATCH_LABEL DispatchStubCode_ThisDeref
         ldr x13, [x0] ; methodTable from object in x0
         adr x9, DATA_SLOT(DispatchStub, ExpectedMT)
         ldp x10, x12, [x9] ; x10 = ExpectedMT & x12 = ImplTarget
@@ -55,6 +56,8 @@ Fail
     LEAF_END_MARKED DispatchStubCode
 
     LEAF_ENTRY ResolveStubCode
+    PATCH_LABEL ResolveStubCode_ResolveEntry
+    PATCH_LABEL ResolveStubCode_ThisDeref
         ldr x12, [x0]
         add x9, x12, x12, lsr #12
         ldr w13, DATA_SLOT(ResolveStub, HashedToken)
