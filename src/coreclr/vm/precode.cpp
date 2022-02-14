@@ -665,6 +665,7 @@ extern "C" void FixupPrecodeCode();
 #ifdef TARGET_X86
 extern "C" size_t FixupPrecodeCode_MethodDesc_Offset;
 extern "C" size_t FixupPrecodeCode_Target_Offset;
+extern "C" size_t FixupPrecodeCode_PrecodeFixupThunk_Offset;
 #endif
 
 size_t FixupPrecode::GenerateCodePage(uint8_t* pageBaseRX)
@@ -684,6 +685,9 @@ size_t FixupPrecode::GenerateCodePage(uint8_t* pageBaseRX)
 
         uint8_t* pMethodDescSlot = pageBase + i + pageSize + offsetof(FixupPrecodeData, MethodDesc);
         *(uint8_t**)(pageBase + i + SYMBOL_VALUE(FixupPrecodeCode_MethodDesc_Offset)) = pMethodDescSlot;
+
+        uint8_t* pPrecodeFixupThunkSlot = pageBase + i + pageSize + offsetof(FixupPrecodeData, PrecodeFixupThunk);
+        *(uint8_t**)(pageBase + i + SYMBOL_VALUE(FixupPrecodeCode_PrecodeFixupThunk_Offset)) = pPrecodeFixupThunkSlot;
     }
 #else // TARGET_X86
     memcpy(pageBase, (const void*)&FixupPrecodeCode, FixupPrecode::CodeSize);

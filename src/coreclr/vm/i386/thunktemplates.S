@@ -7,12 +7,18 @@
 
 PAGE_SIZE = 4096
 
-#define DATA_SLOT(stub, field) 0
-//stub##Code + PAGE_SIZE + stub##Data__##field
+//#define DATA_SLOT(stub, field) stub##Code + PAGE_SIZE + stub##Data__##field
+#define DATA_SLOT(stub, field) PAGE_SIZE + stub##Data__##field
 
 .macro INDJMP target
     .att_syntax
     jmp *\target
+    .intel_syntax noprefix
+.endm
+
+.macro INDCALL target
+    .att_syntax
+    call *\target
     .intel_syntax noprefix
 .endm
 
@@ -24,21 +30,17 @@ PAGE_SIZE = 4096
 LEAF_ENTRY StubPrecodeCode
         mov     eax, dword ptr [DATA_SLOT(StubPrecode, MethodDesc)]
 SLOT_ADDRESS_PATCH_LABEL StubPrecode, MethodDesc
-        //jmp     dword ptr [DATA_SLOT(StubPrecode, Target)]
         INDJMP DATA_SLOT(StubPrecode, Target)
 SLOT_ADDRESS_PATCH_LABEL StubPrecode, Target
         nop
 LEAF_END_MARKED StubPrecodeCode
-
-//ThePreStubAddress:
-//        .long C_FUNC(ThePreStub)
 
 LEAF_ENTRY FixupPrecodeCode
         INDJMP  DATA_SLOT(FixupPrecode, Target)
 SLOT_ADDRESS_PATCH_LABEL FixupPrecode, Target
         mov     eax, dword ptr [DATA_SLOT(FixupPrecode, MethodDesc)]
 SLOT_ADDRESS_PATCH_LABEL FixupPrecode, MethodDesc
-        jmp     dword ptr [0] //ThePreStubAddress // The indirect jump uses an absolute address of the indirection slot
+        INDJMP  DATA_SLOT(FixupPrecode, PrecodeFixupThunk)
 LEAF_END_MARKED FixupPrecodeCode
 
 LEAF_ENTRY CallCountingStubCode
@@ -46,10 +48,10 @@ LEAF_ENTRY CallCountingStubCode
 SLOT_ADDRESS_PATCH_LABEL CallCountingStub, RemainingCallCountCell
         dec    WORD PTR [eax]
         je     CountReachedZero
-        jmp    dword ptr  [DATA_SLOT(CallCountingStub, TargetForMethod)]
+        INDJMP DATA_SLOT(CallCountingStub, TargetForMethod)
 SLOT_ADDRESS_PATCH_LABEL CallCountingStub, TargetForMethod
 CountReachedZero:
-        call   dword ptr [DATA_SLOT(CallCountingStub, TargetForThresholdReached)]
+        INDCALL DATA_SLOT(CallCountingStub, TargetForThresholdReached)
 SLOT_ADDRESS_PATCH_LABEL CallCountingStub, TargetForThresholdReached
         int    3
 LEAF_END_MARKED CallCountingStubCode
@@ -58,7 +60,7 @@ LEAF_ENTRY LookupStubCode
         push   eax
         push   dword ptr [DATA_SLOT(LookupStub, DispatchToken)]
 SLOT_ADDRESS_PATCH_LABEL LookupStub, DispatchToken
-        jmp    dword ptr [DATA_SLOT(LookupStub, ResolveWorkerTarget)]
+        INDJMP DATA_SLOT(LookupStub, ResolveWorkerTarget)
 SLOT_ADDRESS_PATCH_LABEL LookupStub, ResolveWorkerTarget
 LEAF_END_MARKED LookupStubCode
 
@@ -70,10 +72,10 @@ PATCH_LABEL _DispatchStubCode_ThisDeref
         cmp    dword ptr [ecx],eax
         pop    eax
         jne    NoMatch
-        jmp    dword ptr [DATA_SLOT(DispatchStub, ImplTarget)]
+        INDJMP DATA_SLOT(DispatchStub, ImplTarget)
 SLOT_ADDRESS_PATCH_LABEL DispatchStub, ImplTarget
 NoMatch:
-        jmp    dword ptr [DATA_SLOT(DispatchStub, FailTarget)]
+        INDJMP DATA_SLOT(DispatchStub, FailTarget)
 SLOT_ADDRESS_PATCH_LABEL DispatchStub, FailTarget
 LEAF_END_MARKED DispatchStubCode
 
@@ -113,10 +115,11 @@ Miss:
 Slow:
         push    dword ptr [DATA_SLOT(ResolveStub, Token)]
 SLOT_ADDRESS_PATCH_LABEL ResolveStub, Token,, 2
-        jmp     dword ptr [DATA_SLOT(ResolveStub, ResolveWorkerTarget)] // <<< resolveWorker == ResolveWorkerChainLookupAsmStub or ResolveWorkerAsmStub
+        INDJMP DATA_SLOT(ResolveStub, ResolveWorkerTarget) // <<< resolveWorker == ResolveWorkerChainLookupAsmStub or ResolveWorkerAsmStub
 SLOT_ADDRESS_PATCH_LABEL ResolveStub, ResolveWorkerTarget
 Backpatcher:
-        call    dword ptr [DATA_SLOT(ResolveStub, PatcherTarget)] // <<< backpatcherWorker == BackPatchWorkerAsmStub
+        INDCALL DATA_SLOT(ResolveStub, PatcherTarget) // <<< backpatcherWorker == BackPatchWorkerAsmStub
 SLOT_ADDRESS_PATCH_LABEL ResolveStub, PatcherTarget
         jmp     resolveEntry 
 LEAF_END_MARKED ResolveStubCode
+

@@ -36,15 +36,13 @@ LEAF_END_MARKED _StubPrecodeCode@0
 
 EXTERN _ThePreStub@0:PROC
 
-ThePreStubAddress:
-        dd _ThePreStub@0
-
 LEAF_ENTRY _FixupPrecodeCode@0
         jmp     dword ptr DATA_SLOT(FixupPrecode, Target)
 SLOT_ADDRESS_PATCH_LABEL FixupPrecode, Target
         mov     eax, dword ptr DATA_SLOT(FixupPrecode, MethodDesc)
 SLOT_ADDRESS_PATCH_LABEL FixupPrecode, MethodDesc
-        jmp     dword ptr ThePreStubAddress; The indirect jump uses an absolute address of the indirection slot
+        jmp     dword ptr DATA_SLOT(FixupPrecode, PrecodeFixupThunk)
+SLOT_ADDRESS_PATCH_LABEL FixupPrecode, PrecodeFixupThunk
 LEAF_END_MARKED _FixupPrecodeCode@0
 
 LEAF_ENTRY _CallCountingStubCode@0

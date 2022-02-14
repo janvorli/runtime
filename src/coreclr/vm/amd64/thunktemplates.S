@@ -15,6 +15,7 @@ LEAF_END_MARKED StubPrecodeCode, _TEXT
 
 LEAF_ENTRY FixupPrecodeCode, _TEXT
         jmp    [rip + FixupPrecodeCode + 4096 + FixupPrecodeData__Target]
+PATCH_LABEL FixupPrecodeCode_Fixup
         mov    r10, [rip + FixupPrecodeCode + 4096 + FixupPrecodeData__MethodDesc]
         jmp    [rip + FixupPrecodeCode + 4096 + FixupPrecodeData__PrecodeFixupThunk]
         .rept 5
