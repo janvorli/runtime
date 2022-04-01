@@ -71,6 +71,7 @@ namespace BINDER_SPACE
     {
         m_cRef = 1;
         m_pPEImage = NULL;
+        m_domainAssembly = NULL;
         m_pNativePEImage = NULL;
         m_pAssemblyName = NULL;
         m_pMDImport = NULL;

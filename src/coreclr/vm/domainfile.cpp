@@ -1161,6 +1161,12 @@ DomainAssembly::~DomainAssembly()
             delete i.GetDomainFile();
     }
 
+    if (m_fHostAssemblyPublished)
+    {
+        // Remove association first.
+        UnregisterFromHostAssembly();
+    }
+
     if (m_pAssembly != NULL)
     {
         delete m_pAssembly;
@@ -1283,7 +1289,41 @@ void DomainAssembly::Begin()
     }
     // Make it possible to find this DomainAssembly object from associated ICLRPrivAssembly.
     GetAppDomain()->PublishHostedAssembly(this);
+    // Make it possible to find this DomainAssembly object from associated BINDER_SPACE::Assembly.
+    RegisterWithHostAssembly();
     m_fHostAssemblyPublished = true;
+}
+
+void DomainAssembly::RegisterWithHostAssembly()
+{
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_NOTRIGGER;
+        MODE_ANY;
+    }
+    CONTRACTL_END
+
+    if (GetPEAssembly()->HasHostAssembly())
+    {
+        ((BINDER_SPACE::Assembly*)GetPEAssembly()->GetHostAssembly())->SetDomainAssembly(this);
+    }
+}
+
+void DomainAssembly::UnregisterFromHostAssembly()
+{
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_NOTRIGGER;
+        MODE_ANY;
+    }
+    CONTRACTL_END
+
+    if (GetPEAssembly()->HasHostAssembly())
+    {
+        ((BINDER_SPACE::Assembly*)GetPEAssembly()->GetHostAssembly())->SetDomainAssembly(nullptr);
+    }
 }
 
 #ifdef FEATURE_PREJIT

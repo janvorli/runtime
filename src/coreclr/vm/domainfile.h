@@ -655,6 +655,15 @@ public:
     friend class AppDomain;
     friend class Assembly;
 
+    void RegisterWithHostAssembly();
+    void UnregisterFromHostAssembly();
+
+    PEAssembly *GetPEAssembly()
+    {
+        LIMITED_METHOD_DAC_CONTRACT;
+        return PTR_PEAssembly(GetFile());
+    }
+
 #ifndef DACCESS_COMPILE
 public:
     ~DomainAssembly();

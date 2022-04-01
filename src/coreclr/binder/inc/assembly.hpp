@@ -46,6 +46,8 @@ STDAPI BinderReleasePEImage(PEImage *pPEImage);
 
 STDAPI BinderAddRefPEImage(PEImage *pPEImage);
 
+class DomainAssembly;
+
 namespace BINDER_SPACE
 {
 
@@ -113,6 +115,17 @@ namespace BINDER_SPACE
             return m_pBinder;
         }
 
+        DomainAssembly* GetDomainAssembly()
+        {
+            return m_domainAssembly;
+        }
+
+        void SetDomainAssembly(DomainAssembly* value)
+        {
+            _ASSERTE(value == NULL || m_domainAssembly == NULL);
+            m_domainAssembly = value;
+        }
+
 #ifndef CROSSGEN_COMPILE
     protected:
 #endif
@@ -143,6 +156,7 @@ namespace BINDER_SPACE
         SString                  m_assemblyPath;
         DWORD                    m_dwAssemblyFlags;
         ICLRPrivBinder          *m_pBinder;
+        DomainAssembly          *m_domainAssembly;
 
         inline void SetBinder(ICLRPrivBinder *pBinder)
         {

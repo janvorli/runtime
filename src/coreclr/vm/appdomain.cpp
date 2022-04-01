@@ -3709,20 +3709,43 @@ BOOL AppDomain::AddFileToCache(AssemblySpec* pSpec, PEAssembly *pFile, BOOL fAll
     }
     CONTRACTL_END;
 
-    GCX_PREEMP();
-    DomainCacheCrstHolderForGCCoop holder(this);
-
-    // !!! suppress exceptions
-    if(!m_AssemblyCache.StoreFile(pSpec, pFile) && !fAllowFailure)
     {
-        // TODO: Disabling the below assertion as currently we experience
-        // inconsistency on resolving the Microsoft.Office.Interop.MSProject.dll
-        // This causes below assertion to fire and crashes the VS. This issue
-        // is being tracked with Dev10 Bug 658555. Brought back it when this bug
-        // is fixed.
-        // _ASSERTE(FALSE);
+        GCX_PREEMP();
+        DomainCacheCrstHolderForGCCoop holder(this);
 
-        EEFileLoadException::Throw(pSpec, FUSION_E_CACHEFILE_FAILED, NULL);
+        // !!! suppress exceptions
+        if(!m_AssemblyCache.StoreFile(pSpec, pFile))
+        {
+            if (!fAllowFailure)
+            {
+                // TODO: Disabling the below assertion as currently we experience
+                // inconsistency on resolving the Microsoft.Office.Interop.MSProject.dll
+                // This causes below assertion to fire and crashes the VS. This issue
+                // is being tracked with Dev10 Bug 658555. Brought back it when this bug
+                // is fixed.
+                // _ASSERTE(FALSE);
+
+                EEFileLoadException::Throw(pSpec, FUSION_E_CACHEFILE_FAILED, NULL);
+            }
+
+            return FALSE;
+        }
+    }
+
+    DomainAssembly *pParentAssembly = pSpec->GetParentAssembly();
+    ICLRPrivBinder* pBinder = pFile->GetBindingContext();
+    BINDER_SPACE::Assembly *pBinderSpaceAssembly = (BINDER_SPACE::Assembly *)pBinder;
+    DomainAssembly *pResultAssembly = pBinderSpaceAssembly->GetDomainAssembly();
+    if ((pParentAssembly != NULL) && (pResultAssembly != NULL))
+    {
+        LoaderAllocator *pParentAssemblyLoaderAllocator = pParentAssembly->GetLoaderAllocator();
+        LoaderAllocator *pResultAssemblyLoaderAllocator = pResultAssembly->GetLoaderAllocator();
+        _ASSERTE(pParentAssemblyLoaderAllocator);
+        _ASSERTE(pResultAssemblyLoaderAllocator);
+        if (pResultAssemblyLoaderAllocator->IsCollectible())
+        {
+            pParentAssemblyLoaderAllocator->EnsureReference(pResultAssemblyLoaderAllocator);
+        }
     }
 
     return TRUE;
@@ -4006,7 +4029,7 @@ PEAssembly * AppDomain::BindAssemblySpec(
                     // Failure to add simply means someone else beat us to it. In that case
                     // the FindCachedFile call below (after catch block) will update result
                     // to the cached value.
-                    AddFileToCache(pSpec, result, TRUE /*fAllowFailure*/);
+                    AddFileToCache(pSpec, result, TRUE /*fAllowFailure*/));
                 }
                 else
                 {
