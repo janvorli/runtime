@@ -320,6 +320,14 @@ void CallCountingStub::StaticInitialize()
 
 void CallCountingStub::GenerateCodePage(BYTE* pageBase, BYTE* pageBaseRX)
 {
+#ifdef LOG_EXECUTABLE_ALLOCATOR_STATISTICS
+#ifdef HOST_UNIX
+        ExecutableAllocator::LogUsage(__FILE__, __LINE__, __PRETTY_FUNCTION__);
+#else
+        ExecutableAllocator::LogUsage(__FILE__, __LINE__, __FUNCTION__);
+#endif
+#endif
+
     int pageSize = GetOsPageSize();
 
 #ifdef TARGET_X86
@@ -342,6 +350,8 @@ void CallCountingStub::GenerateCodePage(BYTE* pageBase, BYTE* pageBaseRX)
 #else // TARGET_X86
     FillStubCodePage(pageBase, (const void*)PCODEToPINSTR((PCODE)CallCountingStubCode), CallCountingStub::CodeSize, pageSize);
 #endif
+
+    ETW::MethodLog::SendHelperEvent((ULONGLONG)pageBaseRX, pageSize, W("@CallCountingStub"));
 }
 
 

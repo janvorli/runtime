@@ -619,6 +619,13 @@ void StubPrecode::StaticInitialize()
 
 void StubPrecode::GenerateCodePage(BYTE* pageBase, BYTE* pageBaseRX)
 {
+#ifdef LOG_EXECUTABLE_ALLOCATOR_STATISTICS
+#ifdef HOST_UNIX
+        ExecutableAllocator::LogUsage(__FILE__, __LINE__, __PRETTY_FUNCTION__);
+#else
+        ExecutableAllocator::LogUsage(__FILE__, __LINE__, __FUNCTION__);
+#endif
+#endif
     int pageSize = GetOsPageSize();
 
 #ifdef TARGET_X86
@@ -636,6 +643,7 @@ void StubPrecode::GenerateCodePage(BYTE* pageBase, BYTE* pageBaseRX)
 #else // TARGET_X86
     FillStubCodePage(pageBase, (const void*)PCODEToPINSTR((PCODE)StubPrecodeCode), StubPrecode::CodeSize, pageSize);
 #endif // TARGET_X86
+    ETW::MethodLog::SendHelperEvent((ULONGLONG)pageBaseRX, pageSize, W("@StubPrecode"));
 }
 
 BOOL StubPrecode::IsStubPrecodeByASM(PCODE addr)
@@ -726,6 +734,13 @@ void FixupPrecode::StaticInitialize()
 
 void FixupPrecode::GenerateCodePage(BYTE* pageBase, BYTE* pageBaseRX)
 {
+#ifdef LOG_EXECUTABLE_ALLOCATOR_STATISTICS
+#ifdef HOST_UNIX
+        ExecutableAllocator::LogUsage(__FILE__, __LINE__, __PRETTY_FUNCTION__);
+#else
+        ExecutableAllocator::LogUsage(__FILE__, __LINE__, __FUNCTION__);
+#endif
+#endif
     int pageSize = GetOsPageSize();
 
 #ifdef TARGET_X86
@@ -746,6 +761,7 @@ void FixupPrecode::GenerateCodePage(BYTE* pageBase, BYTE* pageBaseRX)
 #else // TARGET_X86
     FillStubCodePage(pageBase, (const void*)PCODEToPINSTR((PCODE)FixupPrecodeCode), FixupPrecode::CodeSize, pageSize);
 #endif // TARGET_X86
+    ETW::MethodLog::SendHelperEvent((ULONGLONG)pageBaseRX, pageSize, W("@FixupPrecode"));
 }
 
 BOOL FixupPrecode::IsFixupPrecodeByASM(PCODE addr)

@@ -28,6 +28,7 @@ int64_t ExecutableAllocator::g_mapFindRXTimeSum = 0;
 int64_t ExecutableAllocator::g_mapCreateTimeSum = 0;
 int64_t ExecutableAllocator::g_releaseCount = 0;
 int64_t ExecutableAllocator::g_reserveCount = 0;
+int64_t ExecutableAllocator::g_mapRWCount = 0;
 
 ExecutableAllocator::LogEntry ExecutableAllocator::s_usageLog[256];
 int ExecutableAllocator::s_logMaxIndex = 0;
@@ -90,6 +91,7 @@ void ExecutableAllocator::DumpHolderUsage()
 
     fprintf(stderr, "Reserve count: %I64d\n", g_reserveCount);
     fprintf(stderr, "Release count: %I64d\n", g_releaseCount);
+    fprintf(stderr, "MapRW count: %I64d\n", g_mapRWCount);
 
     fprintf(stderr, "ExecutableWriterHolder usage:\n");
 
@@ -751,6 +753,10 @@ void* ExecutableAllocator::MapRW(void* pRX, size_t size)
     {
         return pRX;
     }
+
+#ifdef LOG_EXECUTABLE_ALLOCATOR_STATISTICS
+    InterlockedIncrement64(&g_mapRWCount);
+#endif
 
 #ifdef LOG_EXECUTABLE_ALLOCATOR_STATISTICS
     StopWatch swAll(&g_mapTimeWithLockSum);

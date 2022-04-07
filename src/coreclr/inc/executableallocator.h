@@ -61,6 +61,7 @@ class ExecutableAllocator
 
     static int64_t g_releaseCount;
     static int64_t g_reserveCount;
+    static int64_t g_mapRWCount;
 #endif
     // Instance of the allocator
     static ExecutableAllocator* g_instance;
@@ -317,7 +318,7 @@ public:
 
 #ifdef LOG_EXECUTABLE_ALLOCATOR_STATISTICS
 #undef ExecutableWriterHolder
-#ifdef TARGET_UNIX
+#ifdef HOST_UNIX
 #define ExecutableWriterHolder ExecutableAllocator::LogUsage(__FILE__, __LINE__, __PRETTY_FUNCTION__); ExecutableWriterHolderNoLog
 #define AssignExecutableWriterHolder(addressRX, size) AssignExecutableWriterHolder(addressRX, size); ExecutableAllocator::LogUsage(__FILE__, __LINE__, __PRETTY_FUNCTION__); 
 #else
