@@ -62,6 +62,8 @@ class ExecutableAllocator
     static int64_t g_releaseCount;
     static int64_t g_reserveCount;
     static int64_t g_mapRWCount;
+    static int64_t g_mapRWNewCount;
+    static int64_t g_cachedRWMappingReuseCount;
 #endif
     // Instance of the allocator
     static ExecutableAllocator* g_instance;

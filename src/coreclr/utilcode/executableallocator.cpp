@@ -29,6 +29,8 @@ int64_t ExecutableAllocator::g_mapCreateTimeSum = 0;
 int64_t ExecutableAllocator::g_releaseCount = 0;
 int64_t ExecutableAllocator::g_reserveCount = 0;
 int64_t ExecutableAllocator::g_mapRWCount = 0;
+int64_t ExecutableAllocator::g_mapRWNewCount = 0;
+int64_t ExecutableAllocator::g_cachedRWMappingReuseCount = 0;
 
 ExecutableAllocator::LogEntry ExecutableAllocator::s_usageLog[256];
 int ExecutableAllocator::s_logMaxIndex = 0;
@@ -92,7 +94,9 @@ void ExecutableAllocator::DumpHolderUsage()
     fprintf(stderr, "Reserve count: %I64d\n", g_reserveCount);
     fprintf(stderr, "Release count: %I64d\n", g_releaseCount);
     fprintf(stderr, "MapRW count: %I64d\n", g_mapRWCount);
-
+    fprintf(stderr, "MapRW new mappings count: %I64d\n", g_mapRWNewCount);
+    fprintf(stderr, "Cached RW mappings reuse count: %I64d\n", g_cachedRWMappingReuseCount);
+   
     fprintf(stderr, "ExecutableWriterHolder usage:\n");
 
     for (int i = 0; i < s_logMaxIndex; i++)
@@ -286,6 +290,10 @@ void ExecutableAllocator::UpdateCachedMapping(BlockRW* pBlock)
         }
         m_cachedMapping = pBlock;
         pBlock->refCount++;
+    }
+    else
+    {
+        InterlockedIncrement64(&g_cachedRWMappingReuseCount);
     }
 #endif // ENABLE_CACHED_MAPPINGS    
 }
@@ -798,6 +806,9 @@ void* ExecutableAllocator::MapRW(void* pRX, size_t size)
             g_fatalErrorHandler(COR_E_EXECUTIONENGINE, W("Failed to create RW mapping for RX memory"));
         }
 
+#ifdef LOG_EXECUTABLE_ALLOCATOR_STATISTICS
+            InterlockedIncrement64(&g_mapRWNewCount);
+#endif
             AddRWBlock(pRW, (BYTE*)pBlock->baseRX + mapOffset, mapSize);
 
             return (void*)((size_t)pRW + (offset - mapOffset));
