@@ -7936,6 +7936,9 @@ LONG WINAPI CLRVectoredExceptionHandlerShim(PEXCEPTION_POINTERS pExceptionInfo)
 
     bool bIsGCMarker = false;
 
+    // This is AMD64 & ARM specific as the macro above is defined for AMD64 & ARM only
+    bIsGCMarker = IsGcMarker(pExceptionInfo->ContextRecord, pExceptionInfo->ExceptionRecord);
+
 #ifdef USE_REDIRECT_FOR_GCSTRESS
     // This is AMD64 & ARM specific as the macro above is defined for AMD64 & ARM only
     bIsGCMarker = IsGcMarker(pExceptionInfo->ContextRecord, pExceptionInfo->ExceptionRecord);

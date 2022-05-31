@@ -3074,6 +3074,9 @@ private:
     static void __stdcall RedirectedHandledJITCaseForUserSuspend();
 #if defined(HAVE_GCCOVER) && defined(USE_REDIRECT_FOR_GCSTRESS) // GCCOVER
     static void __stdcall RedirectedHandledJITCaseForGCStress();
+public:
+    static void __stdcall HandleGcStress(CONTEXT* pCtx);
+private:
 #endif // defined(HAVE_GCCOVER) && USE_REDIRECT_FOR_GCSTRESS
 
 #ifdef TARGET_X86
@@ -6266,5 +6269,12 @@ public:
 private:
     Thread* m_PreviousValue;
 };
+
+#ifndef DACCESS_COMPILE
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
+EXTERN_C void STDCALL ClrRestoreNonvolatileContextWorker(PCONTEXT ContextRecord, DWORD64 ssp);
+#endif
+void ClrRestoreNonvolatileContext(PCONTEXT ContextRecord);
+#endif
 
 #endif //__threads_h__

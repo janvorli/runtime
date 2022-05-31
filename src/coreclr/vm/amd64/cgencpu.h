@@ -80,7 +80,7 @@ EXTERN_C void FastCallFinalizeWorker(Object *obj, PCODE funcPtr);
 #define INSTRFMT_K64
 
 #ifndef TARGET_UNIX
-#define USE_REDIRECT_FOR_GCSTRESS
+//#define USE_REDIRECT_FOR_GCSTRESS
 #endif // TARGET_UNIX
 
 //

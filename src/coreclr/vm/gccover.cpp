@@ -1357,19 +1357,35 @@ BOOL OnGcCoverageInterrupt(PCONTEXT regs)
     }
 
 #if defined(USE_REDIRECT_FOR_GCSTRESS) && !defined(TARGET_UNIX)
+#error Unexpected
     // If we're unable to redirect, then we simply won't test GC at this
     // location.
-    if (!pThread->CheckForAndDoRedirectForGCStress(regs))
     {
-        RemoveGcCoverageInterrupt(instrPtr, savedInstrPtr, gcCover, offset);
+        GCX_COOP();
+        //pThread->HandleGcStress(regs);
+        INDEBUG(Thread::ObjectRefFlush(pThread));
+
+        // Create a frame on the stack
+        //FrameWithCookie<RedirectedThreadFrame> frame(regs);
+        FrameWithCookie<ResumableFrame> frame(regs);
+        // Link in the frame
+        frame.Push();
+        DoGcStress(regs, codeInfo.GetNativeCodeVersion());
+        // Unlink the frame in preparation for resuming in managed code
+        frame.Pop();
     }
+    //if (!pThread->CheckForAndDoRedirectForGCStress(regs))
+    //{
+    //    RemoveGcCoverageInterrupt(instrPtr, savedInstrPtr, gcCover, offset);
+    //}
 
 #else // !USE_REDIRECT_FOR_GCSTRESS
 
 #ifdef _DEBUG
     if (!g_pConfig->SkipGCCoverage(pMD->GetModule()->GetSimpleName()))
 #endif
-    DoGcStress(regs, codeInfo.GetNativeCodeVersion());
+        //fprintf(stderr, "DoGcStress at Rip=%p\n", (void*)GetIP(regs));
+        DoGcStress(regs, codeInfo.GetNativeCodeVersion());
 
 #endif // !USE_REDIRECT_FOR_GCSTRESS
 

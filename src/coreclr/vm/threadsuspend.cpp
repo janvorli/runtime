@@ -2637,6 +2637,61 @@ void Thread::RestoreContextSimulated(Thread* pThread, CONTEXT* pCtx, void* pFram
 
 #endif // TARGET_X86
 
+#if defined(TARGET_AMD64) && defined(HAVE_GCCOVER) && defined(USE_REDIRECT_FOR_GCSTRESS) // GCCOVER
+void __stdcall Thread::HandleGcStress(CONTEXT* pCtx)
+{
+    STATIC_CONTRACT_GC_TRIGGERS;
+    STATIC_CONTRACT_MODE_COOPERATIVE;
+
+    // We must preserve this in case we've interrupted an IL pinvoke stub before it
+    // was able to save the error.
+    DWORD dwLastError = GetLastError(); // BEGIN_PRESERVE_LAST_ERROR
+
+    Thread *pThread = GetThread();
+    INDEBUG(Thread::ObjectRefFlush(pThread));
+
+    // Create a frame on the stack
+    FrameWithCookie<RedirectedThreadFrame> frame(pCtx);
+    // Link in the frame
+    frame.Push();
+
+    _ASSERTE(pThread->PreemptiveGCDisabledOther());
+    DoGcStress(frame.GetContext(), NULL);
+
+    //if (!pThread->m_fPreemptiveGCDisabledForGCStress)
+    //{
+
+    //    UINT_PTR uAbortAddr;
+    //    UINT_PTR uResumePC = (UINT_PTR)GetIP(pCtx);
+    //    CopyOSContext(pThread->m_OSContext, pCtx);
+    //    uAbortAddr = (UINT_PTR)COMPlusCheckForAbort();
+    //    if (uAbortAddr)
+    //    {
+    //        LOG((LF_EH, LL_INFO100, "thread abort in progress, resuming thread under control... (handled jit case)\n"));
+
+    //        CONSISTENCY_CHECK(CheckPointer(pCtx));
+
+    //        STRESS_LOG1(LF_EH, LL_INFO10, "resume under control: ip: %p (handled jit case)\n", uResumePC);
+
+    //        SetIP(pThread->m_OSContext, uResumePC);
+
+    //        SetIP(pCtx, uAbortAddr);
+    //    }
+    //}
+
+    // Unlink the frame in preparation for resuming in managed code
+    frame.Pop();
+
+    //if (pThread->m_fPreemptiveGCDisabledForGCStress)
+    //{
+    //    pThread->EnablePreemptiveGC();
+    //    pThread->m_fPreemptiveGCDisabledForGCStress = false;
+    //}
+
+    SetLastError(dwLastError); // END_PRESERVE_LAST_ERROR
+}
+#endif
+
 void __stdcall Thread::RedirectedHandledJITCase(RedirectReason reason)
 {
     STATIC_CONTRACT_THROWS;

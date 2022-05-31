@@ -635,6 +635,14 @@ PCODE Thread::VirtualUnwindLeafCallFrame(T_CONTEXT* pContext)
 
     uControlPc = *(ULONGLONG*)pContext->Rsp;
     pContext->Rsp += sizeof(ULONGLONG);
+    if (Thread::AreCetShadowStacksEnabled())
+    {
+        XSAVE_CET_U_FORMAT* pCET = (XSAVE_CET_U_FORMAT*)LocateXStateFeature(pContext, XSTATE_CET_U, NULL);
+        if ((pCET != NULL) && (pCET->Ia32CetUMsr != 0))
+        {
+            pCET->Ia32Pl3SspMsr += sizeof(ULONGLONG);
+        }
+    }
 
 #elif defined(TARGET_ARM) || defined(TARGET_ARM64)
 

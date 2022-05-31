@@ -8369,6 +8369,30 @@ void Thread::InitializeSpecialUserModeApc()
 }
 
 #endif // FEATURE_SPECIAL_USER_MODE_APC
+
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
+EXTERN_C void STDCALL ClrRestoreNonvolatileContextWorker(PCONTEXT ContextRecord, DWORD64 ssp);
+#endif
+
+void ClrRestoreNonvolatileContext(PCONTEXT ContextRecord)
+{
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
+    DWORD64 ssp = 0;
+    if (Thread::AreCetShadowStacksEnabled())
+    {
+        XSAVE_CET_U_FORMAT* pCET = (XSAVE_CET_U_FORMAT*)LocateXStateFeature(ContextRecord, XSTATE_CET_U, NULL);
+        if (pCET != NULL)
+        {
+            ssp = pCET->Ia32Pl3SspMsr;
+        }
+    }
+    ClrRestoreNonvolatileContextWorker(ContextRecord, ssp);
+#else
+    // Falling back to RtlRestoreContext() for now, though it should be possible to have simpler variants for these cases
+    RtlRestoreContext(ContextRecord, NULL);
+#endif
+}
+
 #endif // #ifndef DACCESS_COMPILE
 
 #ifdef DACCESS_COMPILE

@@ -4874,6 +4874,9 @@ HCIMPL3(PCODE, JIT_Patchpoint_Framed, MethodDesc* pMD, EECodeInfo& codeInfo, int
 }
 HCIMPLEND
 
+typedef BOOL(WINAPI* PINITIALIZECONTEXT2)(PVOID Buffer, DWORD ContextFlags, PCONTEXT* Context, PDWORD ContextLength, ULONG64 XStateCompactionMask);
+extern PINITIALIZECONTEXT2 pfnInitializeContext2;// = NULL;
+
 // Jit helper invoked at a patchpoint.
 //
 // Checks to see if this is a known patchpoint, if not,
@@ -5063,34 +5066,65 @@ void JIT_Patchpoint(int* counter, int ilOffset)
     pThread->UnhijackThread();
 #endif
 
+    if (pfnInitializeContext2 == NULL)
+    {
+        HMODULE hm = GetModuleHandleW(_T("kernel32.dll"));
+        pfnInitializeContext2 = (PINITIALIZECONTEXT2)GetProcAddress(hm, "InitializeContext2");
+    }
+
     // Find context for the original method
-    CONTEXT frameContext;
-    frameContext.ContextFlags = CONTEXT_FULL;
-    RtlCaptureContext(&frameContext);
+    CONTEXT *pFrameContext = NULL;
+    DWORD contextSize = 0;
+    ULONG64 xStateCompactionMask = XSTATE_MASK_CET_U;
+    DWORD contextFlags = CONTEXT_FULL | CONTEXT_XSTATE;
+    // The initialize call should fail but return contextSize
+    BOOL success = pfnInitializeContext2(NULL, contextFlags, NULL, &contextSize, xStateCompactionMask);
+    _ASSERTE(!success && (GetLastError() == ERROR_INSUFFICIENT_BUFFER));
+
+    PVOID pBuffer = _alloca(contextSize);
+    success = pfnInitializeContext2(pBuffer, contextFlags, &pFrameContext, &contextSize, xStateCompactionMask);
+    _ASSERTE(success);
+
+    // Find context for the original method
+    //CONTEXT frameContext;
+    //frameContext.ContextFlags = CONTEXT_FULL;
+    RtlCaptureContext(pFrameContext);
+
+    if (Thread::AreCetShadowStacksEnabled())
+    {
+        pFrameContext->ContextFlags |= CONTEXT_XSTATE;
+        SetXStateFeaturesMask(pFrameContext, xStateCompactionMask);
+        XSAVE_CET_U_FORMAT* pCET = (XSAVE_CET_U_FORMAT*)LocateXStateFeature(pFrameContext, XSTATE_CET_U, NULL);
+        if (pCET != NULL)
+        {
+            pCET->Ia32Pl3SspMsr = _rdsspq();
+            pCET->Ia32CetUMsr = 1;
+        }
+    }
 
     // Walk back to the original method frame
-    pThread->VirtualUnwindToFirstManagedCallFrame(&frameContext);
+    pThread->VirtualUnwindToFirstManagedCallFrame(pFrameContext);
 
     // Remember original method FP and SP because new method will inherit them.
-    UINT_PTR currentSP = GetSP(&frameContext);
-    UINT_PTR currentFP = GetFP(&frameContext);
+    UINT_PTR currentSP = GetSP(pFrameContext);
+    UINT_PTR currentFP = GetFP(pFrameContext);
 
     // We expect to be back at the right IP
-    if ((UINT_PTR)ip != GetIP(&frameContext))
+    if ((UINT_PTR)ip != GetIP(pFrameContext))
     {
         // Should be fatal
         STRESS_LOG2(LF_TIEREDCOMPILATION, LL_FATALERROR, "Jit_Patchpoint: patchpoint (0x%p) TRANSITION"
-            " unexpected context IP 0x%p\n", ip, GetIP(&frameContext));
+            " unexpected context IP 0x%p\n", ip, GetIP(pFrameContext));
         EEPOLICY_HANDLE_FATAL_ERROR(COR_E_EXECUTIONENGINE);
     }
 
     // Now unwind back to the original method caller frame.
-    EECodeInfo callerCodeInfo(GetIP(&frameContext));
-    frameContext.ContextFlags = CONTEXT_FULL;
+    EECodeInfo callerCodeInfo(GetIP(pFrameContext));
+    //frameContext.ContextFlags = CONTEXT_FULL;
     ULONG_PTR establisherFrame = 0;
     PVOID handlerData = NULL;
-    RtlVirtualUnwind(UNW_FLAG_NHANDLER, callerCodeInfo.GetModuleBase(), GetIP(&frameContext), callerCodeInfo.GetFunctionEntry(),
-        &frameContext, &handlerData, &establisherFrame, NULL);
+    RtlVirtualUnwind(UNW_FLAG_NHANDLER, callerCodeInfo.GetModuleBase(), GetIP(pFrameContext), callerCodeInfo.GetFunctionEntry(),
+        pFrameContext, &handlerData, &establisherFrame, NULL);
 
     // Now, set FP and SP back to the values they had just before this helper was called,
     // since the new method must have access to the original method frame.
@@ -5105,10 +5139,10 @@ void JIT_Patchpoint(int* counter, int ilOffset)
     currentSP -= 8;
 #endif
 
-    SetSP(&frameContext, currentSP);
+    SetSP(pFrameContext, currentSP);
 
 #if defined(TARGET_AMD64)
-    frameContext.Rbp = currentFP;
+    pFrameContext->Rbp = currentFP;
 #endif
 
     // Note we can get here w/o triggering, if there is an existing OSR method and
@@ -5117,10 +5151,19 @@ void JIT_Patchpoint(int* counter, int ilOffset)
     LOG((LF_TIEREDCOMPILATION, transitionLogLevel, "Jit_Patchpoint: patchpoint [%d] (0x%p) TRANSITION to ip 0x%p\n", ppId, ip, osrMethodCode));
 
     // Install new entry point as IP
-    SetIP(&frameContext, osrMethodCode);
+    SetIP(pFrameContext, osrMethodCode);
 
     // Transition!
-    ClrRestoreNonvolatileContext(&frameContext);
+//#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
+//    DWORD64 frameContextSsp = 0;
+//    if (Thread::AreCetShadowStacksEnabled())
+//    {
+//        frameContextSsp = _rdsspq() + sizeof(SIZE_T); // Get the SSP at the managed frame
+//    }
+//    ClrRestoreNonvolatileContextWorker(&frameContext, frameContextSsp);
+//#else
+    ClrRestoreNonvolatileContext(pFrameContext);
+//#endif
 }
 
 // Jit helper invoked at a partial compilation patchpoint.

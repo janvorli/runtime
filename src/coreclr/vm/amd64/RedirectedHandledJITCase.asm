@@ -94,7 +94,9 @@ GenerateRedirectedHandledJITCaseStub UserSuspend
 
 ifdef _DEBUG
 ifdef HAVE_GCCOVER
+ifdef USE_REDIRECT_FOR_GCSTRESS
 GenerateRedirectedHandledJITCaseStub GCStress
+endif
 endif
 endif
 
