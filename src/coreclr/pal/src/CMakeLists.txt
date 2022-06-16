@@ -275,14 +275,8 @@ if(CLR_CMAKE_TARGET_LINUX)
 endif(CLR_CMAKE_TARGET_LINUX)
 
 if(CLR_CMAKE_TARGET_OSX)
-  find_library(COREFOUNDATION CoreFoundation)
-  find_library(CORESERVICES CoreServices)
-  find_library(SECURITY Security)
   find_library(SYSTEM System)
   target_link_libraries(coreclrpal
-    ${COREFOUNDATION}
-    ${CORESERVICES}
-    ${SECURITY}
     ${SYSTEM}
   )
 endif(CLR_CMAKE_TARGET_OSX)
