@@ -1091,6 +1091,11 @@ void InitJITHelpers1()
 #endif // WRITE_BARRIER_CHECK
     }
 
+    if (IsWriteBarrierCopyEnabled())
+    {
+        FlushWriteBarrierInstructionCache();
+    }
+
 #ifndef CODECOVERAGE
     ValidateWriteBarrierHelpers();
 #endif
@@ -1326,7 +1331,11 @@ int StompWriteBarrierResize(bool isRuntimeSuspended, bool bReqUpperBoundsCheck)
                 // cmp offset[edx], 0ffh instruction
                 _ASSERTE(pBuf[22] == 0x80);
                 pfunc = (size_t *) &pBufRW[PostGrow_CardTableFirstLocation];
-               *pfunc = (size_t) g_card_table;
+                if (*pfunc != (size_t) g_card_table)
+                {
+                    stompWBCompleteActions |= SWB_ICACHE_FLUSH;
+                    *pfunc = (size_t) g_card_table;
+                }
 
                 // What we're trying to update is the offset field of a
                 // mov offset[edx], 0ffh instruction
@@ -1341,7 +1350,11 @@ int StompWriteBarrierResize(bool isRuntimeSuspended, bool bReqUpperBoundsCheck)
                 // cmp offset[edx], 0ffh instruction
                 _ASSERTE(pBuf[14] == 0x80);
                 pfunc = (size_t *) &pBufRW[PreGrow_CardTableFirstLocation];
-               *pfunc = (size_t) g_card_table;
+                if (*pfunc != (size_t) g_card_table)
+                {
+                    stompWBCompleteActions |= SWB_ICACHE_FLUSH;
+                    *pfunc = (size_t) g_card_table;
+                }
 
                 // What we're trying to update is the offset field of a
 
@@ -1357,7 +1370,11 @@ int StompWriteBarrierResize(bool isRuntimeSuspended, bool bReqUpperBoundsCheck)
             // cmp offset[edx], 0ffh instruction
             _ASSERTE(pBuf[22] == 0x80);
             pfunc = (size_t *) &pBufRW[PostGrow_CardTableFirstLocation];
-           *pfunc = (size_t) g_card_table;
+            if (*pfunc != (size_t) g_card_table)
+            {
+                stompWBCompleteActions |= SWB_ICACHE_FLUSH;
+                *pfunc = (size_t) g_card_table;
+            }
 
             // What we're trying to update is the offset field of a
             // mov offset[edx], 0ffh instruction
@@ -1366,7 +1383,11 @@ int StompWriteBarrierResize(bool isRuntimeSuspended, bool bReqUpperBoundsCheck)
         }
 
         // Stick in the adjustment value.
-        *pfunc = (size_t) g_card_table;
+        if (*pfunc != (size_t) g_card_table)
+        {
+            stompWBCompleteActions |= SWB_ICACHE_FLUSH;
+            *pfunc = (size_t) g_card_table;
+        }
     }
 
     if (bStompWriteBarrierEphemeral)
@@ -1379,7 +1400,7 @@ int StompWriteBarrierResize(bool isRuntimeSuspended, bool bReqUpperBoundsCheck)
 
 void FlushWriteBarrierInstructionCache()
 {
-    FlushInstructionCache(GetCurrentProcess(), (void *)JIT_PatchedWriteBarrierGroup,
+    FlushInstructionCache(GetCurrentProcess(), (void *)GetWriteBarrierCodeLocation(JIT_PatchedWriteBarrierGroup),
         (BYTE*)JIT_PatchedWriteBarrierGroup_End - (BYTE*)JIT_PatchedWriteBarrierGroup);
 }
 

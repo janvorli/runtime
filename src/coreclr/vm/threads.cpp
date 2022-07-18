@@ -1166,11 +1166,14 @@ void InitThreadManager()
             COMPlusThrowWin32();
         }
 
+        size_t writeBarrierSize = (BYTE*)JIT_PatchedCodeLast - (BYTE*)JIT_PatchedCodeStart;
+
         {
-            size_t writeBarrierSize = (BYTE*)JIT_PatchedCodeLast - (BYTE*)JIT_PatchedCodeStart;
             ExecutableWriterHolder<void> barrierWriterHolder(s_barrierCopy, writeBarrierSize);
             memcpy(barrierWriterHolder.GetRW(), (BYTE*)JIT_PatchedCodeStart, writeBarrierSize);
         }
+
+        FlushInstructionCache(GetCurrentProcess(), s_barrierCopy, writeBarrierSize);
 
         // Store the JIT_WriteBarrier copy location to a global variable so that helpers
         // can jump to it.
