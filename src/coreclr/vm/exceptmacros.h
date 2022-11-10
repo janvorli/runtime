@@ -116,11 +116,13 @@ struct _EXCEPTION_REGISTRATION_RECORD;
 class Thread;
 class Frame;
 class Exception;
+struct REGDISPLAY;
+struct ExInfo;
 
 VOID DECLSPEC_NORETURN RealCOMPlusThrowOM();
 
 #include <excepcpu.h>
-
+#include <runtimeexceptionkind.h>
 //==========================================================================
 // Macros to allow catching exceptions from within the EE. These are lightweight
 // handlers that do not install the managed frame handler.
@@ -308,14 +310,43 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
 
 #else // TARGET_UNIX
 
-#define INSTALL_MANAGED_EXCEPTION_DISPATCHER
-#define UNINSTALL_MANAGED_EXCEPTION_DISPATCHER
+#define INSTALL_MANAGED_EXCEPTION_DISPATCHER                                                \
+    {                                                                                       \
+        OBJECTREF caughtException = NULL;                                                        \
+        EX_TRY                                                                                  \
+        {
+
+#define UNINSTALL_MANAGED_EXCEPTION_DISPATCHER                                              \
+        }                                                                                       \
+        EX_CATCH                                                                                \
+        {                                                                                       \
+            GCX_COOP_NO_DTOR();                                                                 \
+            caughtException = GET_THROWABLE();                                                          \
+        }                                                                                       \
+        EX_END_CATCH(SwallowAllExceptions);                                                     \
+        if (caughtException != NULL)                                                                 \
+        {                                                                                       \
+            RealCOMPlusThrowEx(caughtException);                                                \
+        }                                                                                       \
+    }
+
 #define INSTALL_UNHANDLED_MANAGED_EXCEPTION_TRAP
 #define UNINSTALL_UNHANDLED_MANAGED_EXCEPTION_TRAP
 
 #endif // TARGET_UNIX
 
 #define INSTALL_UNWIND_AND_CONTINUE_HANDLER_NO_PROBE                                        \
+    {                                                                                       \
+        MAKE_CURRENT_THREAD_AVAILABLE();                                                    \
+        Exception* __pUnCException  = NULL;                                                 \
+        Frame*     __pUnCEntryFrame = CURRENT_THREAD->GetFrame();                           \
+        bool       __fExceptionCaught = false;                                             \
+        SCAN_EHMARKER();                                                                    \
+        if (true) PAL_CPP_TRY {                                                             \
+            SCAN_EHMARKER_TRY();                                                            \
+            DEBUG_ASSURE_NO_RETURN_BEGIN(IUACH)
+
+#define INSTALL_UNWIND_AND_CONTINUE_HANDLER_NO_PROBE2                                       \
     {                                                                                       \
         MAKE_CURRENT_THREAD_AVAILABLE();                                                    \
         Exception* __pUnCException  = NULL;                                                 \
@@ -342,6 +373,10 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
             SCAN_EHMARKER_TRY();                                                            \
             DEBUG_ASSURE_NO_RETURN_BEGIN(IUACH);
 
+VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(OBJECTREF throwable);
+VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(RuntimeExceptionKind reKind);
+void InitializeExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, BOOL rethrow, ExInfo *pExInfo);
+
 #define UNINSTALL_UNWIND_AND_CONTINUE_HANDLER_NO_PROBE                                      \
             DEBUG_ASSURE_NO_RETURN_END(IUACH)                                               \
             SCAN_EHMARKER_END_TRY();                                                        \
@@ -361,7 +396,7 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
             SCAN_EHMARKER_CATCH();                                                          \
             UnwindAndContinueRethrowHelperAfterCatch(__pUnCEntryFrame, __pUnCException);    \
         }                                                                                   \
-    }                                                                                       \
+    }
 
 #define UNINSTALL_UNWIND_AND_CONTINUE_HANDLER                                               \
     UNINSTALL_UNWIND_AND_CONTINUE_HANDLER_NO_PROBE;

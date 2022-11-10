@@ -94,7 +94,7 @@ Arg4:
         movsd   xmm3, real8 ptr 18h[rsp];
 DoCall:
         call    qword ptr [rbx+CallDescrData__pTarget]     ; call target function
-
+PATCH_LABEL CallDescrWorkerInternalReturnAddress
         ; Save FP return value
 
         mov     ecx, dword ptr [rbx+CallDescrData__fpReturnSize]

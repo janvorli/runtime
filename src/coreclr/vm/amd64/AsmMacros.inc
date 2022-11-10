@@ -206,6 +206,30 @@ INLINE_GETTHREAD macro Reg
 
         endm
 
+INLINE_GETTHREAD2 macro Reg, Trash
+
+        EXTERN _tls_index : DWORD
+        EXTERN gCurrentThreadInfo:DWORD
+
+;;
+;; construct 'eax' from 'rax' so that the register size and data size match
+;;
+;; BEWARE: currently only r10 is allowed as destReg from the r8-r15 set.
+;;
+ifidni <Trash>, <r10>
+TrashD EQU r10d
+else
+TrashD TEXTEQU @CatStr( e, @SubStr( Trash, 2, 2 ) )
+endif
+
+        mov     TrashD, [_tls_index]
+        mov     rax, gs:[OFFSET__TEB__ThreadLocalStoragePointer]
+        mov     rax, [rax + Trash * 8]
+        mov     TrashD, SECTIONREL gCurrentThreadInfo
+        mov     Reg, [rax + Trash]
+
+        endm
+
 ; if you change this code there will be corresponding code in JITInterfaceGen.cpp which will need to be changed
 ;
 

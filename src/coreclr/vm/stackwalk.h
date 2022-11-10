@@ -565,6 +565,8 @@ private:
 //    This class works both in-process and out-of-process (e.g. DAC).
 //
 
+struct ExInfo;
+
 class StackFrameIterator
 {
 public:
@@ -672,6 +674,7 @@ private:
 
         if (!ResetOnlyIntermediaryState)
         {
+            m_fFuncletNotSeen = false;
             m_sfFuncletParent = StackFrame();
             m_fProcessNonFilterFunclet = false;
         }
@@ -692,8 +695,9 @@ private:
     // This is the real starting explicit frame.  If m_pStartFrame is NULL,
     // then this is equal to m_pThread->GetFrame().  Otherwise this is equal to m_pStartFrame.
     INDEBUG(PTR_Frame m_pRealStartFrame);
-
+public:
     ULONG32               m_flags;          // StackWalkFrames flags.
+private:
     ICodeManagerFlags     m_codeManFlags;
     ExecutionManager::ScanFlag m_scanFlag;
 
@@ -718,10 +722,14 @@ private:
     bool          m_fProcessIntermediaryNonFilterFunclet;
     bool          m_fDidFuncletReportGCReferences;
 #endif // FEATURE_EH_FUNCLETS
-
+    BYTE          m_forceReportingWhileSkipping;
+    bool          m_movedPastFirstExInfo;
+    bool          m_fFuncletNotSeen;
 #if defined(RECORD_RESUMABLE_FRAME_SP)
     LPVOID m_pvResumableFrameTargetSP;
 #endif // RECORD_RESUMABLE_FRAME_SP
+public:
+    ExInfo* m_pNextExInfo;
 };
 
 void SetUpRegdisplayForStackWalk(Thread * pThread, T_CONTEXT * pContext, REGDISPLAY * pRegdisplay);

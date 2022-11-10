@@ -69,6 +69,7 @@ LOCAL_LABEL(NoFloatingPoint):
     // call pTarget
     ldr     x9, [x19,#CallDescrData__pTarget]
     blr     x9
+PATCH_LABEL CallDescrWorkerInternalReturnAddress
 
     ldr     w3, [x19,#CallDescrData__fpReturnSize]
 

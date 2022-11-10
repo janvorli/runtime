@@ -4445,7 +4445,7 @@ FCIMPL1(void, GCReporting::Unregister, GCFrame* frame)
 
     // Destroy the GCFrame.
     _ASSERTE(frame != NULL);
-    frame->Pop();
+    frame->Remove();
 }
 FCIMPLEND
 #endif // !DACCESS_COMPILE
@@ -4474,7 +4474,7 @@ bool EECodeManager::EnumGcRefs( PREGDISPLAY     pContext,
 #ifdef FEATURE_EH_FUNCLETS
     if (flags & ParentOfFuncletStackFrame)
     {
-        LOG((LF_GCROOTS, LL_INFO100000, "Not reporting this frame because it was already reported via another funclet.\n"));
+        LOG((LF_GCROOTS, LL_INFO100, "Not reporting this frame because it was already reported via another funclet.\n"));
         return true;
     }
 #endif // FEATURE_EH_FUNCLETS

@@ -2254,8 +2254,11 @@ void Thread::HandleThreadAbort ()
             EEException eeExcept(kThreadAbortException);
             exceptObj = CLRException::GetThrowableFromException(&eeExcept);
         }
-
+#if 1
+         RealCOMPlusThrowEx(exceptObj);
+#else
         RaiseTheExceptionInternalOnly(exceptObj, FALSE);
+#endif
     }
 
     END_PRESERVE_LAST_ERROR;
@@ -3953,8 +3956,21 @@ ThrowControlForThread(
 
     STRESS_LOG0(LF_SYNC, LL_INFO100, "ThrowControlForThread Aborting\n");
 
+#if 1
+    GCX_COOP();
+
+    EXCEPTION_RECORD exceptionRecord = {0};
+    exceptionRecord.NumberParameters = MarkAsThrownByUs(exceptionRecord.ExceptionInformation);
+    exceptionRecord.ExceptionCode = EXCEPTION_COMPLUS;
+    exceptionRecord.ExceptionFlags = 0;
+
+    OBJECTREF throwable = ExceptionTracker::CreateThrowable(&exceptionRecord, TRUE);
+    RealCOMPlusThrowEx(throwable);
+
+#else
     // Here we raise an exception.
     RaiseComPlusException();
+#endif
 }
 
 #if defined(FEATURE_HIJACK) && !defined(TARGET_UNIX)

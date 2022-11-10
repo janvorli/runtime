@@ -22,6 +22,7 @@ extern void FinalizeWeakReference(Object* obj);
 
 extern GCHeapHardLimitInfo g_gcHeapHardLimitInfo;
 extern bool g_gcHeapHardLimitInfoSpecified;
+extern int doubleReportTrackingIndex;
 
 namespace standalone
 {

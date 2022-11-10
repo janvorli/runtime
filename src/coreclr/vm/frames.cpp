@@ -994,6 +994,48 @@ void GCFrame::Push(Thread* pThread)
     pThread->SetGCFrame(this);
 }
 
+void GCFrame::Remove()
+{
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_NOTRIGGER;
+        MODE_COOPERATIVE;
+        PRECONDITION(m_pCurThread != NULL);
+    }
+    CONTRACTL_END;
+
+    GCFrame *pPrevFrame = NULL;
+    GCFrame *pFrame = m_pCurThread->GetGCFrame();
+    while (pFrame != NULL)
+    {
+        if (pFrame == this)
+        {
+            if (pPrevFrame)
+            {
+                pPrevFrame->m_Next = m_Next;
+            }
+            else
+            {
+                m_pCurThread->SetGCFrame(m_Next);
+            }
+
+            m_Next = NULL;
+
+#ifdef _DEBUG
+            m_pCurThread->EnableStressHeap();
+            for(UINT i = 0; i < m_numObjRefs; i++)
+                Thread::ObjectRefNew(&m_pObjRefs[i]);       // Unprotect them
+#endif
+            break;
+        }
+
+        pFrame = pFrame->m_Next;
+    }
+
+    _ASSERTE_MSG(pFrame != NULL, "GCFrame not found in the current thread's stack");
+}
+
 void GCFrame::Pop()
 {
     CONTRACTL
@@ -1010,7 +1052,6 @@ void GCFrame::Pop()
     // It also cancels the GC protection provided by the frame.
 
     _ASSERTE(m_pCurThread->GetGCFrame() == this && "Popping a GCFrame out of order ?");
-
     m_pCurThread->SetGCFrame(m_Next);
     m_Next = NULL;
 
@@ -1702,7 +1743,7 @@ NOINLINE void HelperMethodFrame::PushSlowHelper()
     {
         if (m_pThread->IsAbortRequested())
         {
-            m_pThread->HandleThreadAbort();
+            //m_pThread->HandleThreadAbort();
         }
 
     }
@@ -1716,7 +1757,7 @@ NOINLINE void HelperMethodFrame::PopSlowHelper()
         MODE_COOPERATIVE;
     } CONTRACTL_END;
 
-    m_pThread->HandleThreadAbort();
+    //m_pThread->HandleThreadAbort();
     Frame::Pop(m_pThread);
 }
 

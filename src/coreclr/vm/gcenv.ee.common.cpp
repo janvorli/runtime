@@ -136,6 +136,9 @@ inline bool SafeToReportGenericParamContext(CrawlFrame* pCF)
     return true;
 }
 
+void *doubleReportTracking[4096];
+int doubleReportTrackingIndex = 0;
+
 /*
  * GcEnumObject()
  *
@@ -147,6 +150,19 @@ void GcEnumObject(LPVOID pData, OBJECTREF *pObj, uint32_t flags)
 {
     Object ** ppObj = (Object **)pObj;
     GCCONTEXT   * pCtx  = (GCCONTEXT *) pData;
+
+    if ((flags & GC_CALL_PINNED) == 0)
+    {
+        for (int i = 0; i < doubleReportTrackingIndex; i++)
+        {
+            _ASSERTE_MSG(doubleReportTracking[i] != pObj, "Double reporting detected");
+        }
+
+        if (doubleReportTrackingIndex < sizeof(doubleReportTracking) / sizeof(void*))
+        {
+            doubleReportTracking[doubleReportTrackingIndex++] = pObj;
+        }
+    }
 
     // Since we may be asynchronously walking another thread's stack,
     // check (frequently) for stack-buffer-overrun corruptions after
@@ -242,8 +258,8 @@ StackWalkAction GcStackCrawlCallBack(CrawlFrame* pCF, VOID* pData)
             _ASSERTE(pMD != 0);
 
     #ifdef _DEBUG
-            LOG((LF_GCROOTS, LL_INFO1000, "Scanning Frame for method %s:%s\n",
-                    pMD->m_pszDebugClassName, pMD->m_pszDebugMethodName));
+            LOG((LF_GCROOTS, LL_INFO1000, "Scanning Frame for method %s:%s, ShouldParentToFuncletUseUnwindTargetLocationForGCReporting=%s\n",
+                    pMD->m_pszDebugClassName, pMD->m_pszDebugMethodName, (pCF->ShouldParentToFuncletUseUnwindTargetLocationForGCReporting() ? "true": "false")));
     #endif // _DEBUG
 
             DWORD relOffsetOverride = NO_OVERRIDE_OFFSET;
@@ -279,6 +295,7 @@ StackWalkAction GcStackCrawlCallBack(CrawlFrame* pCF, VOID* pData)
             }
 #endif // FEATURE_EH_FUNCLETS && USE_GC_INFO_DECODER
 
+            LOG((LF_GCROOTS, LL_INFO1000, "Scanning Frame: pCM->EnumGcRefs\n"));
             pCM->EnumGcRefs(pCF->GetRegisterSet(),
                             pCF->GetCodeInfo(),
                             flags,
@@ -296,6 +313,11 @@ StackWalkAction GcStackCrawlCallBack(CrawlFrame* pCF, VOID* pData)
                 pFrame, pFrame->GetFunction(), *((void**) pFrame));
             pFrame->GcScanRoots( gcctx->f, gcctx->sc);
         }
+    }
+    else
+    {
+        STRESS_LOG2(LF_GCROOTS, LL_INFO1000, "Skipping GC scanning in frame method at SP: %p, PC: %p\n",
+            GetRegdisplaySP(pCF->GetRegisterSet()), GetControlPC(pCF->GetRegisterSet()));
     }
 
 
