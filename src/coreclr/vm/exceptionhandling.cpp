@@ -7155,5 +7155,79 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
 }
 #endif //!DACCESS_COMPILE
 
+#ifndef DACCESS_COMPILE
+    extern "C" void *RhpCallCatchFunclet(void* exceptionObj, BYTE* pHandlerIP, REGDISPLAY* pvRegDisplay, void* exInfo)
+    {
+        Thread* pThread = GetThread();
+        GCX_COOP_NO_DTOR();
+        pThread->GetFrame()->Pop(); // Pop the PInvoke frame
+        HandlerFn* pfnHandler = (HandlerFn*)pHandlerIP;
+        DWORD_PTR dwResumePC = pfnHandler(pvRegDisplay->SP, (Object*)exceptionObj);
+        pvRegDisplay->pCurrentContext->Rip = dwResumePC;
+        ClrRestoreNonvolatileContext(pvRegDisplay->pCurrentContext);
+
+        return NULL;
+    }
+
+    extern "C" unsigned RhpEHEnumInitFromStackFrameIterator(StackFrameIterator *pFrameIter, BYTE** pMethodStartAddress, EH_CLAUSE_ENUMERATOR * pEHEnum)
+    {
+        IJitManager* pJitMan = pFrameIter->m_crawl.GetJitManager();
+        const METHODTOKEN& MethToken = pFrameIter->m_crawl.GetMethodToken();
+        *pMethodStartAddress = (BYTE*)pJitMan->JitTokenToStartAddress(MethToken);
+        unsigned EHCount = pJitMan->InitializeEHEnumeration(MethToken, pEHEnum);
+
+        return EHCount;
+    }
+
+    enum RhEHClauseKind
+    {
+        RH_EH_CLAUSE_TYPED = 0,
+        RH_EH_CLAUSE_FAULT = 1,
+        RH_EH_CLAUSE_FILTER = 2,
+        RH_EH_CLAUSE_UNUSED = 3,
+    };
+
+    struct RhEHClause
+    {
+        RhEHClauseKind _clauseKind;
+        unsigned _tryStartOffset;
+        unsigned _tryEndOffset;
+        BYTE *_filterAddress;
+        BYTE *_handlerAddress;
+        TypeHandle _pTargetType;
+    };
+
+    extern "C" bool RhpEHEnumNext(StackFrameIterator *pFrameIter, EH_CLAUSE_ENUMERATOR* pEHEnum, RhEHClause* pEHClause)
+    {
+        IJitManager* pJitMan   = pFrameIter->m_crawl.GetJitManager();
+        const METHODTOKEN& MethToken = pFrameIter->m_crawl.GetMethodToken();
+
+        EE_ILEXCEPTION_CLAUSE EHClause;
+        PTR_EXCEPTION_CLAUSE_TOKEN pEHClauseToken = pJitMan->GetNextEHClause(pEHEnum, &EHClause);
+
+        pEHClause->_tryStartOffset = EHClause.TryStartPC;
+        pEHClause->_tryEndOffset = EHClause.TryEndPC;
+        pEHClause->_filterAddress =  (BYTE*)pJitMan->GetCodeAddressForRelOffset(MethToken, EHClause.FilterOffset);
+        pEHClause->_handlerAddress = (BYTE*)pJitMan->GetCodeAddressForRelOffset(MethToken, EHClause.HandlerStartPC);
+        pEHClause->_pTargetType = pJitMan->ResolveEHClause(&EHClause, &pFrameIter->m_crawl);
+
+        if (EHClause.Flags == COR_ILEXCEPTION_CLAUSE_NONE)
+        {
+            pEHClause->_clauseKind = RH_EH_CLAUSE_TYPED;
+        }
+        else if (EHClause.Flags & COR_ILEXCEPTION_CLAUSE_FILTER)
+        {
+            pEHClause->_clauseKind = RH_EH_CLAUSE_FILTER;
+        }
+        else if (EHClause.Flags & COR_ILEXCEPTION_CLAUSE_FAULT)
+        {
+            pEHClause->_clauseKind = RH_EH_CLAUSE_FAULT;
+        }
+
+        return true;
+    }
+#endif
+
+
 #endif // FEATURE_EH_FUNCLETS
 

@@ -13,3 +13,6 @@ g_dacTable
 
 ; Used by profilers
 MetaDataGetDispenser
+
+RhpSfiInit
+RhpSfiNext

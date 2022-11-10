@@ -1112,6 +1112,36 @@ void StackFrameIterator::CommonCtor(Thread * pThread, PTR_Frame pFrame, ULONG32 
 #endif
 } // StackFrameIterator::CommonCtor()
 
+#ifndef DACCESS_COMPILE
+extern "C" DLLEXPORT void RhpCaptureCallerContext(CONTEXT* pStackwalkCtx)
+{
+    Thread* pThread = GetThread();
+    RtlCaptureContext(pStackwalkCtx);
+    Thread::VirtualUnwindToFirstManagedCallFrame(pStackwalkCtx);
+    Thread::VirtualUnwindCallFrame(pStackwalkCtx);
+}
+
+extern "C" DLLEXPORT bool RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalkCtx, REGDISPLAY* pRD, bool instructionFault)
+{
+    Thread* pThread = GetThread();
+    Frame* pFrame = pThread->GetFrame()->PtrNextFrame();
+    pThread->FillRegDisplay(pRD, pStackwalkCtx);
+    memset(pThis, 0, sizeof(StackFrameIterator));
+    return pThis->Init(pThread, pFrame, pRD, THREAD_EXECUTING_MANAGED_CODE) != FALSE;
+}
+
+extern "C" DLLEXPORT bool RhpSfiNext(StackFrameIterator* pThis, uint* uExCollideClauseIdx, bool* fUnwoundReversePInvoke)
+{
+    StackWalkAction retVal = pThis->Next();
+    if (retVal != SWA_FAILED)
+    {
+        return true;
+    }
+
+    return false;
+}
+#endif
+
 //---------------------------------------------------------------------------------------
 //
 // Initialize the iterator.  Note that the iterator has thread-affinity,
