@@ -2327,7 +2327,7 @@ void CodeGen::genReportEH()
 
         CORINFO_EH_CLAUSE_FLAGS flags = ToCORINFO_EH_CLAUSE_FLAGS(HBtab->ebdHandlerType);
 
-        if (isNativeAOT && (XTnum > 0))
+        if (/*isNativeAOT && */(XTnum > 0))
         {
             // For NativeAOT, CORINFO_EH_CLAUSE_SAMETRY flag means that the current clause covers same
             // try block as the previous one. The runtime cannot reliably infer this information from

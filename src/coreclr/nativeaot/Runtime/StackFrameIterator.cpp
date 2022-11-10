@@ -774,7 +774,7 @@ void StackFrameIterator::UnwindFuncletInvokeThunk()
 #if defined(USE_PORTABLE_HELPERS) // @TODO: Currently no funclet invoke defined in a portable way
     return;
 #else // defined(USE_PORTABLE_HELPERS)
-    ASSERT(CategorizeUnadjustedReturnAddress(m_ControlPC) == InFuncletInvokeThunk);
+    ASSERT(CategorizeUnadjustedReturnAddress(m_ControlPC) == InFuncletInvokeThunk || CategorizeUnadjustedReturnAddress(m_ControlPC) == InFilterFuncletInvokeThunk);
 
     PTR_UIntNative SP;
 
@@ -1512,6 +1512,14 @@ UnwindOutOfCurrentManagedFrame:
                     exCollide = true;
                 }
             }
+            else if (category == InFilterFuncletInvokeThunk)
+            {
+                // Unwind through the funclet invoke assembly thunk to reach the topmost managed frame in
+                // the exception dispatch code.  All non-GC stack walks collide at this point (whereas GC
+                // stack walks collide at the throw site which is reached after processing all of the
+                // exception dispatch frames).
+                UnwindFuncletInvokeThunk();
+            }
             else if (category == InManagedCode)
             {
                 // Non-exceptionally invoked funclet case.  The caller is processed as a normal managed
@@ -1937,13 +1945,21 @@ StackFrameIterator::ReturnAddressCategory StackFrameIterator::CategorizeUnadjust
         EQUALS_RETURN_ADDRESS(returnAddress, RhpCallFunclet2)
 #else
         EQUALS_RETURN_ADDRESS(returnAddress, RhpCallCatchFunclet2) ||
-        EQUALS_RETURN_ADDRESS(returnAddress, RhpCallFinallyFunclet2) ||
-        EQUALS_RETURN_ADDRESS(returnAddress, RhpCallFilterFunclet2)
+        EQUALS_RETURN_ADDRESS(returnAddress, RhpCallFinallyFunclet2)
 #endif
         )
     {
         return InFuncletInvokeThunk;
     }
+
+#ifndef TARGET_X86
+    if (
+        EQUALS_RETURN_ADDRESS(returnAddress, RhpCallFilterFunclet2)
+        )
+    {
+        return InFilterFuncletInvokeThunk;
+    }
+#endif
 
     return InManagedCode;
 #endif // defined(USE_PORTABLE_HELPERS)

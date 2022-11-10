@@ -39,6 +39,9 @@ enum EHFuncletType
     Catch = 0x0004,
 };
 
+struct ExInfo;
+typedef DPTR(ExInfo) PTR_ExInfo;
+
 typedef DPTR(class ExceptionTracker) PTR_ExceptionTracker;
 class ExceptionTracker
 {
@@ -243,6 +246,7 @@ public:
     static StackFrame GetStackFrameForParentCheck(CrawlFrame * pCF);
 
     static bool IsInStackRegionUnwoundBySpecifiedException(CrawlFrame * pCF, PTR_ExceptionTracker pExceptionTracker);
+    static bool IsInStackRegionUnwoundBySpecifiedException(CrawlFrame * pCF, PTR_ExInfo pExInfo);
     static bool IsInStackRegionUnwoundByCurrentException(CrawlFrame * pCF);
 
     static bool HasFrameBeenUnwoundByAnyActiveException(CrawlFrame * pCF);
@@ -328,8 +332,7 @@ public:
     // StackFrame.IsNull()   - no skipping is necessary
     // Anything else         - the StackFrame of the parent method frame
     static StackFrame FindParentStackFrameEx(CrawlFrame* pCF,
-                                             DWORD*      pParentOffset,
-                                             UINT_PTR*   pParentCallerSP);
+                                             DWORD*      pParentOffset);
 
     static void
         PopTrackers(StackFrame sfResumeFrame,
@@ -450,12 +453,10 @@ private:
     static StackFrame FindParentStackFrameHelper(CrawlFrame* pCF,
                                                  bool*       pfRealParent,
                                                  DWORD*      pParentOffset,
-                                                 UINT_PTR*   pParentCallerSP,
                                                  bool        fForGCReporting = false);
 
     static StackFrame RareFindParentStackFrame(CrawlFrame* pCF,
-                                               DWORD*      pParentOffset,
-                                               UINT_PTR*   pParentCallerSP);
+                                               DWORD*      pParentOffset);
 
     static StackWalkAction RareFindParentStackFrameCallback(CrawlFrame* pCF, LPVOID pData);
 

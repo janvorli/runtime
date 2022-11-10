@@ -565,6 +565,8 @@ private:
 //    This class works both in-process and out-of-process (e.g. DAC).
 //
 
+struct ExInfo;
+
 class StackFrameIterator
 {
 public:
@@ -575,6 +577,8 @@ public:
     // This constructor is for the usage pattern of creating an initialized StackFrameIterator and then
     // calling ResetRegDisp() on it.
     StackFrameIterator(Thread * pThread, PTR_Frame pFrame, ULONG32 flags);
+
+    void Clone(StackFrameIterator *pSource);
 
     //
     // We should consider merging Init() and ResetRegDisp().
@@ -603,6 +607,7 @@ public:
 
     // advance to the next frame according to the stackwalk flags
     StackWalkAction Next(void);
+    StackWalkAction NextSimple(void);
 
     enum FrameState
     {
@@ -692,8 +697,9 @@ private:
     // This is the real starting explicit frame.  If m_pStartFrame is NULL,
     // then this is equal to m_pThread->GetFrame().  Otherwise this is equal to m_pStartFrame.
     INDEBUG(PTR_Frame m_pRealStartFrame);
-
+public:
     ULONG32               m_flags;          // StackWalkFrames flags.
+private:
     ICodeManagerFlags     m_codeManFlags;
     ExecutionManager::ScanFlag m_scanFlag;
 
@@ -718,10 +724,12 @@ private:
     bool          m_fProcessIntermediaryNonFilterFunclet;
     bool          m_fDidFuncletReportGCReferences;
 #endif // FEATURE_EH_FUNCLETS
-
+    BYTE          m_forceReportingWhileSkipping;
 #if defined(RECORD_RESUMABLE_FRAME_SP)
     LPVOID m_pvResumableFrameTargetSP;
 #endif // RECORD_RESUMABLE_FRAME_SP
+public:
+    ExInfo* m_pNextExInfo;
 };
 
 void SetUpRegdisplayForStackWalk(Thread * pThread, T_CONTEXT * pContext, REGDISPLAY * pRegdisplay);

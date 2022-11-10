@@ -74,6 +74,8 @@
 
 #include <minipal/entrypoints.h>
 
+#include "exceptionhandlingqcalls.h"
+
 static const Entry s_QCall[] =
 {
     DllImportEntry(Enum_GetValuesAndNames)
@@ -316,6 +318,15 @@ static const Entry s_QCall[] =
     DllImportEntry(ComWeakRefToObject)
     DllImportEntry(ObjectToComWeakRef)
 #endif
+    DllImportEntry(RhpSfiInit)
+    DllImportEntry(RhpSfiNext)
+    DllImportEntry(RhpCaptureCallerContext)
+    DllImportEntry(RhpCallCatchFunclet)
+    DllImportEntry(RhpCallFilterFunclet)
+    DllImportEntry(RhpCallFinallyFunclet)
+    DllImportEntry(RhpEHEnumInitFromStackFrameIterator)
+    DllImportEntry(RhpEHEnumNext)
+    DllImportEntry(RhpAppendExceptionStackFrame)
 };
 
 const void* QCallResolveDllImport(const char* name)

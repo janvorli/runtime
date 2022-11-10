@@ -14,6 +14,7 @@
 #include "gms.h"
 #include "ecall.h"
 #include "eeconfig.h"
+#include "exceptionhandlingqcalls.h"
 
 NOINLINE LPVOID __FCThrow(LPVOID __me, RuntimeExceptionKind reKind, UINT resID, LPCWSTR arg1, LPCWSTR arg2, LPCWSTR arg3)
 {
@@ -41,6 +42,31 @@ NOINLINE LPVOID __FCThrow(LPVOID __me, RuntimeExceptionKind reKind, UINT resID, 
     _ASSERTE((reKind != kExecutionEngineException) ||
              !"Don't throw kExecutionEngineException from here. Go to EEPolicy directly, or throw something better.");
 
+    CONTEXT ctx;
+    REGDISPLAY rd;
+    Thread *pThread = GetThread();
+
+    ExInfo exInfo = {};
+    exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+    exInfo._pExContext = &ctx;
+    exInfo._passNumber = 1;
+    exInfo._kind = ExKind::Throw;
+    exInfo._idxCurClause = 0xffffffff;
+    exInfo._pRD = &rd;
+    exInfo._stackTraceInfo.Init();
+    exInfo._stackTraceInfo.AllocateStackTrace();
+    exInfo._pFrame = GetThread()->GetFrame();
+    exInfo._sfLowBound.SetMaxVal();
+    pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
+
+    PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_INTERNAL_EX);
+    DECLARE_ARGHOLDER_ARRAY(args, 2);
+    args[ARGNUM_0] = DWORD_TO_ARGHOLDER(reKind);
+    args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
+
+    //Ex.RhThrowInternalEx(oref, &exInfo)
+    CALL_MANAGED_METHOD_NORET(args)
+/*
     if (resID == 0)
     {
         // If we have an string to add use NonLocalized otherwise just throw the exception.
@@ -51,7 +77,7 @@ NOINLINE LPVOID __FCThrow(LPVOID __me, RuntimeExceptionKind reKind, UINT resID, 
     }
     else
         COMPlusThrow(reKind, resID, arg1, arg2, arg3);
-
+*/
     HELPER_METHOD_FRAME_END();
     FC_CAN_TRIGGER_GC_END();
     _ASSERTE(!"Throw returned");
