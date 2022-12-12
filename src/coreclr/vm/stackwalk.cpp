@@ -1608,6 +1608,39 @@ StackWalkAction StackFrameIterator::Next(void)
     return retVal;
 }
 
+StackWalkAction StackFrameIterator::NextSimple(void)
+{
+    WRAPPER_NO_CONTRACT;
+    SUPPORTS_DAC;
+
+    if (!IsValid())
+    {
+        return SWA_FAILED;
+    }
+
+    BEGIN_FORBID_TYPELOAD();
+    Thread::VirtualUnwindCallFrame(m_crawl.pRD->pCurrentContext);//, NULL, &m_crawl.codeInfo);
+    m_crawl.pRD->SP = m_crawl.pRD->pCurrentContext->Rsp;
+    m_crawl.pRD->ControlPC = m_crawl.pRD->pCurrentContext->Rip;
+    // DWORD64 rbp = m_crawl.pRD->pCurrentContext->Rbp;
+    // m_crawl.pRD->pCurrentContext->Rbp = *(DWORD64*)rbp;
+    // m_crawl.pRD->pCurrentContext->Rip = *(DWORD64*)(rbp + 8);
+    // m_crawl.pRD->ControlPC = m_crawl.pRD->pCurrentContext->Rip;
+    // m_crawl.pRD->pCurrentContext->Rsp = rbp + 16;
+    // m_crawl.pRD->SP = m_crawl.pRD->pCurrentContext->Rsp;
+    StackWalkAction retVal = SWA_CONTINUE;
+
+    ProcessIp(GetControlPC(m_crawl.pRD));
+    // StackWalkAction retVal = NextRaw();
+    // if (retVal == SWA_CONTINUE)
+    // {
+    //     retVal = Filter();
+    // }
+
+    END_FORBID_TYPELOAD();
+    return retVal;
+}
+
 //---------------------------------------------------------------------------------------
 //
 // Check whether we should stop at the current frame given the stackwalk flags.

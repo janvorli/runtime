@@ -603,6 +603,7 @@ public:
 
     // advance to the next frame according to the stackwalk flags
     StackWalkAction Next(void);
+    StackWalkAction NextSimple(void);
 
     enum FrameState
     {
