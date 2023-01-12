@@ -688,7 +688,7 @@ Parameters :
 --*/
 static void sigabrt_handler(int code, siginfo_t *siginfo, void *context)
 {
-    invoke_previous_action(&g_previous_sigabrt, code, siginfo, context);
+    invoke_previous_action(&g_previous_sigabrt, code, siginfo, context, /* signalRestarts */ false);
 }
 
 /*++
