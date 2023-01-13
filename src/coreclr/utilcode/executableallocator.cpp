@@ -275,13 +275,15 @@ void ExecutableAllocator::UpdateCachedMapping(BlockRW* pBlock)
         void* unmapAddress = NULL;
         size_t unmapSize;
 
+        STRESS_LOG1(LF_EEMEM, INFO2, "ExecutableAllocator::UpdateCachedMapping RW=%p\n", m_cachedMapping->baseRW);
+
         if (!RemoveRWBlock(m_cachedMapping->baseRW, &unmapAddress, &unmapSize))
         {
-            g_fatalErrorHandler(COR_E_EXECUTIONENGINE, W("The RW block to unmap was not found"));
+            g_fatalErrorHandler(COR_E_EXECUTIONENGINE, W("The RW block to unmap was not found (UpdateCachedMapping)"));
         }
         if (unmapAddress && !VMToOSInterface::ReleaseRWMapping(unmapAddress, unmapSize))
         {
-            g_fatalErrorHandler(COR_E_EXECUTIONENGINE, W("Releasing the RW mapping failed"));
+            g_fatalErrorHandler(COR_E_EXECUTIONENGINE, W("Releasing the RW mapping failed (UpdateCachedMapping)"));
         }
         m_cachedMapping = pBlock;
         pBlock->refCount++;
@@ -420,6 +422,7 @@ void* ExecutableAllocator::Commit(void* pStart, size_t size, bool isExecutable)
 void ExecutableAllocator::Release(void* pRX)
 {
     LIMITED_METHOD_CONTRACT;
+    STRESS_LOG1(LF_EEMEM, INFO2, "ExecutableAllocator::Release RX=%p\n", pRX);
 
 #ifdef LOG_EXECUTABLE_ALLOCATOR_STATISTICS
     InterlockedIncrement64(&g_releaseCount);
@@ -590,6 +593,8 @@ void* ExecutableAllocator::ReserveWithinRange(size_t size, const void* loAddress
             BackoutBlock(block, isFreeBlock);
         }
 
+        STRESS_LOG4(LF_EEMEM, INFO2, "ExecutableAllocator::ReserveWithinRange loAddress=%p, hiAddress=%p, size=0x%x, returns %p\n", loAddress, hiAddress, (int)size, result);
+
         return result;
     }
     else
@@ -695,6 +700,8 @@ void* ExecutableAllocator::Reserve(size_t size)
         }
     }
 
+    STRESS_LOG2(LF_EEMEM, INFO2, "ExecutableAllocator::Reserve returning RX=%p, size 0x%x\n", result, (int)size);
+
     return result;
 }
 
@@ -733,6 +740,7 @@ void* ExecutableAllocator::ReserveAt(void* baseAddressRX, size_t size)
             BackoutBlock(block, isFreeBlock);
         }
 
+        STRESS_LOG3(LF_EEMEM, INFO2, "ExecutableAllocator::ReserveAt RX=%p, size 0x%x, returning %p\n", baseAddressRX, (int)size, result);
         return result;
     }
     else
@@ -766,6 +774,7 @@ void* ExecutableAllocator::MapRW(void* pRX, size_t size)
     void* result = FindRWBlock(pRX, size);
     if (result != NULL)
     {
+        STRESS_LOG2(LF_EEMEM, INFO2, "ExecutableAllocator::MapRW RX=%p, reusing RW=%p\n", pRX, result);
         return result;
     }
 #ifdef LOG_EXECUTABLE_ALLOCATOR_STATISTICS
@@ -776,22 +785,24 @@ void* ExecutableAllocator::MapRW(void* pRX, size_t size)
     {
         if (pRX >= pBlock->baseRX && ((size_t)pRX + size) <= ((size_t)pBlock->baseRX + pBlock->size))
         {
-        // Offset of the RX address in the originally allocated block
-        size_t offset = (size_t)pRX - (size_t)pBlock->baseRX;
-        // Offset of the RX address that will start the newly mapped block
-        size_t mapOffset = ALIGN_DOWN(offset, Granularity());
-        // Size of the block we will map
-        size_t mapSize = ALIGN_UP(offset - mapOffset + size, Granularity());
+            // Offset of the RX address in the originally allocated block
+            size_t offset = (size_t)pRX - (size_t)pBlock->baseRX;
+            // Offset of the RX address that will start the newly mapped block
+            size_t mapOffset = ALIGN_DOWN(offset, Granularity());
+            // Size of the block we will map
+            size_t mapSize = ALIGN_UP(offset - mapOffset + size, Granularity());
 
 #ifdef LOG_EXECUTABLE_ALLOCATOR_STATISTICS
-        StopWatch sw2(&g_mapCreateTimeSum);
+            StopWatch sw2(&g_mapCreateTimeSum);
 #endif
-        void* pRW = VMToOSInterface::GetRWMapping(m_doubleMemoryMapperHandle, (BYTE*)pBlock->baseRX + mapOffset, pBlock->offset + mapOffset, mapSize);
+            void* pRW = VMToOSInterface::GetRWMapping(m_doubleMemoryMapperHandle, (BYTE*)pBlock->baseRX + mapOffset, pBlock->offset + mapOffset, mapSize);
 
-        if (pRW == NULL)
-        {
-            g_fatalErrorHandler(COR_E_EXECUTIONENGINE, W("Failed to create RW mapping for RX memory"));
-        }
+            if (pRW == NULL)
+            {
+                g_fatalErrorHandler(COR_E_EXECUTIONENGINE, W("Failed to create RW mapping for RX memory"));
+            }
+
+            STRESS_LOG3(LF_EEMEM, INFO2, "ExecutableAllocator::MapRW RX=%p from RXBlock at %p, new RW=%p\n", pRX, pBlock->baseRX, pRW);
 
             AddRWBlock(pRW, (BYTE*)pBlock->baseRX + mapOffset, mapSize);
 
@@ -830,6 +841,8 @@ void ExecutableAllocator::UnmapRW(void* pRW)
     CRITSEC_Holder csh(m_CriticalSection);
     _ASSERTE(pRW != NULL);
 
+    STRESS_LOG1(LF_EEMEM, INFO2, "ExecutableAllocator::UnmapRW %p\n", pRW);
+
 #ifdef LOG_EXECUTABLE_ALLOCATOR_STATISTICS
     StopWatch swNoLock(&g_unmapTimeSum);
 #endif
@@ -839,11 +852,11 @@ void ExecutableAllocator::UnmapRW(void* pRW)
 
     if (!RemoveRWBlock(pRW, &unmapAddress, &unmapSize))
     {
-        g_fatalErrorHandler(COR_E_EXECUTIONENGINE, W("The RW block to unmap was not found"));
+        g_fatalErrorHandler(COR_E_EXECUTIONENGINE, W("The RW block to unmap was not found (UnmapRW)"));
     }
 
     if (unmapAddress && !VMToOSInterface::ReleaseRWMapping(unmapAddress, unmapSize))
     {
-        g_fatalErrorHandler(COR_E_EXECUTIONENGINE, W("Releasing the RW mapping failed"));
+        g_fatalErrorHandler(COR_E_EXECUTIONENGINE, W("Releasing the RW mapping failed (UnmapRW)"));
     }
 }
