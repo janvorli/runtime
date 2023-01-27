@@ -216,6 +216,11 @@ extern "C" int coreclr_create_delegate(void*, unsigned int, const char*, const c
 // Returns:
 //  HRESULT indicating status of the operation. S_OK if the assembly was successfully executed
 //
+#ifdef __APPLE__
+__attribute__ ((section ("__TEXT,__exports_text")))
+#else
+__attribute__ ((section ("__exports_text")))
+#endif
 extern "C"
 DLLEXPORT
 int coreclr_initialize(
@@ -449,6 +454,11 @@ int coreclr_create_delegate(
 // Returns:
 //  HRESULT indicating status of the operation. S_OK if the assembly was successfully executed
 //
+#ifdef __APPLE__
+__attribute__ ((section ("__TEXT,__exports_text")))
+#else
+__attribute__ ((section ("__exports_text")))
+#endif
 extern "C"
 DLLEXPORT
 int coreclr_execute_assembly(

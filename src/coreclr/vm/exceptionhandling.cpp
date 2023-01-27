@@ -4537,6 +4537,14 @@ VOID UnwindManagedExceptionPass2(PAL_SEHException& ex, CONTEXT* unwindStartConte
     EEPOLICY_HANDLE_FATAL_ERROR(COR_E_EXECUTIONENGINE);
 }
 
+#if defined(__APPLE__)
+extern "C" char __start_exports_text __asm("section$start$__TEXT$__exports_text");
+extern "C" char __stop_exports_text __asm("section$end$__TEXT$__exports_text");
+#else
+extern "C" char __start___exports_text;
+extern "C" char __stop___exports_text;
+#endif
+
 //---------------------------------------------------------------------------------------
 //
 // This functions performs dispatching of a managed exception.
@@ -4738,7 +4746,8 @@ VOID DECLSPEC_NORETURN UnwindManagedExceptionPass1(PAL_SEHException& ex, CONTEXT
 
             STRESS_LOG2(LF_EH, LL_INFO100, "Processing exception at native frame: IP = %p, SP = %p \n", controlPc, sp);
 
-            if (controlPc == 0)
+            // Consider the exception unhandled if the unwinding reached coreclr_initialize or coreclr_execute_assembly or it cannot proceed further
+            if ((controlPc == 0) || (controlPc >= (UINT_PTR)&__start_exports_text && controlPc < (UINT_PTR)&__stop_exports_text))
             {
                 if (!GetThread()->HasThreadStateNC(Thread::TSNC_ProcessedUnhandledException))
                 {
