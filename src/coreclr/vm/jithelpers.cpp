@@ -56,6 +56,8 @@
 #include "excep.h"
 #endif
 
+#include "exceptionhandlingqcalls.h"
+
 //========================================================================
 //
 // This file contains implementation of all JIT helpers. The helpers are
@@ -3981,7 +3983,9 @@ HCIMPLEND
 
 /*************************************************************/
 
-HCIMPL1(void, IL_Throw,  Object* obj)
+extern "C" void IL_Throw(Object* obj);
+
+HCIMPL1(void, IL_ThrowOld,  Object* obj)
 {
     FCALL_CONTRACT;
 
@@ -3998,7 +4002,6 @@ HCIMPL1(void, IL_Throw,  Object* obj)
     __helperframe.InsureInit(false, NULL);
     g_ExceptionEIP = (LPVOID)__helperframe.GetReturnAddress();
 #endif // defined(_DEBUG) && defined(TARGET_X86)
-
 
     if (oref == 0)
         COMPlusThrow(kNullReferenceException);
@@ -4026,9 +4029,124 @@ HCIMPL1(void, IL_Throw,  Object* obj)
         }
     }
 
-    RaiseTheExceptionInternalOnly(oref, FALSE);
+//    RaiseTheExceptionInternalOnly(oref, FALSE);
+    // TODO: call the managed exception propagation routine
+    REGDISPLAY rd;
+    //GetThread()->InitRegDisplay(&rd, &ctx);
+    ZeroMemory(&rd, sizeof(rd));
+    rd.pContext = &rd.ctxOne;
+    rd.pCurrentContext = &rd.ctxOne;
+    rd.pCurrentContextPointers = &rd.ctxPtrsOne;
+    rd.pCallerContextPointers = &rd.ctxPtrsTwo;
+
+    __helperframe.InsureInit(false, NULL);
+    (&__helperframe)->UpdateRegDisplay(&rd);
+
+    ExInfo exInfo;
+    exInfo._pPrevExInfo = NULL; // TODO: chain it to the current thread
+    exInfo._pExContext = rd.pContext;
+    exInfo._passNumber = 1;
+    exInfo._kind = ExKind::Throw;
+    exInfo._idxCurClause = 0xffffffff;
+    exInfo._pRD = &rd;
+
+    GCPROTECT_BEGIN(oref);
+    PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_EX);
+    DECLARE_ARGHOLDER_ARRAY(args, 2);
+    args[ARGNUM_0] = OBJECTREF_TO_ARGHOLDER(oref);
+    args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
+
+    //Ex.RhThrowEx(oref, &exInfo)
+    CALL_MANAGED_METHOD_NORET(args)
+
+    GCPROTECT_END();
 
     HELPER_METHOD_FRAME_END();
+}
+HCIMPLEND
+
+extern "C" HCIMPL2(void, RhThrowEx, Object* obj, TransitionBlock* pTransitionBlock)
+{
+    FCALL_CONTRACT;
+
+    /* Make no assumptions about the current machine state */
+    ResetCurrentContext();
+
+    FC_GC_POLL_NOT_NEEDED();    // throws always open up for GC
+    INCONTRACT(FCallGCCanTrigger::Enter());
+
+    FrameWithCookie<ThrowMethodFrame> frame(pTransitionBlock);
+    frame.Push();
+
+    OBJECTREF oref = ObjectToOBJECTREF(obj);
+
+    if (oref == 0)
+        COMPlusThrow(kNullReferenceException);
+    else
+    if (!IsException(oref->GetMethodTable()))
+    {
+        GCPROTECT_BEGIN(oref);
+
+        WrapNonCompliantException(&oref);
+
+        GCPROTECT_END();
+    }
+    else
+    {   // We know that the object derives from System.Exception
+
+        // If the flag indicating ForeignExceptionRaise has been set,
+        // then do not clear the "_stackTrace" field of the exception object.
+        if (GetThread()->GetExceptionState()->IsRaisingForeignException())
+        {
+            ((EXCEPTIONREF)oref)->SetStackTraceString(NULL);
+        }
+        else
+        {
+            ((EXCEPTIONREF)oref)->ClearStackTracePreservingRemoteStackTrace();
+        }
+    }
+
+//    RaiseTheExceptionInternalOnly(oref, FALSE);
+    // TODO: call the managed exception propagation routine
+    CONTEXT ctx;
+    // ZeroMemory(&ctx, sizeof(ctx));
+    REGDISPLAY rd;
+//    ZeroMemory(&rd, sizeof(rd));
+//    GetThread()->InitRegDisplay(&rd, &ctx, true);
+    //rd.pContext = &rd.ctxOne;
+    // rd.pCurrentContext = &rd.ctxOne;
+    // rd.pCurrentContextPointers = &rd.ctxPtrsOne;
+    // rd.pCallerContextPointers = &rd.ctxPtrsTwo;
+
+    // __helperframe.InsureInit(false, NULL);
+    // (&__helperframe)->UpdateRegDisplay(&rd);
+
+    Thread *pThread = GetThread();
+
+    ExInfo exInfo;
+    exInfo._pPrevExInfo = pThread->m_pExInfo;
+    exInfo._pExContext = &ctx;
+    exInfo._passNumber = 1;
+    exInfo._kind = ExKind::Throw;
+    exInfo._idxCurClause = 0xffffffff;
+    exInfo._pRD = &rd;
+    exInfo._stackTraceInfo.Init();
+    exInfo._stackTraceInfo.AllocateStackTrace();
+    pThread->m_pExInfo = &exInfo;
+
+    GCPROTECT_BEGIN(oref);
+    PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_EX);
+    DECLARE_ARGHOLDER_ARRAY(args, 2);
+    args[ARGNUM_0] = OBJECTREF_TO_ARGHOLDER(oref);
+    args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
+
+    //Ex.RhThrowEx(oref, &exInfo)
+    CALL_MANAGED_METHOD_NORET(args)
+
+    GCPROTECT_END();
+
+    INCONTRACT(FCallGCCanTrigger::Leave(__FUNCTION__, __FILE__, __LINE__));
+    //HELPER_METHOD_FRAME_END();
 }
 HCIMPLEND
 

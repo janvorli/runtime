@@ -17,6 +17,7 @@
 #include "utilcode.h"
 #include "interoplibinterface.h"
 #include "corinfo.h"
+#include "exceptionhandlingqcalls.h"
 
 #if defined(TARGET_X86)
 #define USE_CURRENT_CONTEXT_IN_FILTER
@@ -7156,75 +7157,152 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
 #endif //!DACCESS_COMPILE
 
 #ifndef DACCESS_COMPILE
-    extern "C" void *RhpCallCatchFunclet(void* exceptionObj, BYTE* pHandlerIP, REGDISPLAY* pvRegDisplay, void* exInfo)
+    extern "C" void QCALLTYPE RhpAppendExceptionStackFrame(QCall::ObjectHandleOnStack exceptionObj, SIZE_T ip, SIZE_T sp, int flags, ExInfo *pExInfo)
     {
-        Thread* pThread = GetThread();
-        GCX_COOP_NO_DTOR();
-        pThread->GetFrame()->Pop(); // Pop the PInvoke frame
-        HandlerFn* pfnHandler = (HandlerFn*)pHandlerIP;
-        DWORD_PTR dwResumePC = pfnHandler(pvRegDisplay->SP, (Object*)exceptionObj);
-        pvRegDisplay->pCurrentContext->Rip = dwResumePC;
-        ClrRestoreNonvolatileContext(pvRegDisplay->pCurrentContext);
+        QCALL_CONTRACT;
+        
+        BEGIN_QCALL;
+        GCX_COOP();
+        bool canAllocateMemory = !(exceptionObj.Get() == CLRException::GetPreallocatedOutOfMemoryException()) &&
+               !(exceptionObj.Get() == CLRException::GetPreallocatedStackOverflowException());
+    
+        // Q: should the pExInfo stack walker replace ip, sp amd pMD?
+        EECodeInfo codeInfo(ip);
+        _ASSERTE(codeInfo.IsValid());
+        MethodDesc *pMD = codeInfo.GetMethodDesc();
 
+        pExInfo->_stackTraceInfo.AppendElement(canAllocateMemory, ip, sp, pMD, &pExInfo->_frameIter.m_crawl);
+
+        AppDomain* pDomain = GetAppDomain();
+        // This is just a quick and dirty test. This needs to be longer term member somewhere or the SaveStackTrace should be modified to accept the objectref
+        OBJECTHANDLE hThrowable = pDomain->CreateHandle(exceptionObj.Get());
+        pExInfo->_stackTraceInfo.SaveStackTrace(canAllocateMemory, hThrowable, /*bReplaceStack*/FALSE, /*bSkipLastElement*/FALSE);
+        DestroyHandle(hThrowable);
+
+        END_QCALL;
+    }
+
+    extern "C" void * QCALLTYPE  RhpCallCatchFunclet(QCall::ObjectHandleOnStack exceptionObj, BYTE* pHandlerIP, REGDISPLAY* pvRegDisplay, ExInfo* exInfo)
+    {
+        QCALL_CONTRACT;
+
+        BEGIN_QCALL;
+        Thread* pThread = GetThread();
+        Frame* pFrame = pThread->GetFrame();
+        InlinedCallFrame* pInlinedCallFrame = (InlinedCallFrame*)pFrame;
+        pInlinedCallFrame->m_Datum = (PTR_NDirectMethodDesc)((TADDR)pInlinedCallFrame->m_Datum | 2); // Mark the pinvoke frame as invoking RhpCallCatchFunclet (and similar) for collided unwind detection
+        GCX_COOP_NO_DTOR();
+        HandlerFn* pfnHandler = (HandlerFn*)pHandlerIP;
+        DWORD_PTR dwResumePC = pfnHandler(pvRegDisplay->SP, *exceptionObj.m_ppObject);
+        pvRegDisplay->pCurrentContext->Rip = dwResumePC;
+        // TODO: the coreclr EH has a concept of limit frame which we should employ here
+        // TODO: handle invalid frame
+        while (pFrame < (void*)pvRegDisplay->pCurrentContext->Rsp)
+        {
+            pFrame->Pop(pThread);
+            pFrame = pThread->GetFrame();
+        }
+
+        //pThread->GetFrame()->Pop(); // Pop the PInvoke frame
+        //pThread->GetFrame()->Pop(); // Pop the ThrowMethodFrame frame
+        GCFrame* pGCFrame = pThread->GetGCFrame();
+        while (pGCFrame < (void*)pvRegDisplay->pCurrentContext->Rsp)
+        {
+            pGCFrame->Pop();
+            pGCFrame = pThread->GetGCFrame();
+        }
+
+        // Pop ExInfos
+        ExInfo* pExInfo = pThread->m_pExInfo;
+        while (pExInfo && pExInfo < (void*)pvRegDisplay->pCurrentContext->Rsp)
+        {
+            pExInfo = pExInfo->_pPrevExInfo;
+        }
+
+        pThread->m_pExInfo = pExInfo;
+
+        ClrRestoreNonvolatileContext(pvRegDisplay->pCurrentContext);
+        END_QCALL;
         return NULL;
     }
 
-    extern "C" unsigned RhpEHEnumInitFromStackFrameIterator(StackFrameIterator *pFrameIter, BYTE** pMethodStartAddress, EH_CLAUSE_ENUMERATOR * pEHEnum)
+    struct ExtendedEHClauseEnumerator : EH_CLAUSE_ENUMERATOR
     {
+        unsigned EHCount;
+    };
+
+    extern "C" BOOL QCALLTYPE RhpEHEnumInitFromStackFrameIterator(StackFrameIterator *pFrameIter, BYTE** pMethodStartAddress, EH_CLAUSE_ENUMERATOR * pEHEnum)
+    {
+        QCALL_CONTRACT;
+
+        ExtendedEHClauseEnumerator *pExtendedEHEnum = (ExtendedEHClauseEnumerator*)pEHEnum;
+        unsigned index = 0;
+
+        BEGIN_QCALL;
         IJitManager* pJitMan = pFrameIter->m_crawl.GetJitManager();
         const METHODTOKEN& MethToken = pFrameIter->m_crawl.GetMethodToken();
         *pMethodStartAddress = (BYTE*)pJitMan->JitTokenToStartAddress(MethToken);
-        unsigned EHCount = pJitMan->InitializeEHEnumeration(MethToken, pEHEnum);
+        pExtendedEHEnum->EHCount = pJitMan->InitializeEHEnumeration(MethToken, pEHEnum);
 
-        return EHCount;
+        if (pFrameIter->m_crawl.IsFunclet())
+        {
+            for (index = 0; index < pExtendedEHEnum->EHCount; index++)
+            {
+                EE_ILEXCEPTION_CLAUSE EHClause;
+                PTR_EXCEPTION_CLAUSE_TOKEN pEHClauseToken = pJitMan->GetNextEHClause(pEHEnum, &EHClause);
+                if (EHClause.Flags & COR_ILEXCEPTION_CLAUSE_DUPLICATED)
+                {
+                    pEHEnum->iCurrentPos--;
+                    break;
+                }
+            }
+        }
+
+        END_QCALL;
+
+        return (pExtendedEHEnum->EHCount - index) != 0;
     }
 
-    enum RhEHClauseKind
+    extern "C" BOOL QCALLTYPE RhpEHEnumNext(StackFrameIterator *pFrameIter, EH_CLAUSE_ENUMERATOR* pEHEnum, RhEHClause* pEHClause)
     {
-        RH_EH_CLAUSE_TYPED = 0,
-        RH_EH_CLAUSE_FAULT = 1,
-        RH_EH_CLAUSE_FILTER = 2,
-        RH_EH_CLAUSE_UNUSED = 3,
-    };
+        QCALL_CONTRACT;
+        BOOL result = FALSE;
 
-    struct RhEHClause
-    {
-        RhEHClauseKind _clauseKind;
-        unsigned _tryStartOffset;
-        unsigned _tryEndOffset;
-        BYTE *_filterAddress;
-        BYTE *_handlerAddress;
-        TypeHandle _pTargetType;
-    };
+        BEGIN_QCALL;
 
-    extern "C" bool RhpEHEnumNext(StackFrameIterator *pFrameIter, EH_CLAUSE_ENUMERATOR* pEHEnum, RhEHClause* pEHClause)
-    {
-        IJitManager* pJitMan   = pFrameIter->m_crawl.GetJitManager();
-        const METHODTOKEN& MethToken = pFrameIter->m_crawl.GetMethodToken();
-
-        EE_ILEXCEPTION_CLAUSE EHClause;
-        PTR_EXCEPTION_CLAUSE_TOKEN pEHClauseToken = pJitMan->GetNextEHClause(pEHEnum, &EHClause);
-
-        pEHClause->_tryStartOffset = EHClause.TryStartPC;
-        pEHClause->_tryEndOffset = EHClause.TryEndPC;
-        pEHClause->_filterAddress =  (BYTE*)pJitMan->GetCodeAddressForRelOffset(MethToken, EHClause.FilterOffset);
-        pEHClause->_handlerAddress = (BYTE*)pJitMan->GetCodeAddressForRelOffset(MethToken, EHClause.HandlerStartPC);
-        pEHClause->_pTargetType = pJitMan->ResolveEHClause(&EHClause, &pFrameIter->m_crawl);
-
-        if (EHClause.Flags == COR_ILEXCEPTION_CLAUSE_NONE)
+        ExtendedEHClauseEnumerator *pExtendedEHEnum = (ExtendedEHClauseEnumerator*)pEHEnum;
+        if (pEHEnum->iCurrentPos < pExtendedEHEnum->EHCount)
         {
-            pEHClause->_clauseKind = RH_EH_CLAUSE_TYPED;
-        }
-        else if (EHClause.Flags & COR_ILEXCEPTION_CLAUSE_FILTER)
-        {
-            pEHClause->_clauseKind = RH_EH_CLAUSE_FILTER;
-        }
-        else if (EHClause.Flags & COR_ILEXCEPTION_CLAUSE_FAULT)
-        {
-            pEHClause->_clauseKind = RH_EH_CLAUSE_FAULT;
-        }
+            IJitManager* pJitMan   = pFrameIter->m_crawl.GetJitManager();
+            const METHODTOKEN& MethToken = pFrameIter->m_crawl.GetMethodToken();
 
-        return true;
+            EE_ILEXCEPTION_CLAUSE EHClause;
+            PTR_EXCEPTION_CLAUSE_TOKEN pEHClauseToken = pJitMan->GetNextEHClause(pEHEnum, &EHClause);
+
+            pEHClause->_tryStartOffset = EHClause.TryStartPC;
+            pEHClause->_tryEndOffset = EHClause.TryEndPC;
+            pEHClause->_filterAddress =  (BYTE*)pJitMan->GetCodeAddressForRelOffset(MethToken, EHClause.FilterOffset);
+            pEHClause->_handlerAddress = (BYTE*)pJitMan->GetCodeAddressForRelOffset(MethToken, EHClause.HandlerStartPC);
+            pEHClause->_pTargetType = pJitMan->ResolveEHClause(&EHClause, &pFrameIter->m_crawl);
+
+            EHClause.Flags = (CorExceptionFlag)(EHClause.Flags & ~(ULONG)COR_ILEXCEPTION_CLAUSE_DUPLICATED);
+            if (EHClause.Flags == COR_ILEXCEPTION_CLAUSE_NONE)
+            {
+                pEHClause->_clauseKind = RH_EH_CLAUSE_TYPED;
+            }
+            else if (EHClause.Flags & COR_ILEXCEPTION_CLAUSE_FILTER)
+            {
+                pEHClause->_clauseKind = RH_EH_CLAUSE_FILTER;
+            }
+            else if (EHClause.Flags & COR_ILEXCEPTION_CLAUSE_FAULT)
+            {
+                pEHClause->_clauseKind = RH_EH_CLAUSE_FAULT;
+            }
+            result = TRUE;
+        }
+        END_QCALL;
+
+        return result;
     }
 #endif
 

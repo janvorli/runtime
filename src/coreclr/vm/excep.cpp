@@ -3375,27 +3375,27 @@ BOOL StackTraceInfo::AppendElement(BOOL bAllowAllocMem, UINT_PTR currentIP, UINT
     }
 
 #ifndef TARGET_UNIX // Watson is supported on Windows only
-    Thread *pThread = GetThread();
+    // Thread *pThread = GetThread();
 
-    if (pThread && (currentIP != 0))
-    {
-        // Setup the watson bucketing details for the initial throw
-        // callback only if we dont already have them.
-        ThreadExceptionState *pExState = pThread->GetExceptionState();
-        if (!pExState->GetFlags()->GotWatsonBucketDetails())
-        {
-            // Adjust the IP if necessary.
-            UINT_PTR adjustedIp = currentIP;
-            // This is a workaround copied from above.
-            if (!(pCf->HasFaulted() || pCf->IsIPadjusted()) && adjustedIp != 0)
-            {
-                adjustedIp -= 1;
-            }
+    // if (pThread && (currentIP != 0))
+    // {
+    //     // Setup the watson bucketing details for the initial throw
+    //     // callback only if we dont already have them.
+    //     ThreadExceptionState *pExState = pThread->GetExceptionState();
+    //     if (!pExState->GetFlags()->GotWatsonBucketDetails())
+    //     {
+    //         // Adjust the IP if necessary.
+    //         UINT_PTR adjustedIp = currentIP;
+    //         // This is a workaround copied from above.
+    //         if (!(pCf->HasFaulted() || pCf->IsIPadjusted()) && adjustedIp != 0)
+    //         {
+    //             adjustedIp -= 1;
+    //         }
 
-            // Setup the bucketing details for the initial throw
-            SetupInitialThrowBucketDetails(adjustedIp);
-        }
-    }
+    //         // Setup the bucketing details for the initial throw
+    //         SetupInitialThrowBucketDetails(adjustedIp);
+    //     }
+    // }
 #endif // !TARGET_UNIX
 
     return bRetVal;

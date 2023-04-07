@@ -82,7 +82,7 @@ namespace System.Runtime
         // Given an address pointing somewhere into a managed module, get the classlib-defined fail-fast
         // function and invoke it.  Any failure to find and invoke the function, or if it returns, results in
         // MRT-defined fail-fast behavior.
-        internal static void FailFastViaClasslib(RhFailFastReason reason, object unhandledException,
+        internal static void FailFastViaClasslib(RhFailFastReason reason, object? unhandledException,
             IntPtr classlibAddress)
         {
             // Find the classlib function that will fail fast. This is a RuntimeExport function from the

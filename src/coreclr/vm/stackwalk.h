@@ -565,6 +565,8 @@ private:
 //    This class works both in-process and out-of-process (e.g. DAC).
 //
 
+struct ExInfo;
+
 class StackFrameIterator
 {
 public:
@@ -575,6 +577,8 @@ public:
     // This constructor is for the usage pattern of creating an initialized StackFrameIterator and then
     // calling ResetRegDisp() on it.
     StackFrameIterator(Thread * pThread, PTR_Frame pFrame, ULONG32 flags);
+
+    void Clone(StackFrameIterator *pSource);
 
     //
     // We should consider merging Init() and ResetRegDisp().
@@ -723,6 +727,8 @@ private:
 #if defined(RECORD_RESUMABLE_FRAME_SP)
     LPVOID m_pvResumableFrameTargetSP;
 #endif // RECORD_RESUMABLE_FRAME_SP
+public:
+    ExInfo* m_pNextExInfo;
 };
 
 void SetUpRegdisplayForStackWalk(Thread * pThread, T_CONTEXT * pContext, REGDISPLAY * pRegdisplay);

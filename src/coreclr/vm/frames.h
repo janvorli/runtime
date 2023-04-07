@@ -190,6 +190,7 @@ FRAME_TYPE_NAME(ResumableFrame)
 FRAME_TYPE_NAME(RedirectedThreadFrame)
 #endif // FEATURE_HIJACK
 FRAME_TYPE_NAME(FaultingExceptionFrame)
+FRAME_TYPE_NAME(ThrowMethodFrame)
 #ifdef DEBUGGING_SUPPORTED
 FRAME_TYPE_NAME(FuncEvalFrame)
 #endif // DEBUGGING_SUPPORTED
@@ -1735,6 +1736,30 @@ protected:
     }
 };
 
+class ThrowMethodFrame : public FramedMethodFrame
+{
+    VPTR_VTABLE_CLASS(ThrowMethodFrame, FramedMethodFrame)
+
+public:
+#ifndef DACCESS_COMPILE
+    ThrowMethodFrame(TransitionBlock * pTransitionBlock)
+        : FramedMethodFrame(pTransitionBlock, NULL)
+    {
+        LIMITED_METHOD_CONTRACT;
+    }
+#endif // DACCESS_COMPILE
+
+    int GetFrameType()
+    {
+        LIMITED_METHOD_DAC_CONTRACT;
+        return TYPE_CALL; // ???
+    }
+
+protected:
+
+    DEFINE_VTABLE_GETTER_AND_CTOR_AND_DTOR(ThrowMethodFrame)
+};
+
 //------------------------------------------------------------------------
 // This represents a call Multicast.Invoke. It's only used to gc-protect
 // the arguments during the iteration.
@@ -2866,6 +2891,7 @@ public:
 
     // m_Datum contains MethodDesc ptr or
     // - on AMD64: CALLI target address (if lowest bit is set)
+    //             bit 1 set indicates invoking RhpCallCatchFunclet and others
     // - on X86: argument stack size (if value is <64k)
     // See code:HasFunction.
     PTR_NDirectMethodDesc   m_Datum;

@@ -27,10 +27,3 @@ EXPORTS
 
         ; Used by profilers
         MetaDataGetDispenser
-
-        RhpSfiInit
-        RhpSfiNext
-        RhpCaptureCallerContext
-        RhpCallCatchFunclet
-        RhpEHEnumInitFromStackFrameIterator
-        RhpEHEnumNext
