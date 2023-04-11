@@ -7244,19 +7244,19 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         *pMethodStartAddress = (BYTE*)pJitMan->JitTokenToStartAddress(MethToken);
         pExtendedEHEnum->EHCount = pJitMan->InitializeEHEnumeration(MethToken, pEHEnum);
 
-        if (pFrameIter->m_crawl.IsFunclet())
-        {
-            for (index = 0; index < pExtendedEHEnum->EHCount; index++)
-            {
-                EE_ILEXCEPTION_CLAUSE EHClause;
-                PTR_EXCEPTION_CLAUSE_TOKEN pEHClauseToken = pJitMan->GetNextEHClause(pEHEnum, &EHClause);
-                if (EHClause.Flags & COR_ILEXCEPTION_CLAUSE_DUPLICATED)
-                {
-                    pEHEnum->iCurrentPos--;
-                    break;
-                }
-            }
-        }
+        // if (pFrameIter->m_crawl.IsFunclet())
+        // {
+        //     for (index = 0; index < pExtendedEHEnum->EHCount; index++)
+        //     {
+        //         EE_ILEXCEPTION_CLAUSE EHClause;
+        //         PTR_EXCEPTION_CLAUSE_TOKEN pEHClauseToken = pJitMan->GetNextEHClause(pEHEnum, &EHClause);
+        //         if (EHClause.Flags & COR_ILEXCEPTION_CLAUSE_DUPLICATED)
+        //         {
+        //             pEHEnum->iCurrentPos--;
+        //             break;
+        //         }
+        //     }
+        // }
 
         END_QCALL;
 
@@ -7285,7 +7285,8 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
             pEHClause->_handlerAddress = (BYTE*)pJitMan->GetCodeAddressForRelOffset(MethToken, EHClause.HandlerStartPC);
             pEHClause->_pTargetType = pJitMan->ResolveEHClause(&EHClause, &pFrameIter->m_crawl);
 
-            EHClause.Flags = (CorExceptionFlag)(EHClause.Flags & ~(ULONG)COR_ILEXCEPTION_CLAUSE_DUPLICATED);
+            result = TRUE;
+//            EHClause.Flags = (CorExceptionFlag)(EHClause.Flags & ~(ULONG)COR_ILEXCEPTION_CLAUSE_DUPLICATED);
             if (EHClause.Flags == COR_ILEXCEPTION_CLAUSE_NONE)
             {
                 pEHClause->_clauseKind = RH_EH_CLAUSE_TYPED;
@@ -7298,7 +7299,10 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
             {
                 pEHClause->_clauseKind = RH_EH_CLAUSE_FAULT;
             }
-            result = TRUE;
+            else if (EHClause.Flags & COR_ILEXCEPTION_CLAUSE_DUPLICATED)
+            {
+                result = FALSE;
+            }
         }
         END_QCALL;
 

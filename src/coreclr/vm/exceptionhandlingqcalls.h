@@ -61,6 +61,8 @@ struct ExInfo
     REGDISPLAY *_pRD;
 
     StackTraceInfo _stackTraceInfo;
+
+    Frame* _pFrame;
 };
 
 //  class StackFrameIterator;

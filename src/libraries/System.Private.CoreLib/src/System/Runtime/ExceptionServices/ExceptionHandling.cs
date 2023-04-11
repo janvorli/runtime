@@ -50,6 +50,7 @@ namespace System.Runtime
         public const int SIZEOF__REGDISPLAY = 0xbf0;
         public const int OFFSETOF__REGDISPLAY__SP = 0xbd8;
         public const int OFFSETOF__REGDISPLAY__ControlPC = 0xbe0;
+        public const int OFFSETOF__REGDISPLAY__m_pCurrentContext = 0x8;
 #endif
         public const int SIZEOF__EHEnum = 0x18; // TODO: on 32 bit systems, isn't it 8?
 
@@ -61,8 +62,9 @@ namespace System.Runtime
 
         public const int SIZEOF__PAL_LIMITED_CONTEXT = 0x4d0;
         public const int OFFSETOF__PAL_LIMITED_CONTEXT__IP = 0xf8;
-        public const int OFFSETOF__PAL_LIMITED_CONTEXT__SP = 0xf8-12*8;
-        public const int OFFSETOF__PAL_LIMITED_CONTEXT__FP = 0xf8-12*8;
+        public const int OFFSETOF__PAL_LIMITED_CONTEXT__SP = 0x98;
+        public const int OFFSETOF__PAL_LIMITED_CONTEXT__FP = 0xa0;
+
 
         public const int OFFSETOF__ExInfo__m_pPrevExInfo = 0;
         public const int OFFSETOF__ExInfo__m_pExContext = 8;
@@ -156,6 +158,8 @@ namespace System.Runtime
         internal UIntPtr ControlPC;
 //        [FieldOffset(AsmOffsets.OFFSETOF__REGDISPLAY__FP)]
 //        internal UIntPtr FP;
+        [FieldOffset(AsmOffsets.OFFSETOF__REGDISPLAY__m_pCurrentContext)]
+        internal EH.PAL_LIMITED_CONTEXT* m_pCurrentContext;
     }
 
     // internal class EH
@@ -600,6 +604,8 @@ namespace System.Runtime
             internal IntPtr IP;
             [FieldOffset(AsmOffsets.OFFSETOF__PAL_LIMITED_CONTEXT__SP)]
             internal IntPtr SP;
+            [FieldOffset(AsmOffsets.OFFSETOF__PAL_LIMITED_CONTEXT__FP)]
+            internal UIntPtr FP;
             // the rest of the struct is left unspecified.
         }
 
@@ -1201,7 +1207,7 @@ namespace System.Runtime
         internal byte* OriginalControlPC { get { return (byte*)_pRegDisplay->ControlPC; } } // TODO: fix this
         internal void* RegisterSet { get { return _pRegDisplay;  } }
         internal UIntPtr SP { get { return _pRegDisplay->SP; } }
-        internal UIntPtr FramePointer { get { return _pRegDisplay->SP; } } // FAKE! TODO: is this always FP register or is it SP or FP?
+        internal UIntPtr FramePointer { get { return _pRegDisplay->m_pCurrentContext->FP; } } // FAKE! TODO: is this always FP register or is it SP or FP?
 
         internal bool Init(EH.PAL_LIMITED_CONTEXT* pStackwalkCtx, REGDISPLAY *pRD, bool instructionFault = false)
         {

@@ -4049,6 +4049,7 @@ HCIMPL1(void, IL_ThrowOld,  Object* obj)
     exInfo._kind = ExKind::Throw;
     exInfo._idxCurClause = 0xffffffff;
     exInfo._pRD = &rd;
+    exInfo._pFrame = GetThread()->GetFrame();
 
     GCPROTECT_BEGIN(oref);
     PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_EX);
@@ -4132,6 +4133,7 @@ extern "C" HCIMPL2(void, RhThrowEx, Object* obj, TransitionBlock* pTransitionBlo
     exInfo._pRD = &rd;
     exInfo._stackTraceInfo.Init();
     exInfo._stackTraceInfo.AllocateStackTrace();
+    exInfo._pFrame = GetThread()->GetFrame();
     pThread->m_pExInfo = &exInfo;
 
     GCPROTECT_BEGIN(oref);

@@ -1171,7 +1171,7 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
     result = pThis->Init(pThread, pFrame, pRD, THREAD_EXECUTING_MANAGED_CODE/* | FUNCTIONSONLY*/) != FALSE;
     pThis->m_pNextExInfo = pThread->m_pExInfo; // TODO: integrate this into the init
 
-//    ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
+    ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
 
     if (pThis->GetFrameState() != StackFrameIterator::SFITER_FRAMELESS_METHOD)
     {
@@ -1273,15 +1273,26 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
 
                         // TODO: deep copy pRD? Keep context pointers? Probably add a clone method to the stack walker so that we can access private vars.
                         //ExInfo* pPrevExInfo = pThread->m_pExInfo->_pPrevExInfo;
-                        ExInfo* pPrevExInfo = pThis->m_pNextExInfo->_pPrevExInfo;;
-                        // //T_KNONVOLATILE_CONTEXT_POINTERS *pContextPointers = pThis->m_crawl.pRD->pCurrentContextPointers;
-                        // memcpy(pThis, &pPrevExInfo->_frameIter, sizeof(StackFrameIterator));
-                        // //pThis->m_crawl.pRD->pCurrentContextPointers = pContextPointers;
-                        pThis->Clone(&pPrevExInfo->_frameIter);
-                        ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
-                        //*uExCollideClauseIdx = pThis->m_pNextExInfo->_idxCurClause;
-                        *uExCollideClauseIdx = pPrevExInfo->_idxCurClause;
-                        // pThis->m_dwFlags |= ExCollide; ????
+//                        __debugbreak();
+                        if ((pThis->m_pNextExInfo->_passNumber == 1) ||
+                            (pThis->m_pNextExInfo->_idxCurClause == 0xFFFFFFFF))
+                        {
+                            //__debugbreak();
+                            pThis->Init(pThread, pThis->m_pNextExInfo->_pFrame, pThis->m_pNextExInfo->_pRD, pThis->m_flags);
+                            pThis->m_pNextExInfo = pThis->m_pNextExInfo->_pPrevExInfo;
+                        }
+                        else
+                        {
+                            ExInfo* pPrevExInfo = pThis->m_pNextExInfo->_pPrevExInfo;
+                            // //T_KNONVOLATILE_CONTEXT_POINTERS *pContextPointers = pThis->m_crawl.pRD->pCurrentContextPointers;
+                            // memcpy(pThis, &pPrevExInfo->_frameIter, sizeof(StackFrameIterator));
+                            // //pThis->m_crawl.pRD->pCurrentContextPointers = pContextPointers;
+                            pThis->Clone(&pPrevExInfo->_frameIter);
+                            ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
+                            //*uExCollideClauseIdx = pThis->m_pNextExInfo->_idxCurClause;
+                            *uExCollideClauseIdx = pPrevExInfo->_idxCurClause;
+                            // pThis->m_dwFlags |= ExCollide; ????
+                        }
 #endif                        
 
                         //memcpy(this, &pThread->m_pExInfo->_pPrevExInfo->_frameIter, sizeof(StackFrameIterator));
