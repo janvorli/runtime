@@ -1755,6 +1755,13 @@ public:
         return TYPE_CALL; // ???
     }
 
+    // virtual BOOL IsTransitionToNativeFrame()
+    // {
+    //     LIMITED_METHOD_CONTRACT;
+    //     return TRUE;
+    // }
+
+
 protected:
 
     DEFINE_VTABLE_GETTER_AND_CTOR_AND_DTOR(ThrowMethodFrame)

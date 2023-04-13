@@ -1171,13 +1171,13 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
     result = pThis->Init(pThread, pFrame, pRD, THREAD_EXECUTING_MANAGED_CODE/* | FUNCTIONSONLY*/) != FALSE;
     pThis->m_pNextExInfo = pThread->m_pExInfo; // TODO: integrate this into the init
 
-    ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
-
     if (pThis->GetFrameState() != StackFrameIterator::SFITER_FRAMELESS_METHOD)
     {
         StackWalkAction retVal = pThis->Next();
         result = (retVal != SWA_FAILED);
     }
+
+    ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
 
     // if (pThis->m_crawl.IsFunclet())
     // {
@@ -1196,6 +1196,120 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
 }
 
 extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollideClauseIdx, bool* fUnwoundReversePInvoke)
+{
+    QCALL_CONTRACT;
+
+    // TODO: unhijack?
+    // TODO: detect collided unwind and set uExCollideClauseIdx
+    // Collided unwind can be detected by passing through the catch handler call. We could do that by processing the explicit frames and checking for pinvoke frames
+    // that refer to RhpCallCatchFunclet or maybe just checking that we've passed through System.Runtime.EH.DispatchEx.
+    // The NativeAOT stack frame iterator also has m_pNextExInfo that it uses for collision detection too. It is set when the stack frame iterator is initialized to the one from the Thread
+    // Maybe we could just skip frames until we cross the Thread::m_pExInfo location?
+
+    Thread* pThread = GetThread();
+    StackWalkAction retVal = SWA_FAILED;
+    bool exCollide = false;
+    ExInfo* pExInfo = pThis->m_pNextExInfo;
+
+    BEGIN_QCALL;
+    do
+    {
+        *uExCollideClauseIdx = 0xffffffff;
+        bool doingFuncletUnwind = pThis->m_crawl.IsFunclet();
+
+        TADDR prevSP = pThis->m_crawl.GetRegisterSet()->SP;
+        TADDR prevPC = pThis->m_crawl.GetRegisterSet()->ControlPC;
+        retVal = pThis->Next();
+        char msg[512];
+        sprintf(msg, "Unwinding from SP=%p, PC=%p to SP=%p, PC=%p\n", (void*)prevSP, (void*)prevPC, (void*)pThis->m_crawl.GetRegisterSet()->SP, (void*)pThis->m_crawl.GetRegisterSet()->ControlPC);
+        OutputDebugStringA(msg);
+
+        if (retVal == SWA_FAILED)
+        {
+            break;
+        }
+
+        if (!pThis->m_crawl.IsFrameless())
+        {
+            // Detect collided unwind
+            Frame *pFrame = pThis->m_crawl.GetFrame();
+            // pFrame->ExceptionUnwind(); ??? Add this?
+
+            if (InlinedCallFrame::FrameHasActiveCall(pFrame))
+            {
+                InlinedCallFrame* pInlinedCallFrame = (InlinedCallFrame*)pFrame;
+                if ((TADDR)pInlinedCallFrame->m_Datum & 2)
+                {
+                    // passing through RhpCallCatchFunclet et al
+                    if (doingFuncletUnwind)
+                    {
+                        // Unwind the RhpCallCatchFunclet
+                        prevSP = pThis->m_crawl.GetRegisterSet()->SP;
+                        prevPC = pThis->m_crawl.GetRegisterSet()->ControlPC;
+                        retVal = pThis->Next();
+                        if (retVal == SWA_FAILED)
+                        {
+                            __debugbreak();
+                        }
+                        
+                        sprintf(msg, "RhpCallCatchFunclet Unwinding from SP=%p, PC=%p to SP=%p, PC=%p\n", (void*)prevSP, (void*)prevPC, (void*)pThis->m_crawl.GetRegisterSet()->SP, (void*)pThis->m_crawl.GetRegisterSet()->ControlPC);
+                        OutputDebugStringA(msg);
+                        exCollide = true;
+                        if ((pThis->m_pNextExInfo->_passNumber == 1) ||
+                            (pThis->m_pNextExInfo->_idxCurClause == 0xFFFFFFFF))
+                        {
+                            __debugbreak();
+                            ExInfo* pPrevExInfo = pThis->m_pNextExInfo->_pPrevExInfo;
+                            pThis->Init(pThread, pThis->m_pNextExInfo->_pFrame, pThis->m_pNextExInfo->_pRD, pThis->m_flags);
+                            pThis->m_pNextExInfo = pThis->m_pNextExInfo->_pPrevExInfo;
+                        }
+                        else
+                        {
+#if 0            
+                            ExInfo* pPrevExInfo = pThis->m_pNextExInfo->_pPrevExInfo;
+                            pThis->Clone(&pPrevExInfo->_frameIter);
+                            ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
+                            *uExCollideClauseIdx = pPrevExInfo->_idxCurClause;
+#else                            
+                            *uExCollideClauseIdx = pExInfo->_idxCurClause;// pThis->m_pNextExInfo->_idxCurClause;
+                            prevSP = pThis->m_crawl.GetRegisterSet()->SP;
+                            prevPC = pThis->m_crawl.GetRegisterSet()->ControlPC;
+                            pThis->Clone(&pThis->m_pNextExInfo->_frameIter);
+                            sprintf(msg, "Skipping from SP=%p, PC=%p to SP=%p, PC=%p\n", (void*)prevSP, (void*)prevPC, (void*)pThis->m_crawl.GetRegisterSet()->SP, (void*)pThis->m_crawl.GetRegisterSet()->ControlPC);
+                            OutputDebugStringA(msg);
+
+                            ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
+#endif                                                       
+                            // pThis->m_dwFlags |= ExCollide; ????
+                        }
+                    }
+                    else
+                    {
+                        // TODO: Handle Non-exceptionally invoked funclet case. Hmm, is this the right place?
+                    }
+                }
+            }
+            else if (ThrowMethodFrame::GetMethodFrameVPtr() == pFrame->GetVTablePtr())
+            {
+                // passing through exception throwing site
+            }
+        }
+    }
+    while (retVal != SWA_FAILED && (pThis->GetFrameState() != StackFrameIterator::SFITER_FRAMELESS_METHOD));
+
+    _ASSERTE(retVal == SWA_FAILED || pThis->GetFrameState() == StackFrameIterator::SFITER_FRAMELESS_METHOD);
+    END_QCALL;
+
+    if (retVal != SWA_FAILED)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+
+extern "C" bool QCALLTYPE RhpSfiNextOld(StackFrameIterator* pThis, uint* uExCollideClauseIdx, bool* fUnwoundReversePInvoke)
 {
     QCALL_CONTRACT;
 
@@ -1277,20 +1391,26 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                         if ((pThis->m_pNextExInfo->_passNumber == 1) ||
                             (pThis->m_pNextExInfo->_idxCurClause == 0xFFFFFFFF))
                         {
-                            //__debugbreak();
+                            __debugbreak();
+                            ExInfo* pPrevExInfo = pThis->m_pNextExInfo->_pPrevExInfo;
                             pThis->Init(pThread, pThis->m_pNextExInfo->_pFrame, pThis->m_pNextExInfo->_pRD, pThis->m_flags);
                             pThis->m_pNextExInfo = pThis->m_pNextExInfo->_pPrevExInfo;
                         }
                         else
                         {
                             ExInfo* pPrevExInfo = pThis->m_pNextExInfo->_pPrevExInfo;
+
                             // //T_KNONVOLATILE_CONTEXT_POINTERS *pContextPointers = pThis->m_crawl.pRD->pCurrentContextPointers;
                             // memcpy(pThis, &pPrevExInfo->_frameIter, sizeof(StackFrameIterator));
                             // //pThis->m_crawl.pRD->pCurrentContextPointers = pContextPointers;
                             pThis->Clone(&pPrevExInfo->_frameIter);
                             ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
-                            //*uExCollideClauseIdx = pThis->m_pNextExInfo->_idxCurClause;
                             *uExCollideClauseIdx = pPrevExInfo->_idxCurClause;
+                            /*
+                            *uExCollideClauseIdx = pExInfo->_idxCurClause;// pThis->m_pNextExInfo->_idxCurClause;
+                            pThis->Clone(&pThis->m_pNextExInfo->_frameIter);
+                            ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
+                                                        */
                             // pThis->m_dwFlags |= ExCollide; ????
                         }
 #endif                        
@@ -1322,6 +1442,7 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
 
     return false;
 }
+
 #endif
 
 //---------------------------------------------------------------------------------------
@@ -3479,9 +3600,226 @@ void StackFrameIterator::PostProcessingForNoFrameTransition()
 
 void StackFrameIterator::Clone(StackFrameIterator *pSource)
 {
+#if 0    
     T_KNONVOLATILE_CONTEXT_POINTERS *pCurrentContextPointers = m_crawl.pRD->pCurrentContextPointers;
     memcpy(this, pSource, sizeof(StackFrameIterator));
-    m_crawl.pRD->pCurrentContextPointers = pCurrentContextPointers;
+    //m_crawl.pRD->pCurrentContextPointers = pCurrentContextPointers;
+    m_crawl.pRD->pCurrentContextPointers->Rbp = pCurrentContextPointers->Rbp;
+    m_crawl.pRD->pCurrentContextPointers->Rdi = pCurrentContextPointers->Rdi;
+    m_crawl.pRD->pCurrentContextPointers->Rsi = pCurrentContextPointers->Rsi;
+    m_crawl.pRD->pCurrentContextPointers->Rbx = pCurrentContextPointers->Rbx;
+#ifdef TARGET_AMD64
+    m_crawl.pRD->pCurrentContextPointers->R12 = pCurrentContextPointers->R12;
+    m_crawl.pRD->pCurrentContextPointers->R13 = pCurrentContextPointers->R13;
+    m_crawl.pRD->pCurrentContextPointers->R14 = pCurrentContextPointers->R14;
+    m_crawl.pRD->pCurrentContextPointers->R15 = pCurrentContextPointers->R15;
+#endif
+#elif 0
+    // keep the regdisplay
+    REGDISPLAY *pRD = m_crawl.pRD;
+    memcpy(this, pSource, sizeof(StackFrameIterator));
+    // put back the regdisplay
+    m_crawl.pRD = pRD;
+    // deep copy the source RD by value to the target one
+    memcpy(m_crawl.pRD->pCurrentContext, pSource->m_crawl.pRD->pCurrentContext, sizeof(*m_crawl.pRD->pCurrentContext));
+    memcpy(m_crawl.pRD->pCallerContext, pSource->m_crawl.pRD->pCallerContext, sizeof(*m_crawl.pRD->pCallerContext));
+    memcpy(m_crawl.pRD->pCurrentContextPointers, pSource->m_crawl.pRD->pCurrentContextPointers, sizeof(*m_crawl.pRD->pCurrentContextPointers));
+    memcpy(m_crawl.pRD->pCallerContextPointers, pSource->m_crawl.pRD->pCallerContextPointers, sizeof(*m_crawl.pRD->pCallerContextPointers));
+    m_crawl.pRD->SP = pSource->m_crawl.pRD->SP;
+    m_crawl.pRD->ControlPC = pSource->m_crawl.pRD->ControlPC;
+#else    
+    // keep the regdisplay
+    REGDISPLAY *pRD = m_crawl.pRD;
+    memcpy(this, pSource, sizeof(StackFrameIterator));
+    // put back the regdisplay
+    m_crawl.pRD = pRD;
+    T_KNONVOLATILE_CONTEXT_POINTERS *pSourceContextPointers = pSource->m_crawl.pRD->pCurrentContextPointers;
+    CONTEXT *pSourceContext = pSource->m_crawl.pRD->pCurrentContext;
+
+    T_KNONVOLATILE_CONTEXT_POINTERS *pSourceCallerContextPointers = pSource->m_crawl.pRD->pCallerContextPointers;
+    CONTEXT *pSourceCallerContext = pSource->m_crawl.pRD->pCallerContext;
+
+    if (pSourceContextPointers->Rbp == &pSourceContext->Rbp)
+    {
+        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
+        m_crawl.pRD->pCurrentContext->Rbp = pSourceContext->Rbp;
+        m_crawl.pRD->pCurrentContextPointers->Rbp = &m_crawl.pRD->pCurrentContext->Rbp;
+    }
+    else
+    {
+        m_crawl.pRD->pCurrentContextPointers->Rbp = pSourceContextPointers->Rbp;
+    }
+
+    if (pSourceContextPointers->Rdi == &pSourceContext->Rdi)
+    {
+        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
+        m_crawl.pRD->pCurrentContext->Rdi = pSourceContext->Rdi;
+        m_crawl.pRD->pCurrentContextPointers->Rdi = &m_crawl.pRD->pCurrentContext->Rdi;
+    }
+    else
+    {
+        m_crawl.pRD->pCurrentContextPointers->Rdi = pSourceContextPointers->Rdi;
+    }
+
+    if (pSourceContextPointers->Rsi == &pSourceContext->Rsi)
+    {
+        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
+        m_crawl.pRD->pCurrentContext->Rsi = pSourceContext->Rsi;
+        m_crawl.pRD->pCurrentContextPointers->Rsi = &m_crawl.pRD->pCurrentContext->Rsi;
+    }
+    else
+    {
+        m_crawl.pRD->pCurrentContextPointers->Rsi = pSourceContextPointers->Rsi;
+    }
+
+    if (pSourceContextPointers->Rbx == &pSourceContext->Rbx)
+    {
+        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
+        m_crawl.pRD->pCurrentContext->Rbx = pSourceContext->Rbx;
+        m_crawl.pRD->pCurrentContextPointers->Rbx = &m_crawl.pRD->pCurrentContext->Rbx;
+    }
+    else
+    {
+        m_crawl.pRD->pCurrentContextPointers->Rbx = pSourceContextPointers->Rbx;
+    }
+
+#ifdef TARGET_AMD64
+    if (pSourceContextPointers->R12 == &pSourceContext->R12)
+    {
+        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
+        m_crawl.pRD->pCurrentContext->R12 = pSourceContext->R12;
+        m_crawl.pRD->pCurrentContextPointers->R12 = &m_crawl.pRD->pCurrentContext->R12;
+    }
+    else
+    {
+        m_crawl.pRD->pCurrentContextPointers->R12 = pSourceContextPointers->R12;
+    }
+    if (pSourceContextPointers->R13 == &pSourceContext->R13)
+    {
+        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
+        m_crawl.pRD->pCurrentContext->R13 = pSourceContext->R13;
+        m_crawl.pRD->pCurrentContextPointers->R13 = &m_crawl.pRD->pCurrentContext->R13;
+    }
+    else
+    {
+        m_crawl.pRD->pCurrentContextPointers->R13 = pSourceContextPointers->R13;
+    }
+    if (pSourceContextPointers->R14 == &pSourceContext->R14)
+    {
+        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
+        m_crawl.pRD->pCurrentContext->R14 = pSourceContext->R14;
+        m_crawl.pRD->pCurrentContextPointers->R14 = &m_crawl.pRD->pCurrentContext->R14;
+    }
+    else
+    {
+        m_crawl.pRD->pCurrentContextPointers->R14 = pSourceContextPointers->R14;
+    }
+    if (pSourceContextPointers->R15 == &pSourceContext->R15)
+    {
+        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
+        m_crawl.pRD->pCurrentContext->R15 = pSourceContext->R15;
+        m_crawl.pRD->pCurrentContextPointers->R15 = &m_crawl.pRD->pCurrentContext->R15;
+    }
+    else
+    {
+        m_crawl.pRD->pCurrentContextPointers->R15 = pSourceContextPointers->R15;
+    }
+#endif
+
+    if (pSourceCallerContextPointers->Rbp == &pSourceCallerContext->Rbp)
+    {
+        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
+        m_crawl.pRD->pCallerContext->Rbp = pSourceCallerContext->Rbp;
+        m_crawl.pRD->pCallerContextPointers->Rbp = &m_crawl.pRD->pCallerContext->Rbp;
+    }
+    else
+    {
+        m_crawl.pRD->pCallerContextPointers->Rbp = pSourceCallerContextPointers->Rbp;
+    }
+
+    if (pSourceCallerContextPointers->Rdi == &pSourceCallerContext->Rdi)
+    {
+        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
+        m_crawl.pRD->pCallerContext->Rdi = pSourceCallerContext->Rdi;
+        m_crawl.pRD->pCallerContextPointers->Rdi = &m_crawl.pRD->pCallerContext->Rdi;
+    }
+    else
+    {
+        m_crawl.pRD->pCallerContextPointers->Rdi = pSourceCallerContextPointers->Rdi;
+    }
+
+    if (pSourceCallerContextPointers->Rsi == &pSourceCallerContext->Rsi)
+    {
+        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
+        m_crawl.pRD->pCallerContext->Rsi = pSourceCallerContext->Rsi;
+        m_crawl.pRD->pCallerContextPointers->Rsi = &m_crawl.pRD->pCallerContext->Rsi;
+    }
+    else
+    {
+        m_crawl.pRD->pCallerContextPointers->Rsi = pSourceCallerContextPointers->Rsi;
+    }
+
+    if (pSourceCallerContextPointers->Rbx == &pSourceCallerContext->Rbx)
+    {
+        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
+        m_crawl.pRD->pCallerContext->Rbx = pSourceCallerContext->Rbx;
+        m_crawl.pRD->pCallerContextPointers->Rbx = &m_crawl.pRD->pCallerContext->Rbx;
+    }
+    else
+    {
+        m_crawl.pRD->pCallerContextPointers->Rbx = pSourceCallerContextPointers->Rbx;
+    }
+
+#ifdef TARGET_AMD64
+    if (pSourceCallerContextPointers->R12 == &pSourceCallerContext->R12)
+    {
+        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
+        m_crawl.pRD->pCallerContext->R12 = pSourceCallerContext->R12;
+        m_crawl.pRD->pCallerContextPointers->R12 = &m_crawl.pRD->pCallerContext->R12;
+    }
+    else
+    {
+        m_crawl.pRD->pCallerContextPointers->R12 = pSourceCallerContextPointers->R12;
+    }
+    if (pSourceCallerContextPointers->R13 == &pSourceCallerContext->R13)
+    {
+        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
+        m_crawl.pRD->pCallerContext->R13 = pSourceCallerContext->R13;
+        m_crawl.pRD->pCallerContextPointers->R13 = &m_crawl.pRD->pCallerContext->R13;
+    }
+    else
+    {
+        m_crawl.pRD->pCallerContextPointers->R13 = pSourceCallerContextPointers->R13;
+    }
+    if (pSourceCallerContextPointers->R14 == &pSourceCallerContext->R14)
+    {
+        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
+        m_crawl.pRD->pCallerContext->R14 = pSourceCallerContext->R14;
+        m_crawl.pRD->pCallerContextPointers->R14 = &m_crawl.pRD->pCallerContext->R14;
+    }
+    else
+    {
+        m_crawl.pRD->pCallerContextPointers->R14 = pSourceCallerContextPointers->R14;
+    }
+    if (pSourceCallerContextPointers->R15 == &pSourceCallerContext->R15)
+    {
+        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
+        m_crawl.pRD->pCallerContext->R15 = pSourceCallerContext->R15;
+        m_crawl.pRD->pCallerContextPointers->R15 = &m_crawl.pRD->pCallerContext->R15;
+    }
+    else
+    {
+        m_crawl.pRD->pCallerContextPointers->R15 = pSourceCallerContextPointers->R15;
+    }
+#endif
+
+    m_crawl.pRD->SP = pSource->m_crawl.pRD->SP;
+    m_crawl.pRD->ControlPC = pSource->m_crawl.pRD->ControlPC;
+    m_crawl.pRD->pCurrentContext->Rip = pSourceContext->Rip;
+    m_crawl.pRD->pCurrentContext->Rsp = pSourceContext->Rsp;
+    m_crawl.pRD->pCallerContext->Rip = pSourceCallerContext->Rip;
+    m_crawl.pRD->pCallerContext->Rsp = pSourceCallerContext->Rsp;
+#endif
 }
 
 #if defined(TARGET_AMD64) && !defined(DACCESS_COMPILE)
