@@ -328,6 +328,8 @@ static const Entry s_QCall[] =
     DllImportEntry(RhpSfiNext)
     DllImportEntry(RhpCaptureCallerContext)
     DllImportEntry(RhpCallCatchFunclet)
+    DllImportEntry(RhpCallFilterFunclet)
+    DllImportEntry(RhpCallFinallyFunclet)
     DllImportEntry(RhpEHEnumInitFromStackFrameIterator)
     DllImportEntry(RhpEHEnumNext)
     DllImportEntry(RhpAppendExceptionStackFrame)

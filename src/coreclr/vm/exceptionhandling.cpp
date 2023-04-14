@@ -7182,15 +7182,21 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         END_QCALL;
     }
 
-    extern "C" void * QCALLTYPE  RhpCallCatchFunclet(QCall::ObjectHandleOnStack exceptionObj, BYTE* pHandlerIP, REGDISPLAY* pvRegDisplay, ExInfo* exInfo)
+    void MarkInlinedCallFrameAsFuncletCall(Frame* pFrame)
+    {
+        // TODO: assert that this is an inlined call frame
+        InlinedCallFrame* pInlinedCallFrame = (InlinedCallFrame*)pFrame;
+        pInlinedCallFrame->m_Datum = (PTR_NDirectMethodDesc)((TADDR)pInlinedCallFrame->m_Datum | 2); // Mark the pinvoke frame as invoking RhpCallCatchFunclet (and similar) for collided unwind detection
+    }
+
+    extern "C" void * QCALLTYPE RhpCallCatchFunclet(QCall::ObjectHandleOnStack exceptionObj, BYTE* pHandlerIP, REGDISPLAY* pvRegDisplay, ExInfo* exInfo)
     {
         QCALL_CONTRACT;
 
         BEGIN_QCALL;
-        Thread* pThread = GetThread();
+        Thread* pThread = GET_THREAD();
         Frame* pFrame = pThread->GetFrame();
-        InlinedCallFrame* pInlinedCallFrame = (InlinedCallFrame*)pFrame;
-        pInlinedCallFrame->m_Datum = (PTR_NDirectMethodDesc)((TADDR)pInlinedCallFrame->m_Datum | 2); // Mark the pinvoke frame as invoking RhpCallCatchFunclet (and similar) for collided unwind detection
+        MarkInlinedCallFrameAsFuncletCall(pFrame);
         GCX_COOP_NO_DTOR();
         HandlerFn* pfnHandler = (HandlerFn*)pHandlerIP;
         DWORD_PTR dwResumePC = pfnHandler(pvRegDisplay->SP, *exceptionObj.m_ppObject);
@@ -7203,8 +7209,6 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
             pFrame = pThread->GetFrame();
         }
 
-        //pThread->GetFrame()->Pop(); // Pop the PInvoke frame
-        //pThread->GetFrame()->Pop(); // Pop the ThrowMethodFrame frame
         GCFrame* pGCFrame = pThread->GetGCFrame();
         while (pGCFrame < (void*)pvRegDisplay->pCurrentContext->Rsp)
         {
@@ -7213,6 +7217,7 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         }
 
         // Pop ExInfos
+        // TODO: use the ResetNextExInfoForSP
         ExInfo* pExInfo = pThread->m_pExInfo;
         while (pExInfo && pExInfo < (void*)pvRegDisplay->pCurrentContext->Rsp)
         {
@@ -7225,6 +7230,33 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         END_QCALL;
         return NULL;
     }
+
+    extern "C" void QCALLTYPE RhpCallFinallyFunclet(BYTE* pHandlerIP, REGDISPLAY* pvRegDisplay)
+    {
+        QCALL_CONTRACT;
+
+        BEGIN_QCALL;
+        GCX_COOP();
+        HandlerFn* pfnHandler = (HandlerFn*)pHandlerIP;
+        DWORD_PTR dwResumePC = pfnHandler(pvRegDisplay->SP, NULL);
+        END_QCALL;
+    }
+
+    extern "C" BOOL QCALLTYPE RhpCallFilterFunclet(QCall::ObjectHandleOnStack exceptionObj, BYTE* pFilterIP, REGDISPLAY* pvRegDisplay)
+    {
+        QCALL_CONTRACT;
+
+        DWORD_PTR dwResult = 0;
+
+        BEGIN_QCALL;
+        GCX_COOP();
+        HandlerFn* pfnHandler = (HandlerFn*)pFilterIP;
+        dwResult = pfnHandler(pvRegDisplay->SP, *exceptionObj.m_ppObject);
+        END_QCALL;
+
+        return dwResult == EXCEPTION_EXECUTE_HANDLER;
+    }
+
 
     struct ExtendedEHClauseEnumerator : EH_CLAUSE_ENUMERATOR
     {
@@ -7243,20 +7275,6 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         const METHODTOKEN& MethToken = pFrameIter->m_crawl.GetMethodToken();
         *pMethodStartAddress = (BYTE*)pJitMan->JitTokenToStartAddress(MethToken);
         pExtendedEHEnum->EHCount = pJitMan->InitializeEHEnumeration(MethToken, pEHEnum);
-
-        // if (pFrameIter->m_crawl.IsFunclet())
-        // {
-        //     for (index = 0; index < pExtendedEHEnum->EHCount; index++)
-        //     {
-        //         EE_ILEXCEPTION_CLAUSE EHClause;
-        //         PTR_EXCEPTION_CLAUSE_TOKEN pEHClauseToken = pJitMan->GetNextEHClause(pEHEnum, &EHClause);
-        //         if (EHClause.Flags & COR_ILEXCEPTION_CLAUSE_DUPLICATED)
-        //         {
-        //             pEHEnum->iCurrentPos--;
-        //             break;
-        //         }
-        //     }
-        // }
 
         END_QCALL;
 
@@ -7283,17 +7301,21 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
             pEHClause->_tryEndOffset = EHClause.TryEndPC;
             pEHClause->_filterAddress =  (BYTE*)pJitMan->GetCodeAddressForRelOffset(MethToken, EHClause.FilterOffset);
             pEHClause->_handlerAddress = (BYTE*)pJitMan->GetCodeAddressForRelOffset(MethToken, EHClause.HandlerStartPC);
-            pEHClause->_pTargetType = pJitMan->ResolveEHClause(&EHClause, &pFrameIter->m_crawl);
 
             result = TRUE;
 //            EHClause.Flags = (CorExceptionFlag)(EHClause.Flags & ~(ULONG)COR_ILEXCEPTION_CLAUSE_DUPLICATED);
             if (EHClause.Flags == COR_ILEXCEPTION_CLAUSE_NONE)
             {
                 pEHClause->_clauseKind = RH_EH_CLAUSE_TYPED;
+                pEHClause->_pTargetType = pJitMan->ResolveEHClause(&EHClause, &pFrameIter->m_crawl);
             }
             else if (EHClause.Flags & COR_ILEXCEPTION_CLAUSE_FILTER)
             {
                 pEHClause->_clauseKind = RH_EH_CLAUSE_FILTER;
+            }
+            else if (EHClause.Flags & COR_ILEXCEPTION_CLAUSE_FINALLY)
+            {
+                pEHClause->_clauseKind = RH_EH_CLAUSE_FAULT;
             }
             else if (EHClause.Flags & COR_ILEXCEPTION_CLAUSE_FAULT)
             {

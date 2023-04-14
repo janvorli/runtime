@@ -4107,24 +4107,11 @@ extern "C" HCIMPL2(void, RhThrowEx, Object* obj, TransitionBlock* pTransitionBlo
         }
     }
 
-//    RaiseTheExceptionInternalOnly(oref, FALSE);
-    // TODO: call the managed exception propagation routine
     CONTEXT ctx;
-    // ZeroMemory(&ctx, sizeof(ctx));
     REGDISPLAY rd;
-//    ZeroMemory(&rd, sizeof(rd));
-//    GetThread()->InitRegDisplay(&rd, &ctx, true);
-    //rd.pContext = &rd.ctxOne;
-    // rd.pCurrentContext = &rd.ctxOne;
-    // rd.pCurrentContextPointers = &rd.ctxPtrsOne;
-    // rd.pCallerContextPointers = &rd.ctxPtrsTwo;
-
-    // __helperframe.InsureInit(false, NULL);
-    // (&__helperframe)->UpdateRegDisplay(&rd);
-
     Thread *pThread = GetThread();
 
-    ExInfo exInfo;
+    ExInfo exInfo = {};
     exInfo._pPrevExInfo = pThread->m_pExInfo;
     exInfo._pExContext = &ctx;
     exInfo._passNumber = 1;
@@ -4152,9 +4139,52 @@ extern "C" HCIMPL2(void, RhThrowEx, Object* obj, TransitionBlock* pTransitionBlo
 }
 HCIMPLEND
 
+extern "C" void IL_Rethrow(Object* obj);
+
+extern "C" HCIMPL1(void, RhRethrow, TransitionBlock* pTransitionBlock)
+{
+    FCALL_CONTRACT;
+
+    FC_GC_POLL_NOT_NEEDED();    // throws always open up for GC
+
+    INCONTRACT(FCallGCCanTrigger::Enter());
+
+    FrameWithCookie<ThrowMethodFrame> frame(pTransitionBlock);
+    frame.Push();
+
+    CONTEXT ctx;
+    REGDISPLAY rd;
+    Thread *pThread = GetThread();
+
+    ExInfo *pActiveExInfo = pThread->m_pExInfo;
+
+    ExInfo exInfo = {};
+    exInfo._pPrevExInfo = pActiveExInfo;
+    exInfo._pExContext = &ctx;
+    exInfo._passNumber = 1;
+    exInfo._kind = ExKind::None;
+    exInfo._idxCurClause = 0xffffffff;
+    exInfo._pRD = &rd;
+    exInfo._stackTraceInfo.Init();
+    exInfo._stackTraceInfo.AllocateStackTrace();
+    exInfo._pFrame = GetThread()->GetFrame();
+    pThread->m_pExInfo = &exInfo;
+
+    PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_RETHROW);
+    DECLARE_ARGHOLDER_ARRAY(args, 2);
+    args[ARGNUM_0] = PTR_TO_ARGHOLDER(pActiveExInfo);
+    args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
+
+    //Ex.RhRethrow(ref ExInfo activeExInfo, ref ExInfo exInfo)
+    CALL_MANAGED_METHOD_NORET(args)
+
+    INCONTRACT(FCallGCCanTrigger::Leave(__FUNCTION__, __FILE__, __LINE__));
+}
+HCIMPLEND
+
 /*************************************************************/
 
-HCIMPL0(void, IL_Rethrow)
+HCIMPL0(void, IL_RethrowOld)
 {
     FCALL_CONTRACT;
 

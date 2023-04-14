@@ -1224,6 +1224,12 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
         sprintf(msg, "Unwinding from SP=%p, PC=%p to SP=%p, PC=%p\n", (void*)prevSP, (void*)prevPC, (void*)pThis->m_crawl.GetRegisterSet()->SP, (void*)pThis->m_crawl.GetRegisterSet()->ControlPC);
         OutputDebugStringA(msg);
 
+        if (pThis->GetFrameState() == StackFrameIterator::SFITER_DONE)
+        {
+            // TODO: make this cleaner
+            retVal = SWA_FAILED;
+        }
+
         if (retVal == SWA_FAILED)
         {
             break;
@@ -1272,6 +1278,7 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                             *uExCollideClauseIdx = pPrevExInfo->_idxCurClause;
 #else                            
                             *uExCollideClauseIdx = pExInfo->_idxCurClause;// pThis->m_pNextExInfo->_idxCurClause;
+                            pExInfo->_kind = (ExKind)((uint8_t)pExInfo->_kind | (uint8_t)ExKind::SupersededFlag);
                             prevSP = pThis->m_crawl.GetRegisterSet()->SP;
                             prevPC = pThis->m_crawl.GetRegisterSet()->ControlPC;
                             pThis->Clone(&pThis->m_pNextExInfo->_frameIter);

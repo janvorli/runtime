@@ -797,6 +797,31 @@ namespace System.Runtime
             FallbackFailFast(RhFailFastReason.InternalError, null);
         }
 
+/*
+#pragma warning disable CS8500
+        [UnmanagedCallersOnly]
+        public static unsafe void RhThrowEx(object* exceptionObjPtr, ExInfo *exInfo)
+        {
+            // trigger a GC (only if gcstress) to ensure we can stackwalk at this point
+//            GCStress.TriggerGC();
+
+//            InternalCalls.RhpValidateExInfoStack();
+
+            object exceptionObj = null; //GetThis(exceptionObjPtr);
+
+            // Transform attempted throws of null to a throw of NullReferenceException.
+            if (exceptionObj == null)
+            {
+                IntPtr faultingCodeAddress = exInfo->_pExContext->IP;
+                exceptionObj = GetClasslibException(ExceptionIDs.NullReference, faultingCodeAddress);
+            }
+
+            exInfo->Init(exceptionObj);
+            DispatchEx(ref exInfo->_frameIter, ref *exInfo, MaxTryRegionIdx);
+            FallbackFailFast(RhFailFastReason.InternalError, null);
+        }
+#pragma warning restore CS8500
+*/
         //[RuntimeExport("RhRethrow")]
         public static void RhRethrow(ref ExInfo activeExInfo, ref ExInfo exInfo)
         {
@@ -810,7 +835,7 @@ namespace System.Runtime
             object rethrownException = activeExInfo.ThrownException;
 
             exInfo.Init(rethrownException, ref activeExInfo);
-            DispatchEx(ref exInfo._frameIter, ref exInfo, activeExInfo._idxCurClause);
+            DispatchEx(ref exInfo._frameIter, ref exInfo, MaxTryRegionIdx);//activeExInfo._idxCurClause);
             FallbackFailFast(RhFailFastReason.InternalError, null);
         }
 
@@ -982,7 +1007,7 @@ namespace System.Runtime
                 return false;
 
             byte* pbControlPC = frameIter.ControlPC;
-            System.Diagnostics.Debug.WriteLine($"FindFirstPassHandler controlPC={new IntPtr(pbControlPC):X}");
+            System.Diagnostics.Debug.WriteLine($"FindFirstPassHandler controlPC={new IntPtr(pbControlPC):X}, idxStart={idxStart}");
 
             uint codeOffset = (uint)(pbControlPC - pbMethodStartAddress);
 
@@ -1002,7 +1027,7 @@ namespace System.Runtime
                     if (curIdx <= idxStart)
                     {
                         lastTryStart = ehClause._tryStartOffset; lastTryEnd = ehClause._tryEndOffset;
-                        System.Diagnostics.Debug.WriteLine($"Dismissing clause, curIdx <= idxStart");
+                        System.Diagnostics.Debug.WriteLine($"Dismissing clause, curIdx <= idxStart)");
                         continue;
                     }
 
