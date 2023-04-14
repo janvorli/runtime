@@ -3646,10 +3646,10 @@ void StackFrameIterator::Clone(StackFrameIterator *pSource)
     T_KNONVOLATILE_CONTEXT_POINTERS *pSourceCallerContextPointers = pSource->m_crawl.pRD->pCallerContextPointers;
     CONTEXT *pSourceCallerContext = pSource->m_crawl.pRD->pCallerContext;
 
+    m_crawl.pRD->pCurrentContext->Rbp = pSourceContext->Rbp;
     if (pSourceContextPointers->Rbp == &pSourceContext->Rbp)
     {
         // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCurrentContext->Rbp = pSourceContext->Rbp;
         m_crawl.pRD->pCurrentContextPointers->Rbp = &m_crawl.pRD->pCurrentContext->Rbp;
     }
     else
@@ -3657,10 +3657,10 @@ void StackFrameIterator::Clone(StackFrameIterator *pSource)
         m_crawl.pRD->pCurrentContextPointers->Rbp = pSourceContextPointers->Rbp;
     }
 
+    m_crawl.pRD->pCurrentContext->Rdi = pSourceContext->Rdi;
     if (pSourceContextPointers->Rdi == &pSourceContext->Rdi)
     {
         // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCurrentContext->Rdi = pSourceContext->Rdi;
         m_crawl.pRD->pCurrentContextPointers->Rdi = &m_crawl.pRD->pCurrentContext->Rdi;
     }
     else
@@ -3668,10 +3668,10 @@ void StackFrameIterator::Clone(StackFrameIterator *pSource)
         m_crawl.pRD->pCurrentContextPointers->Rdi = pSourceContextPointers->Rdi;
     }
 
+    m_crawl.pRD->pCurrentContext->Rsi = pSourceContext->Rsi;
     if (pSourceContextPointers->Rsi == &pSourceContext->Rsi)
     {
         // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCurrentContext->Rsi = pSourceContext->Rsi;
         m_crawl.pRD->pCurrentContextPointers->Rsi = &m_crawl.pRD->pCurrentContext->Rsi;
     }
     else
@@ -3679,10 +3679,10 @@ void StackFrameIterator::Clone(StackFrameIterator *pSource)
         m_crawl.pRD->pCurrentContextPointers->Rsi = pSourceContextPointers->Rsi;
     }
 
+    m_crawl.pRD->pCurrentContext->Rbx = pSourceContext->Rbx;
     if (pSourceContextPointers->Rbx == &pSourceContext->Rbx)
     {
         // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCurrentContext->Rbx = pSourceContext->Rbx;
         m_crawl.pRD->pCurrentContextPointers->Rbx = &m_crawl.pRD->pCurrentContext->Rbx;
     }
     else
@@ -3691,40 +3691,40 @@ void StackFrameIterator::Clone(StackFrameIterator *pSource)
     }
 
 #ifdef TARGET_AMD64
+    m_crawl.pRD->pCurrentContext->R12 = pSourceContext->R12;
     if (pSourceContextPointers->R12 == &pSourceContext->R12)
     {
         // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCurrentContext->R12 = pSourceContext->R12;
         m_crawl.pRD->pCurrentContextPointers->R12 = &m_crawl.pRD->pCurrentContext->R12;
     }
     else
     {
         m_crawl.pRD->pCurrentContextPointers->R12 = pSourceContextPointers->R12;
     }
+    m_crawl.pRD->pCurrentContext->R13 = pSourceContext->R13;
     if (pSourceContextPointers->R13 == &pSourceContext->R13)
     {
         // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCurrentContext->R13 = pSourceContext->R13;
         m_crawl.pRD->pCurrentContextPointers->R13 = &m_crawl.pRD->pCurrentContext->R13;
     }
     else
     {
         m_crawl.pRD->pCurrentContextPointers->R13 = pSourceContextPointers->R13;
     }
+    m_crawl.pRD->pCurrentContext->R14 = pSourceContext->R14;
     if (pSourceContextPointers->R14 == &pSourceContext->R14)
     {
         // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCurrentContext->R14 = pSourceContext->R14;
         m_crawl.pRD->pCurrentContextPointers->R14 = &m_crawl.pRD->pCurrentContext->R14;
     }
     else
     {
         m_crawl.pRD->pCurrentContextPointers->R14 = pSourceContextPointers->R14;
     }
+    m_crawl.pRD->pCurrentContext->R15 = pSourceContext->R15;
     if (pSourceContextPointers->R15 == &pSourceContext->R15)
     {
         // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCurrentContext->R15 = pSourceContext->R15;
         m_crawl.pRD->pCurrentContextPointers->R15 = &m_crawl.pRD->pCurrentContext->R15;
     }
     else
@@ -3733,10 +3733,10 @@ void StackFrameIterator::Clone(StackFrameIterator *pSource)
     }
 #endif
 
+    m_crawl.pRD->pCallerContext->Rbp = pSourceCallerContext->Rbp;
     if (pSourceCallerContextPointers->Rbp == &pSourceCallerContext->Rbp)
     {
         // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCallerContext->Rbp = pSourceCallerContext->Rbp;
         m_crawl.pRD->pCallerContextPointers->Rbp = &m_crawl.pRD->pCallerContext->Rbp;
     }
     else
@@ -3744,10 +3744,10 @@ void StackFrameIterator::Clone(StackFrameIterator *pSource)
         m_crawl.pRD->pCallerContextPointers->Rbp = pSourceCallerContextPointers->Rbp;
     }
 
+    m_crawl.pRD->pCallerContext->Rdi = pSourceCallerContext->Rdi;
     if (pSourceCallerContextPointers->Rdi == &pSourceCallerContext->Rdi)
     {
         // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCallerContext->Rdi = pSourceCallerContext->Rdi;
         m_crawl.pRD->pCallerContextPointers->Rdi = &m_crawl.pRD->pCallerContext->Rdi;
     }
     else
@@ -3755,10 +3755,10 @@ void StackFrameIterator::Clone(StackFrameIterator *pSource)
         m_crawl.pRD->pCallerContextPointers->Rdi = pSourceCallerContextPointers->Rdi;
     }
 
+    m_crawl.pRD->pCallerContext->Rsi = pSourceCallerContext->Rsi;
     if (pSourceCallerContextPointers->Rsi == &pSourceCallerContext->Rsi)
     {
         // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCallerContext->Rsi = pSourceCallerContext->Rsi;
         m_crawl.pRD->pCallerContextPointers->Rsi = &m_crawl.pRD->pCallerContext->Rsi;
     }
     else
@@ -3766,10 +3766,10 @@ void StackFrameIterator::Clone(StackFrameIterator *pSource)
         m_crawl.pRD->pCallerContextPointers->Rsi = pSourceCallerContextPointers->Rsi;
     }
 
+    m_crawl.pRD->pCallerContext->Rbx = pSourceCallerContext->Rbx;
     if (pSourceCallerContextPointers->Rbx == &pSourceCallerContext->Rbx)
     {
         // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCallerContext->Rbx = pSourceCallerContext->Rbx;
         m_crawl.pRD->pCallerContextPointers->Rbx = &m_crawl.pRD->pCallerContext->Rbx;
     }
     else
@@ -3778,40 +3778,40 @@ void StackFrameIterator::Clone(StackFrameIterator *pSource)
     }
 
 #ifdef TARGET_AMD64
+    m_crawl.pRD->pCallerContext->R12 = pSourceCallerContext->R12;
     if (pSourceCallerContextPointers->R12 == &pSourceCallerContext->R12)
     {
         // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCallerContext->R12 = pSourceCallerContext->R12;
         m_crawl.pRD->pCallerContextPointers->R12 = &m_crawl.pRD->pCallerContext->R12;
     }
     else
     {
         m_crawl.pRD->pCallerContextPointers->R12 = pSourceCallerContextPointers->R12;
     }
+    m_crawl.pRD->pCallerContext->R13 = pSourceCallerContext->R13;
     if (pSourceCallerContextPointers->R13 == &pSourceCallerContext->R13)
     {
         // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCallerContext->R13 = pSourceCallerContext->R13;
         m_crawl.pRD->pCallerContextPointers->R13 = &m_crawl.pRD->pCallerContext->R13;
     }
     else
     {
         m_crawl.pRD->pCallerContextPointers->R13 = pSourceCallerContextPointers->R13;
     }
+    m_crawl.pRD->pCallerContext->R14 = pSourceCallerContext->R14;
     if (pSourceCallerContextPointers->R14 == &pSourceCallerContext->R14)
     {
         // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCallerContext->R14 = pSourceCallerContext->R14;
         m_crawl.pRD->pCallerContextPointers->R14 = &m_crawl.pRD->pCallerContext->R14;
     }
     else
     {
         m_crawl.pRD->pCallerContextPointers->R14 = pSourceCallerContextPointers->R14;
     }
+    m_crawl.pRD->pCallerContext->R15 = pSourceCallerContext->R15;
     if (pSourceCallerContextPointers->R15 == &pSourceCallerContext->R15)
     {
         // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCallerContext->R15 = pSourceCallerContext->R15;
         m_crawl.pRD->pCallerContextPointers->R15 = &m_crawl.pRD->pCallerContext->R15;
     }
     else

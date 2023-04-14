@@ -55,6 +55,8 @@
 #include "gccover.h"
 #endif // HAVE_GCCOVER
 
+#include "exceptionhandlingqcalls.h"
+
 #ifndef TARGET_UNIX
 // Windows uses 64kB as the null-reference area
 #define NULL_AREA_SIZE   (64 * 1024)
@@ -6563,23 +6565,56 @@ void HandleManagedFault(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext)
 #endif // FEATURE_EH_FUNCLETS
     frame->InitAndLink(pContext);
 
-    HandleManagedFaultFilterParam param;
-    param.fFilterExecuted = FALSE;
-    param.pOriginalExceptionRecord = pExceptionRecord;
+    CONTEXT ctx;
+    REGDISPLAY rd;
+    Thread *pThread = GetThread();
 
-    PAL_TRY(HandleManagedFaultFilterParam *, pParam, &param)
+    ExInfo exInfo = {};
+    exInfo._pPrevExInfo = pThread->m_pExInfo;
+    exInfo._pExContext = &ctx;
+    exInfo._passNumber = 1;
+    exInfo._kind = ExKind::HardwareFault;
+    exInfo._idxCurClause = 0xffffffff;
+    exInfo._pRD = &rd;
+    exInfo._stackTraceInfo.Init();
+    exInfo._stackTraceInfo.AllocateStackTrace();
+    exInfo._pFrame = GetThread()->GetFrame();
+    pThread->m_pExInfo = &exInfo;
+
+    DWORD exceptionCode = pExceptionRecord->ExceptionCode;
+    if (exceptionCode == STATUS_ACCESS_VIOLATION)
     {
-        GetThread()->SetThreadStateNC(Thread::TSNC_DebuggerIsManagedException);
-
-        EXCEPTION_RECORD *pRecord = pParam->pOriginalExceptionRecord;
-
-        RaiseException(pRecord->ExceptionCode, 0,
-            pRecord->NumberParameters, pRecord->ExceptionInformation);
+        if (pExceptionRecord->ExceptionInformation[1] < NULL_AREA_SIZE)
+        {
+            exceptionCode = 0; //STATUS_REDHAWK_NULL_REFERENCE;
+        }
     }
-    PAL_EXCEPT_FILTER(HandleManagedFaultFilter)
-    {
-    }
-    PAL_ENDTRY
+
+    PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROWHW_EX);
+    DECLARE_ARGHOLDER_ARRAY(args, 2);
+    args[ARGNUM_0] = DWORD_TO_ARGHOLDER(exceptionCode);
+    args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
+
+    //Ex.RhThrowHwEx(exceptionCode, &exInfo)
+    CALL_MANAGED_METHOD_NORET(args)
+
+    // HandleManagedFaultFilterParam param;
+    // param.fFilterExecuted = FALSE;
+    // param.pOriginalExceptionRecord = pExceptionRecord;
+
+    // PAL_TRY(HandleManagedFaultFilterParam *, pParam, &param)
+    // {
+    //     GetThread()->SetThreadStateNC(Thread::TSNC_DebuggerIsManagedException);
+
+    //     EXCEPTION_RECORD *pRecord = pParam->pOriginalExceptionRecord;
+
+    //     RaiseException(pRecord->ExceptionCode, 0,
+    //         pRecord->NumberParameters, pRecord->ExceptionInformation);
+    // }
+    // PAL_EXCEPT_FILTER(HandleManagedFaultFilter)
+    // {
+    // }
+    // PAL_ENDTRY
 }
 
 #endif // USE_FEF && !TARGET_UNIX
