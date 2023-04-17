@@ -174,9 +174,6 @@ class ThreadStaticHandleTable;
 struct ThreadLocalModule;
 class Module;
 
-struct ExInfo;
-typedef DPTR(ExInfo) PTR_ExInfo;
-
 struct ThreadLocalBlock
 {
     friend class ClrDataAccess;
@@ -2540,8 +2537,6 @@ public:
 
     PTR_CONTEXT m_OSContext;    // ptr to a Context structure used to record the OS specific ThreadContext for a thread
                                 // this is used for thread stop/abort and is initialized on demand
-
-    PTR_ExInfo m_pExInfo;
 
     PT_CONTEXT GetAbortContext ();
 

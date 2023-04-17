@@ -1543,8 +1543,6 @@ Thread::Thread()
     m_OSContext = new CONTEXT();
     NewHolder<CONTEXT> contextHolder(m_OSContext);
 
-    m_pExInfo = NULL;
-
     m_pSavedRedirectContext = NULL;
     m_pOSContextBuffer = NULL;
 

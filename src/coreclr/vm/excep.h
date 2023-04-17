@@ -766,6 +766,9 @@ inline void CopyOSContext(T_CONTEXT* pDest, T_CONTEXT* pSrc)
 #endif // TARGET_AMD64
 
     memcpyNoGCRefs(pDest, pSrc, sizeof(T_CONTEXT) - cbReadOnlyPost);
+#ifdef TARGET_AMD64
+    pDest->ContextFlags = (pDest->ContextFlags & ~(CONTEXT_XSTATE | CONTEXT_FLOATING_POINT)) | CONTEXT_AMD64;
+#endif // TARGET_AMD64
 }
 
 void SaveCurrentExceptionInfo(PEXCEPTION_RECORD pRecord, PT_CONTEXT pContext);

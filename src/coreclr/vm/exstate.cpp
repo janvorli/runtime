@@ -34,6 +34,7 @@ ThreadExceptionState::ThreadExceptionState()
 {
 #ifdef FEATURE_EH_FUNCLETS
     m_pCurrentTracker = NULL;
+    m_pExInfo = NULL;
 #endif // FEATURE_EH_FUNCLETS
 
     m_flag = TEF_None;

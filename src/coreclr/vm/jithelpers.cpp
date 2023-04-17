@@ -4112,7 +4112,7 @@ extern "C" HCIMPL2(void, RhThrowEx, Object* obj, TransitionBlock* pTransitionBlo
     Thread *pThread = GetThread();
 
     ExInfo exInfo = {};
-    exInfo._pPrevExInfo = pThread->m_pExInfo;
+    exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
     exInfo._pExContext = &ctx;
     exInfo._passNumber = 1;
     exInfo._kind = ExKind::Throw;
@@ -4121,7 +4121,7 @@ extern "C" HCIMPL2(void, RhThrowEx, Object* obj, TransitionBlock* pTransitionBlo
     exInfo._stackTraceInfo.Init();
     exInfo._stackTraceInfo.AllocateStackTrace();
     exInfo._pFrame = GetThread()->GetFrame();
-    pThread->m_pExInfo = &exInfo;
+    pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
 
     GCPROTECT_BEGIN(oref);
     PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_EX);
@@ -4156,7 +4156,7 @@ extern "C" HCIMPL1(void, RhRethrow, TransitionBlock* pTransitionBlock)
     REGDISPLAY rd;
     Thread *pThread = GetThread();
 
-    ExInfo *pActiveExInfo = pThread->m_pExInfo;
+    ExInfo *pActiveExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
 
     ExInfo exInfo = {};
     exInfo._pPrevExInfo = pActiveExInfo;
@@ -4168,7 +4168,7 @@ extern "C" HCIMPL1(void, RhRethrow, TransitionBlock* pTransitionBlock)
     exInfo._stackTraceInfo.Init();
     exInfo._stackTraceInfo.AllocateStackTrace();
     exInfo._pFrame = GetThread()->GetFrame();
-    pThread->m_pExInfo = &exInfo;
+    pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
 
     PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_RETHROW);
     DECLARE_ARGHOLDER_ARRAY(args, 2);

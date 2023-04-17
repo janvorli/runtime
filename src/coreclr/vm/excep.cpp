@@ -6570,8 +6570,8 @@ void HandleManagedFault(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext)
     Thread *pThread = GetThread();
 
     ExInfo exInfo = {};
-    exInfo._pPrevExInfo = pThread->m_pExInfo;
-    exInfo._pExContext = &ctx;
+    exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+    exInfo._pExContext = &ctx; // TODO: or the pContext?
     exInfo._passNumber = 1;
     exInfo._kind = ExKind::HardwareFault;
     exInfo._idxCurClause = 0xffffffff;
@@ -6579,7 +6579,7 @@ void HandleManagedFault(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext)
     exInfo._stackTraceInfo.Init();
     exInfo._stackTraceInfo.AllocateStackTrace();
     exInfo._pFrame = GetThread()->GetFrame();
-    pThread->m_pExInfo = &exInfo;
+    pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
 
     DWORD exceptionCode = pExceptionRecord->ExceptionCode;
     if (exceptionCode == STATUS_ACCESS_VIOLATION)

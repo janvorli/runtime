@@ -1169,7 +1169,7 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
     //pThread->InitRegDisplay(pRD, pStackwalkCtx, false);
     memset(pThis, 0, sizeof(StackFrameIterator));
     result = pThis->Init(pThread, pFrame, pRD, THREAD_EXECUTING_MANAGED_CODE/* | FUNCTIONSONLY*/) != FALSE;
-    pThis->m_pNextExInfo = pThread->m_pExInfo; // TODO: integrate this into the init
+    pThis->m_pNextExInfo = pThread->GetExceptionState()->GetCurrentExInfo(); // TODO: integrate this into the init
 
     if (pThis->GetFrameState() != StackFrameIterator::SFITER_FRAMELESS_METHOD)
     {
@@ -1282,8 +1282,10 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                                 retVal = pThis->Next();
                             }
                             while ((retVal == SWA_CONTINUE) && pThis->m_crawl.GetRegisterSet()->SP != pPrevExInfo->_pRD->SP);
-
                             _ASSERTE(retVal != SWA_FAILED);
+
+                            _ASSERTE(pThis->m_crawl.GetRegisterSet()->ControlPC == pPrevExInfo->_pRD->ControlPC);
+
                             ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
 #else
                             // This will likely have better performance for cases when there are many frames that are skipped
@@ -1382,7 +1384,7 @@ extern "C" bool QCALLTYPE RhpSfiNextOld(StackFrameIterator* pThis, uint* uExColl
 
 #if 0
                         //Hacky quick solution - just keep walking the stack until we cross the other ExInfo - it seems to work
-                        ExInfo* pPrevExInfo = pThread->m_pExInfo->_pPrevExInfo;
+                        ExInfo* pPrevExInfo = pThread->GetExceptionState()->m_pExInfo->_pPrevExInfo;
                         while (retVal != SWA_FAILED && pThis->m_crawl.GetRegisterSet()->SP < (TADDR)pPrevExInfo->_frameIter.m_crawl.GetRegisterSet()->SP)
                         {
                             retVal = pThis->Next();

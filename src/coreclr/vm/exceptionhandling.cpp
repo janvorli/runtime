@@ -7218,13 +7218,13 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
 
         // Pop ExInfos
         // TODO: use the ResetNextExInfoForSP
-        ExInfo* pExInfo = pThread->m_pExInfo;
+        ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
         while (pExInfo && pExInfo < (void*)pvRegDisplay->pCurrentContext->Rsp)
         {
             pExInfo = pExInfo->_pPrevExInfo;
         }
 
-        pThread->m_pExInfo = pExInfo;
+        pThread->GetExceptionState()->SetCurrentExInfo(pExInfo);
 
         ClrRestoreNonvolatileContext(pvRegDisplay->pCurrentContext);
         END_QCALL;
