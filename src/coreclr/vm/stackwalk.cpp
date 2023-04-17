@@ -1271,12 +1271,22 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                         }
                         else
                         {
-#if 0            
-                            ExInfo* pPrevExInfo = pThis->m_pNextExInfo->_pPrevExInfo;
-                            pThis->Clone(&pPrevExInfo->_frameIter);
+#if 1
+                            *uExCollideClauseIdx = pExInfo->_idxCurClause;// pThis->m_pNextExInfo->_idxCurClause;
+                            pExInfo->_kind = (ExKind)((uint8_t)pExInfo->_kind | (uint8_t)ExKind::SupersededFlag);
+
+                            // Unwind until we hit the frame of the prevExInfo
+                            ExInfo* pPrevExInfo = pThis->m_pNextExInfo;
+                            do
+                            {
+                                retVal = pThis->Next();
+                            }
+                            while ((retVal == SWA_CONTINUE) && pThis->m_crawl.GetRegisterSet()->SP != pPrevExInfo->_pRD->SP);
+
+                            _ASSERTE(retVal != SWA_FAILED);
                             ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
-                            *uExCollideClauseIdx = pPrevExInfo->_idxCurClause;
-#else                            
+#else
+                            // This will likely have better performance for cases when there are many frames that are skipped
                             *uExCollideClauseIdx = pExInfo->_idxCurClause;// pThis->m_pNextExInfo->_idxCurClause;
                             pExInfo->_kind = (ExKind)((uint8_t)pExInfo->_kind | (uint8_t)ExKind::SupersededFlag);
                             prevSP = pThis->m_crawl.GetRegisterSet()->SP;
@@ -3607,226 +3617,50 @@ void StackFrameIterator::PostProcessingForNoFrameTransition()
 
 void StackFrameIterator::Clone(StackFrameIterator *pSource)
 {
-#if 0    
-    T_KNONVOLATILE_CONTEXT_POINTERS *pCurrentContextPointers = m_crawl.pRD->pCurrentContextPointers;
-    memcpy(this, pSource, sizeof(StackFrameIterator));
-    //m_crawl.pRD->pCurrentContextPointers = pCurrentContextPointers;
-    m_crawl.pRD->pCurrentContextPointers->Rbp = pCurrentContextPointers->Rbp;
-    m_crawl.pRD->pCurrentContextPointers->Rdi = pCurrentContextPointers->Rdi;
-    m_crawl.pRD->pCurrentContextPointers->Rsi = pCurrentContextPointers->Rsi;
-    m_crawl.pRD->pCurrentContextPointers->Rbx = pCurrentContextPointers->Rbx;
-#ifdef TARGET_AMD64
-    m_crawl.pRD->pCurrentContextPointers->R12 = pCurrentContextPointers->R12;
-    m_crawl.pRD->pCurrentContextPointers->R13 = pCurrentContextPointers->R13;
-    m_crawl.pRD->pCurrentContextPointers->R14 = pCurrentContextPointers->R14;
-    m_crawl.pRD->pCurrentContextPointers->R15 = pCurrentContextPointers->R15;
-#endif
-#elif 0
     // keep the regdisplay
     REGDISPLAY *pRD = m_crawl.pRD;
     memcpy(this, pSource, sizeof(StackFrameIterator));
     // put back the regdisplay
     m_crawl.pRD = pRD;
-    // deep copy the source RD by value to the target one
-    memcpy(m_crawl.pRD->pCurrentContext, pSource->m_crawl.pRD->pCurrentContext, sizeof(*m_crawl.pRD->pCurrentContext));
-    memcpy(m_crawl.pRD->pCallerContext, pSource->m_crawl.pRD->pCallerContext, sizeof(*m_crawl.pRD->pCallerContext));
-    memcpy(m_crawl.pRD->pCurrentContextPointers, pSource->m_crawl.pRD->pCurrentContextPointers, sizeof(*m_crawl.pRD->pCurrentContextPointers));
-    memcpy(m_crawl.pRD->pCallerContextPointers, pSource->m_crawl.pRD->pCallerContextPointers, sizeof(*m_crawl.pRD->pCallerContextPointers));
-    m_crawl.pRD->SP = pSource->m_crawl.pRD->SP;
-    m_crawl.pRD->ControlPC = pSource->m_crawl.pRD->ControlPC;
-#else    
-    // keep the regdisplay
-    REGDISPLAY *pRD = m_crawl.pRD;
-    memcpy(this, pSource, sizeof(StackFrameIterator));
-    // put back the regdisplay
-    m_crawl.pRD = pRD;
-    T_KNONVOLATILE_CONTEXT_POINTERS *pSourceContextPointers = pSource->m_crawl.pRD->pCurrentContextPointers;
-    CONTEXT *pSourceContext = pSource->m_crawl.pRD->pCurrentContext;
 
-    T_KNONVOLATILE_CONTEXT_POINTERS *pSourceCallerContextPointers = pSource->m_crawl.pRD->pCallerContextPointers;
-    CONTEXT *pSourceCallerContext = pSource->m_crawl.pRD->pCallerContext;
+    REGDISPLAY *pSourceRD = pSource->m_crawl.pRD;
 
-    m_crawl.pRD->pCurrentContext->Rbp = pSourceContext->Rbp;
-    if (pSourceContextPointers->Rbp == &pSourceContext->Rbp)
-    {
-        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCurrentContextPointers->Rbp = &m_crawl.pRD->pCurrentContext->Rbp;
-    }
-    else
-    {
-        m_crawl.pRD->pCurrentContextPointers->Rbp = pSourceContextPointers->Rbp;
+// When the source context pointer points into the source context, set the context pointer to point to the current context
+// otherwise copy the source context pointer.
+#define CALLEE_SAVED_REGISTER(regname) \
+    pRD->pCurrentContext->regname = pSourceRD->pCurrentContext->regname; \
+    if (pSourceRD->pCurrentContextPointers->regname == &pSourceRD->pCurrentContext->regname) \
+    { \
+        pRD->pCurrentContextPointers->regname = &pRD->pCurrentContext->regname; \
+    } \
+    else \
+    { \
+        pRD->pCurrentContextPointers->regname = pSourceRD->pCurrentContextPointers->regname; \
     }
 
-    m_crawl.pRD->pCurrentContext->Rdi = pSourceContext->Rdi;
-    if (pSourceContextPointers->Rdi == &pSourceContext->Rdi)
-    {
-        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCurrentContextPointers->Rdi = &m_crawl.pRD->pCurrentContext->Rdi;
-    }
-    else
-    {
-        m_crawl.pRD->pCurrentContextPointers->Rdi = pSourceContextPointers->Rdi;
+    ENUM_CALLEE_SAVED_REGISTERS()
+#undef CALLEE_SAVED_REGISTER
+
+#define CALLEE_SAVED_REGISTER(regname) \
+    pRD->pCallerContext->regname = pSourceRD->pCallerContext->regname; \
+    if (pSourceRD->pCallerContextPointers->regname == &pSourceRD->pCallerContext->regname) \
+    { \
+        pRD->pCallerContextPointers->regname = &pRD->pCallerContext->regname; \
+    } \
+    else \
+    { \
+        pRD->pCallerContextPointers->regname = pSourceRD->pCallerContextPointers->regname; \
     }
 
-    m_crawl.pRD->pCurrentContext->Rsi = pSourceContext->Rsi;
-    if (pSourceContextPointers->Rsi == &pSourceContext->Rsi)
-    {
-        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCurrentContextPointers->Rsi = &m_crawl.pRD->pCurrentContext->Rsi;
-    }
-    else
-    {
-        m_crawl.pRD->pCurrentContextPointers->Rsi = pSourceContextPointers->Rsi;
-    }
+    ENUM_CALLEE_SAVED_REGISTERS()
+#undef CALLEE_SAVED_REGISTER
 
-    m_crawl.pRD->pCurrentContext->Rbx = pSourceContext->Rbx;
-    if (pSourceContextPointers->Rbx == &pSourceContext->Rbx)
-    {
-        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCurrentContextPointers->Rbx = &m_crawl.pRD->pCurrentContext->Rbx;
-    }
-    else
-    {
-        m_crawl.pRD->pCurrentContextPointers->Rbx = pSourceContextPointers->Rbx;
-    }
-
-#ifdef TARGET_AMD64
-    m_crawl.pRD->pCurrentContext->R12 = pSourceContext->R12;
-    if (pSourceContextPointers->R12 == &pSourceContext->R12)
-    {
-        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCurrentContextPointers->R12 = &m_crawl.pRD->pCurrentContext->R12;
-    }
-    else
-    {
-        m_crawl.pRD->pCurrentContextPointers->R12 = pSourceContextPointers->R12;
-    }
-    m_crawl.pRD->pCurrentContext->R13 = pSourceContext->R13;
-    if (pSourceContextPointers->R13 == &pSourceContext->R13)
-    {
-        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCurrentContextPointers->R13 = &m_crawl.pRD->pCurrentContext->R13;
-    }
-    else
-    {
-        m_crawl.pRD->pCurrentContextPointers->R13 = pSourceContextPointers->R13;
-    }
-    m_crawl.pRD->pCurrentContext->R14 = pSourceContext->R14;
-    if (pSourceContextPointers->R14 == &pSourceContext->R14)
-    {
-        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCurrentContextPointers->R14 = &m_crawl.pRD->pCurrentContext->R14;
-    }
-    else
-    {
-        m_crawl.pRD->pCurrentContextPointers->R14 = pSourceContextPointers->R14;
-    }
-    m_crawl.pRD->pCurrentContext->R15 = pSourceContext->R15;
-    if (pSourceContextPointers->R15 == &pSourceContext->R15)
-    {
-        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCurrentContextPointers->R15 = &m_crawl.pRD->pCurrentContext->R15;
-    }
-    else
-    {
-        m_crawl.pRD->pCurrentContextPointers->R15 = pSourceContextPointers->R15;
-    }
-#endif
-
-    m_crawl.pRD->pCallerContext->Rbp = pSourceCallerContext->Rbp;
-    if (pSourceCallerContextPointers->Rbp == &pSourceCallerContext->Rbp)
-    {
-        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCallerContextPointers->Rbp = &m_crawl.pRD->pCallerContext->Rbp;
-    }
-    else
-    {
-        m_crawl.pRD->pCallerContextPointers->Rbp = pSourceCallerContextPointers->Rbp;
-    }
-
-    m_crawl.pRD->pCallerContext->Rdi = pSourceCallerContext->Rdi;
-    if (pSourceCallerContextPointers->Rdi == &pSourceCallerContext->Rdi)
-    {
-        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCallerContextPointers->Rdi = &m_crawl.pRD->pCallerContext->Rdi;
-    }
-    else
-    {
-        m_crawl.pRD->pCallerContextPointers->Rdi = pSourceCallerContextPointers->Rdi;
-    }
-
-    m_crawl.pRD->pCallerContext->Rsi = pSourceCallerContext->Rsi;
-    if (pSourceCallerContextPointers->Rsi == &pSourceCallerContext->Rsi)
-    {
-        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCallerContextPointers->Rsi = &m_crawl.pRD->pCallerContext->Rsi;
-    }
-    else
-    {
-        m_crawl.pRD->pCallerContextPointers->Rsi = pSourceCallerContextPointers->Rsi;
-    }
-
-    m_crawl.pRD->pCallerContext->Rbx = pSourceCallerContext->Rbx;
-    if (pSourceCallerContextPointers->Rbx == &pSourceCallerContext->Rbx)
-    {
-        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCallerContextPointers->Rbx = &m_crawl.pRD->pCallerContext->Rbx;
-    }
-    else
-    {
-        m_crawl.pRD->pCallerContextPointers->Rbx = pSourceCallerContextPointers->Rbx;
-    }
-
-#ifdef TARGET_AMD64
-    m_crawl.pRD->pCallerContext->R12 = pSourceCallerContext->R12;
-    if (pSourceCallerContextPointers->R12 == &pSourceCallerContext->R12)
-    {
-        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCallerContextPointers->R12 = &m_crawl.pRD->pCallerContext->R12;
-    }
-    else
-    {
-        m_crawl.pRD->pCallerContextPointers->R12 = pSourceCallerContextPointers->R12;
-    }
-    m_crawl.pRD->pCallerContext->R13 = pSourceCallerContext->R13;
-    if (pSourceCallerContextPointers->R13 == &pSourceCallerContext->R13)
-    {
-        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCallerContextPointers->R13 = &m_crawl.pRD->pCallerContext->R13;
-    }
-    else
-    {
-        m_crawl.pRD->pCallerContextPointers->R13 = pSourceCallerContextPointers->R13;
-    }
-    m_crawl.pRD->pCallerContext->R14 = pSourceCallerContext->R14;
-    if (pSourceCallerContextPointers->R14 == &pSourceCallerContext->R14)
-    {
-        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCallerContextPointers->R14 = &m_crawl.pRD->pCallerContext->R14;
-    }
-    else
-    {
-        m_crawl.pRD->pCallerContextPointers->R14 = pSourceCallerContextPointers->R14;
-    }
-    m_crawl.pRD->pCallerContext->R15 = pSourceCallerContext->R15;
-    if (pSourceCallerContextPointers->R15 == &pSourceCallerContext->R15)
-    {
-        // The source context pointer points into the source context, so copy the value and set the context pointer to point to the current context
-        m_crawl.pRD->pCallerContextPointers->R15 = &m_crawl.pRD->pCallerContext->R15;
-    }
-    else
-    {
-        m_crawl.pRD->pCallerContextPointers->R15 = pSourceCallerContextPointers->R15;
-    }
-#endif
-
-    m_crawl.pRD->SP = pSource->m_crawl.pRD->SP;
-    m_crawl.pRD->ControlPC = pSource->m_crawl.pRD->ControlPC;
-    m_crawl.pRD->pCurrentContext->Rip = pSourceContext->Rip;
-    m_crawl.pRD->pCurrentContext->Rsp = pSourceContext->Rsp;
-    m_crawl.pRD->pCallerContext->Rip = pSourceCallerContext->Rip;
-    m_crawl.pRD->pCallerContext->Rsp = pSourceCallerContext->Rsp;
-#endif
+    pRD->SP = pSourceRD->SP;
+    pRD->ControlPC = pSourceRD->ControlPC;
+    pRD->pCurrentContext->Rip = pSourceRD->pCurrentContext->Rip;
+    pRD->pCurrentContext->Rsp = pSourceRD->pCurrentContext->Rsp;
+    pRD->pCallerContext->Rip = pSourceRD->pCallerContext->Rip;
+    pRD->pCallerContext->Rsp = pSourceRD->pCallerContext->Rsp;
 }
 
 #if defined(TARGET_AMD64) && !defined(DACCESS_COMPILE)
