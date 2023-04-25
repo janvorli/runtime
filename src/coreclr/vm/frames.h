@@ -2837,7 +2837,7 @@ public:
 
 #ifdef HOST_64BIT
         // See code:GenericPInvokeCalliHelper
-        return ((m_Datum != NULL) && !(dac_cast<TADDR>(m_Datum) & 0x1));
+        return ((m_Datum != NULL) && !(dac_cast<TADDR>(m_Datum) & 0x3));
 #else // HOST_64BIT
         return ((dac_cast<TADDR>(m_Datum) & ~0xffff) != 0);
 #endif // HOST_64BIT

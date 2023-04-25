@@ -2837,6 +2837,61 @@ static VOID DECLSPEC_NORETURN RealCOMPlusThrowWorker(OBJECTREF throwable, BOOL r
     UNINSTALL_COMPLUS_EXCEPTION_HANDLER();
 }
 
+VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(OBJECTREF throwable, BOOL rethrow)
+{
+    STATIC_CONTRACT_THROWS;
+    STATIC_CONTRACT_GC_TRIGGERS;
+    STATIC_CONTRACT_MODE_ANY;
+
+    GCPROTECT_BEGIN(throwable);
+
+   _ASSERTE(IsException(throwable->GetMethodTable()));
+
+    // This may look a bit odd, but there is an explanation.  The rethrow boolean
+    //  means that an actual RaiseException(EXCEPTION_COMPLUS,...) is being re-thrown,
+    //  and that the exception context saved on the Thread object should replace
+    //  the exception context from the upcoming RaiseException().  There is logic
+    //  in the stack trace code to preserve MOST of the stack trace, but to drop the
+    //  last element of the stack trace (has to do with having the address of the rethrow
+    //  instead of the address of the original call in the stack trace.  That is
+    //  controversial itself, but we won't get into that here.)
+    // However, if this is not re-raising that original exception, but rather a new
+    //  os exception for what may be an existing exception object, it is generally
+    //  a good thing to preserve the stack trace.
+    if (!rethrow)
+    {
+        ExceptionPreserveStackTrace(throwable);
+    }
+
+    CONTEXT ctx;
+    REGDISPLAY rd;
+    Thread *pThread = GetThread();
+
+    ExInfo exInfo = {};
+    exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+    exInfo._pExContext = &ctx;
+    exInfo._passNumber = 1;
+    exInfo._kind = ExKind::Throw;
+    exInfo._idxCurClause = 0xffffffff;
+    exInfo._pRD = &rd;
+    exInfo._stackTraceInfo.Init(); // TODO: how about this vs rethrow arg?
+    exInfo._stackTraceInfo.AllocateStackTrace();
+    exInfo._pFrame = GetThread()->GetFrame();
+    exInfo._sfLowBound.SetMaxVal();
+    pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
+
+    PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_EX);
+    DECLARE_ARGHOLDER_ARRAY(args, 2);
+    args[ARGNUM_0] = OBJECTREF_TO_ARGHOLDER(throwable);
+    args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
+
+    //Ex.RhThrowEx(throwable, &exInfo)
+    CALL_MANAGED_METHOD_NORET(args)
+
+    GCPROTECT_END();
+
+}
+
 VOID DECLSPEC_NORETURN RealCOMPlusThrow(OBJECTREF throwable, BOOL rethrow)
 {
     STATIC_CONTRACT_THROWS;
@@ -6579,6 +6634,7 @@ void HandleManagedFault(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext)
     exInfo._stackTraceInfo.Init();
     exInfo._stackTraceInfo.AllocateStackTrace();
     exInfo._pFrame = GetThread()->GetFrame();
+    exInfo._sfLowBound.SetMaxVal();
     pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
 
     DWORD exceptionCode = pExceptionRecord->ExceptionCode;
@@ -7783,7 +7839,8 @@ VOID DECLSPEC_NORETURN UnwindAndContinueRethrowHelperAfterCatch(Frame* pEntryFra
 
     Exception::Delete(pException);
 
-    RaiseTheExceptionInternalOnly(orThrowable, FALSE);
+    RealCOMPlusThrowEx(orThrowable, FALSE);
+    //RaiseTheExceptionInternalOnly(orThrowable, FALSE);
 }
 
 thread_local DWORD t_dwCurrentExceptionCode;

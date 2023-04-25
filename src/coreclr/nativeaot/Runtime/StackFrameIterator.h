@@ -110,6 +110,7 @@ private:
         InManagedCode,
         InThrowSiteThunk,
         InFuncletInvokeThunk,
+        InFilterFuncletInvokeThunk,
         InCallDescrThunk,
         InUniversalTransitionThunk,
     };

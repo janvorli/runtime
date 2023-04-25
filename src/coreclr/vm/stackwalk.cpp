@@ -1159,7 +1159,7 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
     Frame* pFrame = pThread->GetFrame()->PtrNextFrame();
 
     memset(pStackwalkCtx, 0x00, sizeof(T_CONTEXT));
-    pStackwalkCtx->ContextFlags = CONTEXT_FULL;
+    pStackwalkCtx->ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
     SetIP(pStackwalkCtx, 0);
     SetSP(pStackwalkCtx, 0);
     SetFP(pStackwalkCtx, 0);
@@ -1168,14 +1168,19 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
 
     //pThread->InitRegDisplay(pRD, pStackwalkCtx, false);
     memset(pThis, 0, sizeof(StackFrameIterator));
-    result = pThis->Init(pThread, pFrame, pRD, THREAD_EXECUTING_MANAGED_CODE/* | FUNCTIONSONLY*/) != FALSE;
+    result = pThis->Init(pThread, pFrame, pRD, THREAD_EXECUTING_MANAGED_CODE | HANDLESKIPPEDFRAMES/* | FUNCTIONSONLY*/) != FALSE;
     pThis->m_pNextExInfo = pThread->GetExceptionState()->GetCurrentExInfo(); // TODO: integrate this into the init
 
-    if (pThis->GetFrameState() != StackFrameIterator::SFITER_FRAMELESS_METHOD)
+    // Q: I am not sure if this should be set here or in the Next - to be specific - what it should really cover. The problem
+    // is that after this call, the EH will process the current stack frame. It is not clear then how the stack walk with GC should consider this frame.
+
+    while (result && pThis->GetFrameState() != StackFrameIterator::SFITER_FRAMELESS_METHOD)
     {
         StackWalkAction retVal = pThis->Next();
         result = (retVal != SWA_FAILED);
     }
+    pThis->m_pNextExInfo->_sfHighBound = pThis->m_crawl.GetRegisterSet()->SP;
+    pThis->m_pNextExInfo->_sfLowBound = pThis->m_pNextExInfo->_sfHighBound;
 
     ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
 
@@ -1220,9 +1225,14 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
         TADDR prevSP = pThis->m_crawl.GetRegisterSet()->SP;
         TADDR prevPC = pThis->m_crawl.GetRegisterSet()->ControlPC;
         retVal = pThis->Next();
-        char msg[512];
-        sprintf(msg, "Unwinding from SP=%p, PC=%p to SP=%p, PC=%p\n", (void*)prevSP, (void*)prevPC, (void*)pThis->m_crawl.GetRegisterSet()->SP, (void*)pThis->m_crawl.GetRegisterSet()->ControlPC);
-        OutputDebugStringA(msg);
+        // TODO: this doesn't seem to be right, should we update the thread's ExInfo instead?
+        if (pThis->m_pNextExInfo)
+        {
+            pThis->m_pNextExInfo->_sfHighBound = pThis->m_crawl.GetRegisterSet()->SP;
+        }
+        // char msg[512];
+        // sprintf(msg, "Unwinding from SP=%p, PC=%p to SP=%p, PC=%p\n", (void*)prevSP, (void*)prevPC, (void*)pThis->m_crawl.GetRegisterSet()->SP, (void*)pThis->m_crawl.GetRegisterSet()->ControlPC);
+        // OutputDebugStringA(msg);
 
         if (pThis->GetFrameState() == StackFrameIterator::SFITER_DONE)
         {
@@ -1257,14 +1267,19 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                         {
                             __debugbreak();
                         }
+                        if (pThis->m_pNextExInfo)
+                        {
+                            pThis->m_pNextExInfo->_sfHighBound = pThis->m_crawl.GetRegisterSet()->SP;
+                        }
                         
-                        sprintf(msg, "RhpCallCatchFunclet Unwinding from SP=%p, PC=%p to SP=%p, PC=%p\n", (void*)prevSP, (void*)prevPC, (void*)pThis->m_crawl.GetRegisterSet()->SP, (void*)pThis->m_crawl.GetRegisterSet()->ControlPC);
-                        OutputDebugStringA(msg);
+                        // sprintf(msg, "RhpCallCatchFunclet Unwinding from SP=%p, PC=%p to SP=%p, PC=%p\n", (void*)prevSP, (void*)prevPC, (void*)pThis->m_crawl.GetRegisterSet()->SP, (void*)pThis->m_crawl.GetRegisterSet()->ControlPC);
+                        // OutputDebugStringA(msg);
                         exCollide = true;
                         if ((pThis->m_pNextExInfo->_passNumber == 1) ||
                             (pThis->m_pNextExInfo->_idxCurClause == 0xFFFFFFFF))
                         {
-                            __debugbreak();
+//                            __debugbreak();
+                            _ASSERTE_MSG(FALSE, "did not expect to collide with a 1st-pass ExInfo during a EH stackwalk");
                             ExInfo* pPrevExInfo = pThis->m_pNextExInfo->_pPrevExInfo;
                             pThis->Init(pThread, pThis->m_pNextExInfo->_pFrame, pThis->m_pNextExInfo->_pRD, pThis->m_flags);
                             pThis->m_pNextExInfo = pThis->m_pNextExInfo->_pPrevExInfo;
@@ -1283,6 +1298,10 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                             }
                             while ((retVal == SWA_CONTINUE) && pThis->m_crawl.GetRegisterSet()->SP != pPrevExInfo->_pRD->SP);
                             _ASSERTE(retVal != SWA_FAILED);
+                            if (pThis->m_pNextExInfo)
+                            {
+                                pThis->m_pNextExInfo->_sfHighBound = pThis->m_crawl.GetRegisterSet()->SP;
+                            }
 
                             _ASSERTE(pThis->m_crawl.GetRegisterSet()->ControlPC == pPrevExInfo->_pRD->ControlPC);
 
@@ -1294,8 +1313,8 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                             prevSP = pThis->m_crawl.GetRegisterSet()->SP;
                             prevPC = pThis->m_crawl.GetRegisterSet()->ControlPC;
                             pThis->Clone(&pThis->m_pNextExInfo->_frameIter);
-                            sprintf(msg, "Skipping from SP=%p, PC=%p to SP=%p, PC=%p\n", (void*)prevSP, (void*)prevPC, (void*)pThis->m_crawl.GetRegisterSet()->SP, (void*)pThis->m_crawl.GetRegisterSet()->ControlPC);
-                            OutputDebugStringA(msg);
+                            // sprintf(msg, "Skipping from SP=%p, PC=%p to SP=%p, PC=%p\n", (void*)prevSP, (void*)prevPC, (void*)pThis->m_crawl.GetRegisterSet()->SP, (void*)pThis->m_crawl.GetRegisterSet()->ControlPC);
+                            // OutputDebugStringA(msg);
 
                             ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
 #endif                                                       

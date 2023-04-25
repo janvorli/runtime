@@ -1214,6 +1214,7 @@ DEFINE_METHOD(CASTHELPERS, LDELEMAREF,       LdelemaRef,                  SM_Arr
 DEFINE_CLASS(EH, Runtime, EH)
 DEFINE_METHOD(EH, RH_THROW_EX, RhThrowEx, SM_Obj_RefExInfo_RetVoid)
 DEFINE_METHOD(EH, RH_THROWHW_EX, RhThrowHwEx, SM_UInt_RefExInfo_RetVoid)
+DEFINE_METHOD(EH, RH_THROW_INTERNAL_EX, RhThrowInternalEx, SM_UInt_RefExInfo_RetVoid)
 DEFINE_METHOD(EH, RH_RETHROW, RhRethrow, SM_RefExInfo_RefExInfo_RetVoid)
 
 #ifndef FOR_ILLINK

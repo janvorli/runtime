@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 //#define RELEASE_RUNTIME
+#if !MONO
 using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
@@ -42,19 +43,21 @@ namespace System.Runtime
     }
     internal static class AsmOffsets
     {
-#if RELEASE_RUNTIME
-        public const int SIZEOF__REGDISPLAY = 0xbe0;
-        public const int OFFSETOF__REGDISPLAY__SP = 0xbd0;
-        public const int OFFSETOF__REGDISPLAY__ControlPC = 0xbd8;
-#else
+#if DEBUG
         public const int SIZEOF__REGDISPLAY = 0xbf0;
         public const int OFFSETOF__REGDISPLAY__SP = 0xbd8;
         public const int OFFSETOF__REGDISPLAY__ControlPC = 0xbe0;
         public const int OFFSETOF__REGDISPLAY__m_pCurrentContext = 0x8;
+        public const int SIZEOF__StackFrameIterator = 0x360+0x10; // +8 for the m_pNextExInfo, +8 for alignment
+#else
+        public const int SIZEOF__REGDISPLAY = 0xbe0;
+        public const int OFFSETOF__REGDISPLAY__SP = 0xbd0;
+        public const int OFFSETOF__REGDISPLAY__ControlPC = 0xbd8;
+        public const int OFFSETOF__REGDISPLAY__m_pCurrentContext = 0x8;
+        public const int SIZEOF__StackFrameIterator = 0x360;
 #endif
         public const int SIZEOF__EHEnum = 0x18; // TODO: on 32 bit systems, isn't it 8?
 
-        public const int SIZEOF__StackFrameIterator = 0x360+0x10; // +8 for the m_pNextExInfo, +8 for alignment
         //public const int OFFSETOF__StackFrameIterator__m_FramePointer = 0;
         //public const int OFFSETOF__StackFrameIterator__m_ControlPC = 0;
         public const int OFFSETOF__StackFrameIterator__m_pRegDisplay = 0x228;
@@ -84,48 +87,42 @@ namespace System.Runtime
         // ???
         public const int OFFSETOF__ExInfo__m_pRD = OFFSETOF__ExInfo__m_frameIter + SIZEOF__StackFrameIterator + 8;
         public const int OFFSETOF__ExInfo__m_StackTraceInfo = OFFSETOF__ExInfo__m_frameIter + SIZEOF__StackFrameIterator + 8 + 8;
+        public const int OFFSETOF__ExInfo__m_InitialSP = OFFSETOF__ExInfo__m_StackTraceInfo + 8;
         public const int SIZEOF__StackTraceInfo = 0x18;
     }
 
     internal static partial class InternalCalls
     {
-        //[DllImport("coreclr", EntryPoint = "RhpCaptureCallerContext")]
-        [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RhpCaptureCallerContext")]
-        internal static unsafe partial void RhpCaptureCallerContext(void* pStackwalkCtx);
-
-        //[DllImport("coreclr", EntryPoint = "RhpSfiInit")]
         [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RhpSfiInit")]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static unsafe partial bool RhpSfiInit(ref StackFrameIterator pThis, void* pStackwalkCtx, void* pRegDisplay, [MarshalAs(UnmanagedType.Bool)] bool instructionFault);
 
-        //[DllImport("coreclr", EntryPoint = "RhpSfiNext")]
         [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RhpSfiNext")]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static unsafe partial bool RhpSfiNext(ref StackFrameIterator pThis, uint* uExCollideClauseIdx, bool* fUnwoundReversePInvoke);
 
 #pragma warning disable CS8500
-        //[DllImport("coreclr", EntryPoint = "RhpCallCatchFunclet")]
         [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RhpCallCatchFunclet")]
         internal static unsafe partial IntPtr RhpCallCatchFunclet(
             ObjectHandleOnStack exceptionObj, byte* pHandlerIP, void* pvRegDisplay, EH.ExInfo* exInfo);
 #pragma warning restore CS8500
 
-        //[DllImport("coreclr", EntryPoint = "RhpCallFinallyFunclet")]
+#pragma warning disable CS8500
         [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RhpCallFinallyFunclet")]
-        internal static unsafe partial void RhpCallFinallyFunclet(byte* pHandlerIP, void* pvRegDisplay);
+        internal static unsafe partial void RhpCallFinallyFunclet(byte* pHandlerIP, void* pvRegDisplay, EH.ExInfo* exInfo);
+#pragma warning restore CS8500
 
-        //[DllImport("coreclr", EntryPoint = "RhpCallFilterFunclet")]
+#pragma warning disable CS8500
         [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RhpCallFilterFunclet")]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static unsafe partial bool RhpCallFilterFunclet(
             ObjectHandleOnStack exceptionObj, byte* pFilterIP, void* pvRegDisplay);
+#pragma warning restore CS8500
 
-        //[DllImport("coreclr", EntryPoint = "RhpEHEnumInitFromStackFrameIterator")]
         [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RhpEHEnumInitFromStackFrameIterator")]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static unsafe partial bool RhpEHEnumInitFromStackFrameIterator(ref StackFrameIterator pFrameIter, byte** pMethodStartAddress, void* pEHEnum);
 
-        //[DllImport("coreclr", EntryPoint = "RhpEHEnumNext")]
         [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RhpEHEnumNext")]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static unsafe partial bool RhpEHEnumNext(ref StackFrameIterator pFrameIter, void* pEHEnum, void* pEHClause);
@@ -383,7 +380,7 @@ namespace System.Runtime
         private static void AppendExceptionStackFrameViaClasslib(object exception, IntPtr ip, IntPtr sp, ref ExInfo exInfo,
             ref bool isFirstRethrowFrame, ref bool isFirstFrame)
         {
-            System.Diagnostics.Debug.WriteLine($"AppendExceptionStackFrameViaClasslib ip={ip:X} sp={sp:X}");
+//            System.Diagnostics.Debug.WriteLine($"AppendExceptionStackFrameViaClasslib ip={ip:X} sp={sp:X}");
             int flags = (isFirstFrame ? (int)RhEHFrameType.RH_EH_FIRST_FRAME : 0) |
                                         (isFirstRethrowFrame ? (int)RhEHFrameType.RH_EH_FIRST_RETHROW_FRAME : 0);
 #pragma warning disable CS8500
@@ -703,6 +700,53 @@ namespace System.Runtime
 
             [FieldOffset(AsmOffsets.OFFSETOF__ExInfo__m_StackTraceInfo)]
             internal StackTraceInfo _stackTraceInfo;
+/*
+            [FieldOffset(AsmOffsets.OFFSETOF__ExInfo__m_ScannedStackRange)]
+            internal UIntPtr _initialSP;
+*/
+        }
+
+        public static void RhThrowInternalEx(uint exceptionId, ref ExInfo exInfo)
+        {
+            Exception? exceptionToThrow = null;
+
+            switch (exceptionId)
+            {
+                case 4:
+                    exceptionToThrow = new ArgumentOutOfRangeException();
+                    break;
+                case 6:
+                    exceptionToThrow = new BadImageFormatException();
+                    break;
+                case 12:
+                    exceptionToThrow = new DivideByZeroException();
+                    break;
+                case 23:
+                    exceptionToThrow = new IndexOutOfRangeException();
+                    break;
+                case 25:
+                    exceptionToThrow = new InvalidCastException();
+                    break;
+                case 43:
+                    exceptionToThrow = new NullReferenceException();
+                    break;
+                case 47:
+                    exceptionToThrow = new OverflowException();
+                    break;
+                case 77:
+                    exceptionToThrow = new OutOfMemoryException();
+                    break;
+                case 78:
+                    exceptionToThrow = new ArgumentNullException();
+                    break;
+                default:
+                    FallbackFailFast(RhFailFastReason.InternalError, null);
+                    break;
+            }
+
+            exInfo.Init(exceptionToThrow!);
+            DispatchEx(ref exInfo._frameIter, ref exInfo, MaxTryRegionIdx);
+            FallbackFailFast(RhFailFastReason.InternalError, null);
         }
 
         //
@@ -885,7 +929,7 @@ namespace System.Runtime
                                          out catchingTryRegionIdx, out pHandler))
                 {
                     handlingFrameSP = frameIter.SP;
-                    System.Diagnostics.Debug.WriteLine($"Found first pass handler at {new IntPtr(pHandler):X}, handlingFrameSP={handlingFrameSP:X}");
+//                    System.Diagnostics.Debug.WriteLine($"Found first pass handler at {new IntPtr(pHandler):X}, handlingFrameSP={handlingFrameSP:X}");
                     pCatchHandler = pHandler;
 
                     DebugVerifyHandlingFrame(handlingFrameSP);
@@ -1007,7 +1051,7 @@ namespace System.Runtime
                 return false;
 
             byte* pbControlPC = frameIter.ControlPC;
-            System.Diagnostics.Debug.WriteLine($"FindFirstPassHandler controlPC={new IntPtr(pbControlPC):X}, idxStart={idxStart}");
+//            System.Diagnostics.Debug.WriteLine($"FindFirstPassHandler controlPC={new IntPtr(pbControlPC):X}, idxStart={idxStart}");
 
             uint codeOffset = (uint)(pbControlPC - pbMethodStartAddress);
 
@@ -1017,7 +1061,7 @@ namespace System.Runtime
             RhEHClause ehClause;
             for (uint curIdx = 0; InternalCalls.RhpEHEnumNext(ref frameIter, &ehEnum, &ehClause); curIdx++)
             {
-                System.Diagnostics.Debug.WriteLine($"Considering clause {curIdx}, _tryStartOffset={ehClause._tryStartOffset:X}, _tryEndOffset={ehClause._tryEndOffset:X}, _clauseKind={ehClause._clauseKind} for codeOffset={codeOffset:X}");
+//                System.Diagnostics.Debug.WriteLine($"Considering clause {curIdx}, _tryStartOffset={ehClause._tryStartOffset:X}, _tryEndOffset={ehClause._tryEndOffset:X}, _clauseKind={ehClause._clauseKind} for codeOffset={codeOffset:X}");
                 //
                 // Skip to the starting try region.  This is used by collided unwinds and rethrows to pickup where
                 // the previous dispatch left off.
@@ -1027,7 +1071,7 @@ namespace System.Runtime
                     if (curIdx <= idxStart)
                     {
                         lastTryStart = ehClause._tryStartOffset; lastTryEnd = ehClause._tryEndOffset;
-                        System.Diagnostics.Debug.WriteLine($"Dismissing clause, curIdx <= idxStart)");
+//                        System.Diagnostics.Debug.WriteLine($"Dismissing clause, curIdx <= idxStart)");
                         continue;
                     }
 
@@ -1035,7 +1079,7 @@ namespace System.Runtime
                     // previous dispatch.
                     if ((ehClause._tryStartOffset == lastTryStart) && (ehClause._tryEndOffset == lastTryEnd))
                     {
-                        System.Diagnostics.Debug.WriteLine($"Dismissing clause, previously invoked try region");
+//                        System.Diagnostics.Debug.WriteLine($"Dismissing clause, previously invoked try region");
                         continue;
                     }
 
@@ -1050,7 +1094,7 @@ namespace System.Runtime
                      (clauseKind != RhEHClauseKind.RH_EH_CLAUSE_FILTER))
                     || !ehClause.ContainsCodeOffset(codeOffset))
                 {
-                    System.Diagnostics.Debug.WriteLine($"Dismissing clause, wrong kind or not covering the code offset");
+//                    System.Diagnostics.Debug.WriteLine($"Dismissing clause, wrong kind or not covering the code offset");
                     continue;
                 }
 
@@ -1060,7 +1104,7 @@ namespace System.Runtime
                 {
                     if (ShouldTypedClauseCatchThisException(exception, /*(MethodTable*)*/ehClause._pTargetType))
                     {
-                        System.Diagnostics.Debug.WriteLine($"Accepting typed clause");
+//                        System.Diagnostics.Debug.WriteLine($"Accepting typed clause");
                         pHandler = ehClause._handlerAddress;
                         tryRegionIdx = curIdx;
                         return true;
@@ -1069,8 +1113,16 @@ namespace System.Runtime
                 else
                 {
                     byte* pFilterFunclet = ehClause._filterAddress;
-                    bool shouldInvokeHandler =
-                        InternalCalls.RhpCallFilterFunclet(ObjectHandleOnStack.Create(ref exception), pFilterFunclet, frameIter.RegisterSet);
+                    bool shouldInvokeHandler = false;
+                    try
+                    {
+                        shouldInvokeHandler =
+                            InternalCalls.RhpCallFilterFunclet(ObjectHandleOnStack.Create(ref exception), pFilterFunclet, frameIter.RegisterSet);
+                    }
+                    catch
+                    {
+
+                    }
 
                     if (shouldInvokeHandler)
                     {
@@ -1108,28 +1160,41 @@ namespace System.Runtime
         // }
 #endif // DEBUG && !INPLACE_RUNTIME
 
-
         private static bool ShouldTypedClauseCatchThisException(object exception, /*MethodTable**/TypeHandle pClauseType)
         {
 #if DEBUG && !INPLACE_RUNTIME
             // AssertNotRuntimeObject(pClauseType);
 #endif
 
+            //System.Diagnostics.Debug.WriteLine($"Checking exception {exception}");
             MethodTable* clauseMT = pClauseType.AsMethodTable();
-            MethodTable* mt = RuntimeHelpers.GetMethodTable(exception);
-            while (mt != null)
+
+            bool retry = false;
+            do
             {
-                if (clauseMT == mt)
+                MethodTable* mt = RuntimeHelpers.GetMethodTable(exception);
+                while (mt != null)
                 {
-                    return true;
+                    if (clauseMT == mt)
+                    {
+                        return true;
+                    }
+
+                    mt = mt->ParentMethodTable;
                 }
 
-                mt = mt->ParentMethodTable;
+                if (exception is RuntimeWrappedException ex)
+                {
+                    exception = ex.WrappedException;
+                    retry = true;
+                }
             }
+            while (retry);
 
             return false;
             //return pClauseType.AsMethodTable() == RuntimeHelpers.GetMethodTable(exception); // TODO: is this correct and optimal? No, we need to also catch derived classes
-            //return TypeCast.IsInstanceOfException(pClauseType, exception);
+            //return IsInstanceOfException(pClauseType.AsMethodTable(), exception);
+            //return RuntimeHelpers.AreTypesEquivalent(pClauseType.AsMethodTable(), RuntimeHelpers.GetMethodTable(exception));
         }
 
         private static void InvokeSecondPass(ref ExInfo exInfo, uint idxStart)
@@ -1198,7 +1263,13 @@ namespace System.Runtime
 
                 byte* pFinallyHandler = ehClause._handlerAddress;
                 exInfo._idxCurClause = curIdx;
-                InternalCalls.RhpCallFinallyFunclet(pFinallyHandler, exInfo._frameIter.RegisterSet);
+
+#pragma warning disable CS8500
+                fixed (EH.ExInfo* pExInfo = &exInfo)
+                {
+                    InternalCalls.RhpCallFinallyFunclet(pFinallyHandler, exInfo._frameIter.RegisterSet, pExInfo);
+                }
+#pragma warning restore CS8500
                 exInfo._idxCurClause = MaxTryRegionIdx;
             }
         }
@@ -1255,3 +1326,4 @@ namespace System.Runtime
         }
     }
 }
+#endif
