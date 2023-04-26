@@ -1,7 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-//#define RELEASE_RUNTIME
+#define DEBUGEH
 #if !MONO
 using System;
 using System.Diagnostics;
@@ -12,6 +12,8 @@ using System.Runtime.InteropServices;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
+
+#pragma warning disable CS7095
 
 namespace System.Runtime
 {
@@ -227,6 +229,7 @@ namespace System.Runtime
         internal static void FallbackFailFast(RhFailFastReason reason, object? unhandledException)
         {
             //InternalCalls.RhpFallbackFailFast();
+            System.Diagnostics.Debugger.Break();
             Environment.FailFast(reason.ToString());
         }
 
@@ -727,6 +730,9 @@ namespace System.Runtime
                 case 25:
                     exceptionToThrow = new InvalidCastException();
                     break;
+                case 40:
+                    exceptionToThrow = new AmbiguousImplementationException();
+                    break;
                 case 43:
                     exceptionToThrow = new NullReferenceException();
                     break;
@@ -929,7 +935,9 @@ namespace System.Runtime
                                          out catchingTryRegionIdx, out pHandler))
                 {
                     handlingFrameSP = frameIter.SP;
-//                    System.Diagnostics.Debug.WriteLine($"Found first pass handler at {new IntPtr(pHandler):X}, handlingFrameSP={handlingFrameSP:X}");
+#if DEBUGEH
+                    System.Diagnostics.Debug.WriteLine($"Found first pass handler at {new IntPtr(pHandler):X}, handlingFrameSP={handlingFrameSP:X}");
+#endif
                     pCatchHandler = pHandler;
 
                     DebugVerifyHandlingFrame(handlingFrameSP);
@@ -1051,8 +1059,9 @@ namespace System.Runtime
                 return false;
 
             byte* pbControlPC = frameIter.ControlPC;
-//            System.Diagnostics.Debug.WriteLine($"FindFirstPassHandler controlPC={new IntPtr(pbControlPC):X}, idxStart={idxStart}");
-
+#if DEBUGEH
+            System.Diagnostics.Debug.WriteLine($"FindFirstPassHandler controlPC={new IntPtr(pbControlPC):X}, idxStart={idxStart}");
+#endif
             uint codeOffset = (uint)(pbControlPC - pbMethodStartAddress);
 
             uint lastTryStart = 0, lastTryEnd = 0;
@@ -1061,7 +1070,11 @@ namespace System.Runtime
             RhEHClause ehClause;
             for (uint curIdx = 0; InternalCalls.RhpEHEnumNext(ref frameIter, &ehEnum, &ehClause); curIdx++)
             {
-//                System.Diagnostics.Debug.WriteLine($"Considering clause {curIdx}, _tryStartOffset={ehClause._tryStartOffset:X}, _tryEndOffset={ehClause._tryEndOffset:X}, _clauseKind={ehClause._clauseKind} for codeOffset={codeOffset:X}");
+#if DEBUGEH
+                System.Diagnostics.Debug.WriteLine($"Considering clause {curIdx}, _tryStartOffset={ehClause._tryStartOffset:X}, _tryEndOffset={ehClause._tryEndOffset:X}, _clauseKind={ehClause._clauseKind} for codeOffset={codeOffset:X}");
+#endif
+                RhEHClauseKind clauseKind = ehClause._clauseKind;
+
                 //
                 // Skip to the starting try region.  This is used by collided unwinds and rethrows to pickup where
                 // the previous dispatch left off.
@@ -1070,8 +1083,17 @@ namespace System.Runtime
                 {
                     if (curIdx <= idxStart)
                     {
-                        lastTryStart = ehClause._tryStartOffset; lastTryEnd = ehClause._tryEndOffset;
-//                        System.Diagnostics.Debug.WriteLine($"Dismissing clause, curIdx <= idxStart)");
+                        // Q: why is this needed? the last one should be the clause that resulted in invocation of the handler,
+                        // so it should be ignored, no?
+                        // I've made this change to fix JIT\jit64\localloc\ehverify\eh11_small\eh11_small.dll
+                        // if ((clauseKind == RhEHClauseKind.RH_EH_CLAUSE_TYPED) ||
+                        //     (clauseKind == RhEHClauseKind.RH_EH_CLAUSE_FILTER))
+                        {
+                            lastTryStart = ehClause._tryStartOffset; lastTryEnd = ehClause._tryEndOffset;
+                        }
+#if DEBUGEH
+                        System.Diagnostics.Debug.WriteLine($"Dismissing clause, curIdx <= idxStart)");
+#endif
                         continue;
                     }
 
@@ -1079,7 +1101,9 @@ namespace System.Runtime
                     // previous dispatch.
                     if ((ehClause._tryStartOffset == lastTryStart) && (ehClause._tryEndOffset == lastTryEnd))
                     {
-//                        System.Diagnostics.Debug.WriteLine($"Dismissing clause, previously invoked try region");
+#if DEBUGEH
+                        System.Diagnostics.Debug.WriteLine($"Dismissing clause, previously invoked try region");
+#endif
                         continue;
                     }
 
@@ -1088,13 +1112,13 @@ namespace System.Runtime
                     idxStart = MaxTryRegionIdx;
                 }
 
-                RhEHClauseKind clauseKind = ehClause._clauseKind;
-
                 if (((clauseKind != RhEHClauseKind.RH_EH_CLAUSE_TYPED) &&
                      (clauseKind != RhEHClauseKind.RH_EH_CLAUSE_FILTER))
                     || !ehClause.ContainsCodeOffset(codeOffset))
                 {
-//                    System.Diagnostics.Debug.WriteLine($"Dismissing clause, wrong kind or not covering the code offset");
+#if DEBUGEH
+                    System.Diagnostics.Debug.WriteLine($"Dismissing clause, not typed or filter clause or not covering the code offset");
+#endif
                     continue;
                 }
 
@@ -1104,7 +1128,9 @@ namespace System.Runtime
                 {
                     if (ShouldTypedClauseCatchThisException(exception, /*(MethodTable*)*/ehClause._pTargetType))
                     {
-//                        System.Diagnostics.Debug.WriteLine($"Accepting typed clause");
+#if DEBUGEH
+                        System.Diagnostics.Debug.WriteLine($"Accepting typed clause");
+#endif
                         pHandler = ehClause._handlerAddress;
                         tryRegionIdx = curIdx;
                         return true;
@@ -1119,10 +1145,14 @@ namespace System.Runtime
                         shouldInvokeHandler =
                             InternalCalls.RhpCallFilterFunclet(ObjectHandleOnStack.Create(ref exception), pFilterFunclet, frameIter.RegisterSet);
                     }
-                    catch
+                    catch when (true)
                     {
-
+                        // Prevent leaking any exception from the filter funclet
                     }
+
+#if DEBUGEH
+                    System.Diagnostics.Debug.WriteLine($"Filter returned {shouldInvokeHandler}");
+#endif
 
                     if (shouldInvokeHandler)
                     {
@@ -1166,7 +1196,9 @@ namespace System.Runtime
             // AssertNotRuntimeObject(pClauseType);
 #endif
 
-            //System.Diagnostics.Debug.WriteLine($"Checking exception {exception}");
+#if DEBUGEH
+            System.Diagnostics.Debug.WriteLine($"Checking exception {exception}");
+#endif
             MethodTable* clauseMT = pClauseType.AsMethodTable();
 
             bool retry = false;
@@ -1203,6 +1235,9 @@ namespace System.Runtime
         }
         private static void InvokeSecondPass(ref ExInfo exInfo, uint idxStart, uint idxLimit)
         {
+#if DEBUGEH
+            System.Diagnostics.Debug.WriteLine($"InvokeSecondPass, idxStart={idxStart}, idxLimit={idxLimit}");
+#endif
             EHEnum ehEnum;
             byte* pbMethodStartAddress;
             if (!InternalCalls.RhpEHEnumInitFromStackFrameIterator(ref exInfo._frameIter, &pbMethodStartAddress, &ehEnum))
@@ -1218,6 +1253,9 @@ namespace System.Runtime
             RhEHClause ehClause;
             for (uint curIdx = 0; InternalCalls.RhpEHEnumNext(ref exInfo._frameIter, &ehEnum, &ehClause) && curIdx < idxLimit; curIdx++)
             {
+#if DEBUGEH
+                System.Diagnostics.Debug.WriteLine($"2nd pass Considering clause {curIdx}, _tryStartOffset={ehClause._tryStartOffset:X}, _tryEndOffset={ehClause._tryEndOffset:X}, _clauseKind={ehClause._clauseKind} for codeOffset={codeOffset:X}");
+#endif
                 //
                 // Skip to the starting try region.  This is used by collided unwinds and rethrows to pickup where
                 // the previous dispatch left off.
@@ -1226,6 +1264,9 @@ namespace System.Runtime
                 {
                     if (curIdx <= idxStart)
                     {
+#if DEBUGEH
+                        System.Diagnostics.Debug.WriteLine($"2nd pass Dismissing clause, curIdx <= idxStart)");
+#endif
                         lastTryStart = ehClause._tryStartOffset; lastTryEnd = ehClause._tryEndOffset;
                         continue;
                     }
@@ -1233,7 +1274,12 @@ namespace System.Runtime
                     // Now, we continue skipping while the try region is identical to the one that invoked the
                     // previous dispatch.
                     if ((ehClause._tryStartOffset == lastTryStart) && (ehClause._tryEndOffset == lastTryEnd))
+                    {
+#if DEBUGEH
+                        System.Diagnostics.Debug.WriteLine($"2nd pass Dismissing clause, try region skipped in pass 1");
+#endif
                         continue;
+                    }
 
                     // We are done skipping. This is required to handle empty finally block markers that are used
                     // to separate runs of different try blocks with same native code offsets.
@@ -1245,6 +1291,9 @@ namespace System.Runtime
                 if ((clauseKind != RhEHClauseKind.RH_EH_CLAUSE_FAULT)
                     || !ehClause.ContainsCodeOffset(codeOffset))
                 {
+#if DEBUGEH
+                    System.Diagnostics.Debug.WriteLine($"2nd pass Dismissing clause, not a FAULT clause or not covering the code offset");
+#endif
                     continue;
                 }
 
@@ -1263,6 +1312,10 @@ namespace System.Runtime
 
                 byte* pFinallyHandler = ehClause._handlerAddress;
                 exInfo._idxCurClause = curIdx;
+
+#if DEBUGEH
+                System.Diagnostics.Debug.WriteLine($"2nd pass Calling finally funclet");
+#endif
 
 #pragma warning disable CS8500
                 fixed (EH.ExInfo* pExInfo = &exInfo)
