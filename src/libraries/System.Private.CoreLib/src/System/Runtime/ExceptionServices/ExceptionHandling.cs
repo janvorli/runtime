@@ -201,6 +201,7 @@ namespace System.Runtime
             internal byte* _handlerAddress;
             //internal void* _pTargetType;
             internal TypeHandle _pTargetType;
+            internal bool _isSameTry;
 
             ///<summary>
             /// We expect the stackwalker to adjust return addresses to point at 'return address - 1' so that we
@@ -1071,7 +1072,7 @@ namespace System.Runtime
             for (uint curIdx = 0; InternalCalls.RhpEHEnumNext(ref frameIter, &ehEnum, &ehClause); curIdx++)
             {
 #if DEBUGEH
-                System.Diagnostics.Debug.WriteLine($"Considering clause {curIdx}, _tryStartOffset={ehClause._tryStartOffset:X}, _tryEndOffset={ehClause._tryEndOffset:X}, _clauseKind={ehClause._clauseKind} for codeOffset={codeOffset:X}");
+                System.Diagnostics.Debug.WriteLine($"Considering clause {curIdx}, _tryStartOffset={ehClause._tryStartOffset:X}, _tryEndOffset={ehClause._tryEndOffset:X}, _clauseKind={ehClause._clauseKind}, _isSameTry={ehClause._isSameTry} for codeOffset={codeOffset:X}");
 #endif
                 RhEHClauseKind clauseKind = ehClause._clauseKind;
 
@@ -1099,7 +1100,7 @@ namespace System.Runtime
 
                     // Now, we continue skipping while the try region is identical to the one that invoked the
                     // previous dispatch.
-                    if ((ehClause._tryStartOffset == lastTryStart) && (ehClause._tryEndOffset == lastTryEnd))
+                    if ((ehClause._isSameTry) && (ehClause._tryStartOffset == lastTryStart) && (ehClause._tryEndOffset == lastTryEnd))
                     {
 #if DEBUGEH
                         System.Diagnostics.Debug.WriteLine($"Dismissing clause, previously invoked try region");
@@ -1273,7 +1274,7 @@ namespace System.Runtime
 
                     // Now, we continue skipping while the try region is identical to the one that invoked the
                     // previous dispatch.
-                    if ((ehClause._tryStartOffset == lastTryStart) && (ehClause._tryEndOffset == lastTryEnd))
+                    if ((ehClause._isSameTry) && (ehClause._tryStartOffset == lastTryStart) && (ehClause._tryEndOffset == lastTryEnd))
                     {
 #if DEBUGEH
                         System.Diagnostics.Debug.WriteLine($"2nd pass Dismissing clause, try region skipped in pass 1");

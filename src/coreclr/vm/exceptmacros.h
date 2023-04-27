@@ -317,6 +317,7 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
 #endif // TARGET_UNIX
 
 #define INSTALL_UNWIND_AND_CONTINUE_HANDLER_NO_PROBE                                        \
+    EX_TRY                                                                                  \
     {                                                                                       \
         MAKE_CURRENT_THREAD_AVAILABLE();                                                    \
         Exception* __pUnCException  = NULL;                                                 \
@@ -334,6 +335,7 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
 
 // Optimized version for helper method frame. Avoids redundant GetThread() calls.
 #define INSTALL_UNWIND_AND_CONTINUE_HANDLER_FOR_HMF(pHelperFrame)                           \
+    EX_TRY                                                                                  \
     {                                                                                       \
         Exception* __pUnCException  = NULL;                                                 \
         Frame*     __pUnCEntryFrame = (pHelperFrame);                                       \
@@ -342,6 +344,8 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
         if (true) PAL_CPP_TRY {                                                             \
             SCAN_EHMARKER_TRY();                                                            \
             DEBUG_ASSURE_NO_RETURN_BEGIN(IUACH);
+
+VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(OBJECTREF throwable, BOOL rethrow = FALSE);
 
 #define UNINSTALL_UNWIND_AND_CONTINUE_HANDLER_NO_PROBE                                      \
             DEBUG_ASSURE_NO_RETURN_END(IUACH)                                               \
@@ -363,6 +367,11 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
             UnwindAndContinueRethrowHelperAfterCatch(__pUnCEntryFrame, __pUnCException);    \
         }                                                                                   \
     }                                                                                       \
+    EX_CATCH                                                                                \
+    {                                                                                       \
+        RealCOMPlusThrowEx(GET_THROWABLE());                                                \
+    }                                                                                       \
+    EX_END_CATCH(SwallowAllExceptions);
 
 #define UNINSTALL_UNWIND_AND_CONTINUE_HANDLER                                               \
     UNINSTALL_UNWIND_AND_CONTINUE_HANDLER_NO_PROBE;

@@ -21,6 +21,7 @@ struct RhEHClause
     BYTE *_filterAddress;
     BYTE *_handlerAddress;
     TypeHandle _pTargetType;
+    BOOL _isSameTry;
 };
 
 enum class ExKind : uint8_t

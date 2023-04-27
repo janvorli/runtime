@@ -7373,7 +7373,6 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         QCALL_CONTRACT;
 
         ExtendedEHClauseEnumerator *pExtendedEHEnum = (ExtendedEHClauseEnumerator*)pEHEnum;
-        unsigned index = 0;
 
         BEGIN_QCALL;
         IJitManager* pJitMan = pFrameIter->m_crawl.GetJitManager();
@@ -7383,7 +7382,7 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
 
         END_QCALL;
 
-        return (pExtendedEHEnum->EHCount - index) != 0;
+        return pExtendedEHEnum->EHCount != 0;
     }
 
     extern "C" BOOL QCALLTYPE RhpEHEnumNext(StackFrameIterator *pFrameIter, EH_CLAUSE_ENUMERATOR* pEHEnum, RhEHClause* pEHClause)
@@ -7412,27 +7411,38 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
 
             result = TRUE;
 //            EHClause.Flags = (CorExceptionFlag)(EHClause.Flags & ~(ULONG)COR_ILEXCEPTION_CLAUSE_DUPLICATED);
-            if (EHClause.Flags & COR_ILEXCEPTION_CLAUSE_DUPLICATED)
+            pEHClause->_isSameTry = (EHClause.Flags & 0x10) != 0; // CORINFO_EH_CLAUSE_SAMETRY
+//            EHClause.Flags = (CorExceptionFlag)(EHClause.Flags & ~(ULONG)0x10);
+
+
+            // Clear special flags - like COR_ILEXCEPTION_CLAUSE_CACHED_CLASS
+            ULONG flags = (CorExceptionFlag)(EHClause.Flags & 0x0f);
+
+            if (flags & COR_ILEXCEPTION_CLAUSE_DUPLICATED)
             {
                 result = FALSE;
             }
-            else if (EHClause.Flags == COR_ILEXCEPTION_CLAUSE_NONE)
+            else if (flags == COR_ILEXCEPTION_CLAUSE_NONE)
             {
                 pEHClause->_clauseKind = RH_EH_CLAUSE_TYPED;
                 pEHClause->_pTargetType = pJitMan->ResolveEHClause(&EHClause, &pFrameIter->m_crawl);
                 //TODO: EHClause.ClassToken == mdTypeRefNil is an extra token representing catch(...)
             }
-            else if (EHClause.Flags & COR_ILEXCEPTION_CLAUSE_FILTER)
+            else if (flags & COR_ILEXCEPTION_CLAUSE_FILTER)
             {
                 pEHClause->_clauseKind = RH_EH_CLAUSE_FILTER;
             }
-            else if (EHClause.Flags & COR_ILEXCEPTION_CLAUSE_FINALLY)
+            else if (flags & COR_ILEXCEPTION_CLAUSE_FINALLY)
             {
                 pEHClause->_clauseKind = RH_EH_CLAUSE_FAULT;
             }
-            else if (EHClause.Flags & COR_ILEXCEPTION_CLAUSE_FAULT)
+            else if (flags & COR_ILEXCEPTION_CLAUSE_FAULT)
             {
                 pEHClause->_clauseKind = RH_EH_CLAUSE_FAULT;
+            }
+            else
+            {
+                result = FALSE;
             }
         }
         END_QCALL;

@@ -1106,6 +1106,7 @@ void StackFrameIterator::CommonCtor(Thread * pThread, PTR_Frame pFrame, ULONG32 
     ResetGCRefReportingState();
     m_fDidFuncletReportGCReferences = true;
 #endif // FEATURE_EH_FUNCLETS
+    m_forceReportingWhileSkipping = 0;
 
 #if defined(RECORD_RESUMABLE_FRAME_SP)
     m_pvResumableFrameTargetSP = NULL;
@@ -1997,6 +1998,8 @@ StackWalkAction StackFrameIterator::Filter(void)
     WRAPPER_NO_CONTRACT;
     SUPPORTS_DAC;
 
+//    OutputDebugStringA("Entering StackFrameIterator::Filter\n");
+
     bool fStop            = false;
     bool fSkippingFunclet = false;
 
@@ -2213,6 +2216,7 @@ ProcessFuncletsForGCReporting:
                                         // can use it.
                                         m_sfParent = m_sfIntermediaryFuncletParent;
                                         fSkipFuncletCallback = false;
+                                        m_forceReportingWhileSkipping = 2;
                                     }
                                 }
                             }
@@ -2250,6 +2254,7 @@ ProcessFuncletsForGCReporting:
                                         // Set the parent frame so that the funclet skipping logic (further below)
                                         // can use it.
                                         m_sfParent = m_sfFuncletParent;
+                                        m_forceReportingWhileSkipping = 2;
 
                                         // For non-filter funclets, we will make the callback for the funclet
                                         // but skip all the frames until we reach the parent method. When we do,
@@ -2510,7 +2515,7 @@ ProcessFuncletsForGCReporting:
                         }
                         else if (fSkipFuncletCallback && (m_flags & GC_FUNCLET_REFERENCE_REPORTING))
                         {
-                            if (!m_sfParent.IsNull())
+                            if (!m_sfParent.IsNull() && m_forceReportingWhileSkipping == 0)
                             {
                                 STRESS_LOG4(LF_GCROOTS, LL_INFO100,
                                      "STACKWALK: %s: not making callback for this frame, SPOfParent = %p, \
@@ -2522,6 +2527,14 @@ ProcessFuncletsForGCReporting:
 
                                 // don't stop here
                                 break;
+                            }
+
+                            if (m_forceReportingWhileSkipping > 0)
+                            {
+                                m_forceReportingWhileSkipping--;
+                                // char msg[256];
+                                // sprintf(msg, "Force callback for skipped function m_crawl.pFunc = %pM, remaining count %d\n", m_crawl.pFunc, (int)m_forceReportingWhileSkipping);
+                                // OutputDebugStringA(msg);
                             }
                         }
                     }
@@ -2647,6 +2660,7 @@ ProcessFuncletsForGCReporting:
         }
     }
 
+//    OutputDebugStringA("Exiting StackFrameIterator::Filter\n");
     return retVal;
 }
 
@@ -3105,6 +3119,23 @@ Cleanup:
         LOG((LF_GCROOTS, LL_INFO10000, "STACKWALK: SWA_FAILED: couldn't start stackwalk\n"));
     }
 #endif // _DEBUG
+
+    static const char* FrameStateNames[] =
+    {
+        "SFITER_UNINITIALIZED",               // uninitialized
+        "SFITER_FRAMELESS_METHOD",            // managed stack frame
+        "SFITER_FRAME_FUNCTION",              // explicit frame
+        "SFITER_SKIPPED_FRAME_FUNCTION",      // skipped explicit frame
+        "SFITER_NO_FRAME_TRANSITION",         // no-frame transition (currently used for ExInfo only)
+        "SFITER_NATIVE_MARKER_FRAME",         // the native stack frame immediately below (stack grows up)
+                                            // a managed stack region
+        "SFITER_INITIAL_NATIVE_CONTEXT",      // initial native seed CONTEXT
+        "SFITER_DONE"                         // the iterator has reached the end of the stack
+    };
+
+    // char msg[256];
+    // sprintf(msg, "StackFrameIterator::NextRaw moved to SP=%p, PC=%p, state=%s\n", (void*)m_crawl.GetRegisterSet()->SP, (void*)m_crawl.GetRegisterSet()->ControlPC, FrameStateNames[m_frameState]);
+    // OutputDebugStringA(msg);
 
     return retVal;
 } // StackFrameIterator::NextRaw()

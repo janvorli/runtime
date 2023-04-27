@@ -724,7 +724,7 @@ private:
     bool          m_fProcessIntermediaryNonFilterFunclet;
     bool          m_fDidFuncletReportGCReferences;
 #endif // FEATURE_EH_FUNCLETS
-
+    BYTE          m_forceReportingWhileSkipping;
 #if defined(RECORD_RESUMABLE_FRAME_SP)
     LPVOID m_pvResumableFrameTargetSP;
 #endif // RECORD_RESUMABLE_FRAME_SP
