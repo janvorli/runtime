@@ -57,8 +57,10 @@ NOINLINE LPVOID __FCThrow(LPVOID __me, RuntimeExceptionKind reKind, UINT resID, 
     exInfo._stackTraceInfo.AllocateStackTrace();
     exInfo._pFrame = GetThread()->GetFrame();
     exInfo._sfLowBound.SetMaxVal();
+    exInfo._exception = NULL;
     pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
 
+    GCPROTECT_BEGIN(exInfo._exception);
     PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_INTERNAL_EX);
     DECLARE_ARGHOLDER_ARRAY(args, 2);
     args[ARGNUM_0] = DWORD_TO_ARGHOLDER(reKind);
@@ -66,6 +68,7 @@ NOINLINE LPVOID __FCThrow(LPVOID __me, RuntimeExceptionKind reKind, UINT resID, 
 
     //Ex.RhThrowInternalEx(oref, &exInfo)
     CALL_MANAGED_METHOD_NORET(args)
+    GCPROTECT_END();
 /*
     if (resID == 0)
     {

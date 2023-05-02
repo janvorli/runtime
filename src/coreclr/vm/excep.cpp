@@ -2875,8 +2875,10 @@ VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(OBJECTREF throwable, BOOL rethrow)
     exInfo._stackTraceInfo.AllocateStackTrace();
     exInfo._pFrame = GetThread()->GetFrame();
     exInfo._sfLowBound.SetMaxVal();
+    exInfo._exception = NULL;
     pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
 
+    GCPROTECT_BEGIN(exInfo._exception);
     PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_EX);
     DECLARE_ARGHOLDER_ARRAY(args, 2);
     args[ARGNUM_0] = OBJECTREF_TO_ARGHOLDER(throwable);
@@ -2885,6 +2887,7 @@ VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(OBJECTREF throwable, BOOL rethrow)
     //Ex.RhThrowEx(throwable, &exInfo)
     CALL_MANAGED_METHOD_NORET(args)
 
+    GCPROTECT_END();
     GCPROTECT_END();
 
 }
@@ -6633,6 +6636,7 @@ void HandleManagedFault(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext)
     exInfo._stackTraceInfo.AllocateStackTrace();
     exInfo._pFrame = GetThread()->GetFrame();
     exInfo._sfLowBound.SetMaxVal();
+    exInfo._exception = NULL;
     pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
 
     DWORD exceptionCode = pExceptionRecord->ExceptionCode;
@@ -6644,6 +6648,7 @@ void HandleManagedFault(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext)
         }
     }
 
+    GCPROTECT_BEGIN(exInfo._exception);
     PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROWHW_EX);
     DECLARE_ARGHOLDER_ARRAY(args, 2);
     args[ARGNUM_0] = DWORD_TO_ARGHOLDER(exceptionCode);
@@ -6651,6 +6656,8 @@ void HandleManagedFault(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext)
 
     //Ex.RhThrowHwEx(exceptionCode, &exInfo)
     CALL_MANAGED_METHOD_NORET(args)
+
+    GCPROTECT_END();
 
     // HandleManagedFaultFilterParam param;
     // param.fFilterExecuted = FALSE;

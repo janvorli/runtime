@@ -4237,8 +4237,10 @@ HCIMPL1(void, IL_Throw,  Object* obj)
     exInfo._stackTraceInfo.AllocateStackTrace();
     exInfo._pFrame = GetThread()->GetFrame();
     exInfo._sfLowBound.SetMaxVal();
+    exInfo._exception = NULL;
     pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
 
+    GCPROTECT_BEGIN(exInfo._exception);
     GCPROTECT_BEGIN(oref);
     PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_EX);
     DECLARE_ARGHOLDER_ARRAY(args, 2);
@@ -4248,6 +4250,7 @@ HCIMPL1(void, IL_Throw,  Object* obj)
     //Ex.RhThrowEx(oref, &exInfo)
     CALL_MANAGED_METHOD_NORET(args)
 
+    GCPROTECT_END();
     GCPROTECT_END();
 
     HELPER_METHOD_FRAME_END();
@@ -4282,8 +4285,10 @@ extern "C" HCIMPL2(void, RhInternalThrow, int exceptionId, TransitionBlock* pTra
     exInfo._stackTraceInfo.AllocateStackTrace();
     exInfo._pFrame = GetThread()->GetFrame();
     exInfo._sfLowBound.SetMaxVal();
+    exInfo._exception = NULL;
     pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
 
+    GCPROTECT_BEGIN(exInfo._exception);
     PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_INTERNAL_EX);
     DECLARE_ARGHOLDER_ARRAY(args, 2);
     args[ARGNUM_0] = DWORD_TO_ARGHOLDER(exceptionId);
@@ -4291,6 +4296,7 @@ extern "C" HCIMPL2(void, RhInternalThrow, int exceptionId, TransitionBlock* pTra
 
     //Ex.RhThrowInternalEx(oref, &exInfo)
     CALL_MANAGED_METHOD_NORET(args)
+    GCPROTECT_END();
 
     INCONTRACT(FCallGCCanTrigger::Leave(__FUNCTION__, __FILE__, __LINE__));
 }
@@ -4352,8 +4358,10 @@ extern "C" HCIMPL2(void, RhThrowEx, Object* obj, TransitionBlock* pTransitionBlo
     exInfo._stackTraceInfo.AllocateStackTrace();
     exInfo._pFrame = GetThread()->GetFrame();
     exInfo._sfLowBound.SetMaxVal();
+    exInfo._exception = NULL;
     pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
 
+    GCPROTECT_BEGIN(exInfo._exception);
     GCPROTECT_BEGIN(oref);
     PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_EX);
     DECLARE_ARGHOLDER_ARRAY(args, 2);
@@ -4363,6 +4371,7 @@ extern "C" HCIMPL2(void, RhThrowEx, Object* obj, TransitionBlock* pTransitionBlo
     //Ex.RhThrowEx(oref, &exInfo)
     CALL_MANAGED_METHOD_NORET(args)
 
+    GCPROTECT_END();
     GCPROTECT_END();
 
     INCONTRACT(FCallGCCanTrigger::Leave(__FUNCTION__, __FILE__, __LINE__));
@@ -4400,8 +4409,10 @@ extern "C" HCIMPL1(void, RhRethrow, TransitionBlock* pTransitionBlock)
     exInfo._stackTraceInfo.AllocateStackTrace();
     exInfo._pFrame = GetThread()->GetFrame();
     exInfo._sfLowBound.SetMaxVal();
+    exInfo._exception = NULL;
     pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
 
+    GCPROTECT_BEGIN(exInfo._exception);
     PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_RETHROW);
     DECLARE_ARGHOLDER_ARRAY(args, 2);
     args[ARGNUM_0] = PTR_TO_ARGHOLDER(pActiveExInfo);
@@ -4409,7 +4420,8 @@ extern "C" HCIMPL1(void, RhRethrow, TransitionBlock* pTransitionBlock)
 
     //Ex.RhRethrow(ref ExInfo activeExInfo, ref ExInfo exInfo)
     CALL_MANAGED_METHOD_NORET(args)
-
+    GCPROTECT_END();
+    
     INCONTRACT(FCallGCCanTrigger::Leave(__FUNCTION__, __FILE__, __LINE__));
 }
 HCIMPLEND
