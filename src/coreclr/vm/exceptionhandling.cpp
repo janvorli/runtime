@@ -6237,7 +6237,7 @@ bool ExceptionTracker::IsInStackRegionUnwoundBySpecifiedException(CrawlFrame * p
 
     // The tracker must be in the second pass, and its stack range must not be empty.
     if ( (pExInfo == NULL) ||
-         pExInfo->_passNumber == 1 ||
+         pExInfo->_stackBoundsPassNumber == 1 ||
          pExInfo->_sfLowBound.IsMaxVal() &&
          pExInfo->_sfHighBound.IsNull())
     {
@@ -6420,6 +6420,20 @@ bool ExceptionTracker::HasFrameBeenUnwoundByAnyActiveException(CrawlFrame * pCF)
     bool fHasFrameBeenUnwound = false;
 
 #if 1
+    {
+        CallerStackFrame csfToCheck;
+        if (pCF->IsFrameless())
+        {
+            csfToCheck = CallerStackFrame::FromRegDisplay(pCF->GetRegisterSet());
+        }
+        else
+        {
+            csfToCheck = CallerStackFrame((UINT_PTR)pCF->GetFrame());
+        }
+        STRESS_LOG4(LF_EH|LF_GCROOTS, LL_INFO100, "CrawlFrame (%p): Frameless: %s %s: %p\n",
+                    pCF, pCF->IsFrameless() ? "Yes" : "No", pCF->IsFrameless() ? "CallerSP" : "Address", csfToCheck.SP);
+    }
+
     PTR_ExInfo pTopExInfo = pTargetThread->GetExceptionState()->GetCurrentExInfo();
     for (PTR_ExInfo pCurrentExInfo = pTopExInfo; pCurrentExInfo != NULL; pCurrentExInfo = dac_cast<PTR_ExInfo>(pCurrentExInfo->_pPrevExInfo))
     {
@@ -6904,11 +6918,29 @@ StackFrame ExceptionTracker::FindParentStackFrameHelper(CrawlFrame* pCF,
          pCurrentExInfo = pCurrentExInfo->_pPrevExInfo)
     {
         // Check if the ExInfo has just been created.
+        // TODO: this makes sense only of GC can kick in between the ExInfo creation and the stack walking. Can that happen?
         if (pCurrentExInfo->_sfLowBound.IsMaxVal() && pCurrentExInfo->_sfHighBound.IsNull())
         {
             continue;
         }
 
+        CallerStackFrame csfFunclet = pCurrentExInfo->_csfEHClause;
+        if (csfCurrent == csfFunclet)
+        {
+            //_ASSERTE_MSG(FALSE, "$%$%$%$%$%$%$%");
+#ifndef DACCESS_COMPILE            
+//            __debugbreak();
+#endif            
+            sfResult = (StackFrame)pCurrentExInfo->_csfEnclosingClause;
+            if (sfResult.IsNull())
+            {
+                _ASSERTE_MSG(FALSE, "$%$%$%$%$%$%$%$");
+                continue;
+            }
+
+            break;
+        }          
+/*
         // We are searching the ExInfo chain from the top of the stack. Once we find one that is above the csfCurrent, we can extract the parent frame from it.
         if (csfCurrent.SP < (UINT_PTR)pCurrentExInfo)//StackFrame::FromRegDisplay(pCurrentExInfo->_frameIter.m_crawl))
         {
@@ -6916,6 +6948,7 @@ StackFrame ExceptionTracker::FindParentStackFrameHelper(CrawlFrame* pCF,
             sfResult = CallerStackFrame::FromRegDisplay(pCurrentExInfo->_frameIter.m_crawl.GetRegisterSet());
             break;
         }
+*/        
     }
 #else
     for (pCurrentTracker = pThread->GetExceptionState()->m_pCurrentTracker;
@@ -7312,6 +7345,17 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         throwable = PossiblyUnwrapThrowable(throwable, exInfo->_frameIter.m_crawl.GetAssembly());
 
         UINT_PTR establisherFrame = GetEstablisherFrame(pvRegDisplay, exInfo);
+        exInfo->_csfEHClause = CallerStackFrame((UINT_PTR)GetCurrentSP());
+        // TODO: it seems we can evaluate that during stack walk
+        exInfo->_csfEnclosingClause = CallerStackFrame::FromRegDisplay(exInfo->_frameIter.m_crawl.GetRegisterSet());
+
+        // TODO: verify both of these
+#ifdef ESTABLISHER_FRAME_ADDRESS_IS_CALLER_SP
+        exInfo->_sfCallerOfActualHandlerFrame = StackFrame(establisherFrame); 
+#else
+        exInfo->_sfCallerOfActualHandlerFrame = exInfo->_csfEnclosingClause;
+#endif        
+
         DWORD_PTR dwResumePC = pfnHandler(establisherFrame, OBJECTREFToObject(throwable));
         pvRegDisplay->pCurrentContext->Rip = dwResumePC;
         // TODO: the coreclr EH has a concept of limit frame which we should employ here
@@ -7356,6 +7400,9 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         MarkInlinedCallFrameAsFuncletCall(pFrame);
         HandlerFn* pfnHandler = (HandlerFn*)pHandlerIP;
         UINT_PTR establisherFrame = GetEstablisherFrame(pvRegDisplay, exInfo);
+        exInfo->_csfEHClause = CallerStackFrame((UINT_PTR)GetCurrentSP());
+        // TODO: it seems we can evaluate that during stack walk
+        exInfo->_csfEnclosingClause = CallerStackFrame::FromRegDisplay(exInfo->_frameIter.m_crawl.GetRegisterSet());
         DWORD_PTR dwResumePC = pfnHandler(establisherFrame, NULL);
         END_QCALL;
     }
@@ -7379,6 +7426,9 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
 
         HandlerFn* pfnHandler = (HandlerFn*)pFilterIP;
         UINT_PTR establisherFrame = GetEstablisherFrame(pvRegDisplay, pExInfo);
+        pExInfo->_csfEHClause = CallerStackFrame((UINT_PTR)GetCurrentSP());
+        // TODO: it seems we can evaluate that during stack walk
+        pExInfo->_csfEnclosingClause = CallerStackFrame::FromRegDisplay(pExInfo->_frameIter.m_crawl.GetRegisterSet());
         dwResult = pfnHandler(establisherFrame, OBJECTREFToObject(throwable));
         END_QCALL;
 

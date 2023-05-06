@@ -2868,6 +2868,7 @@ VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(OBJECTREF throwable, BOOL rethrow)
     exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
     exInfo._pExContext = &ctx;
     exInfo._passNumber = 1;
+    exInfo._stackBoundsPassNumber = 1;
     exInfo._kind = ExKind::Throw;
     exInfo._idxCurClause = 0xffffffff;
     exInfo._pRD = &rd;
@@ -6629,6 +6630,7 @@ void HandleManagedFault(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext)
     exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
     exInfo._pExContext = &ctx; // TODO: or the pContext?
     exInfo._passNumber = 1;
+    exInfo._stackBoundsPassNumber = 1;
     exInfo._kind = ExKind::HardwareFault;
     exInfo._idxCurClause = 0xffffffff;
     exInfo._pRD = &rd;

@@ -50,6 +50,7 @@ NOINLINE LPVOID __FCThrow(LPVOID __me, RuntimeExceptionKind reKind, UINT resID, 
     exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
     exInfo._pExContext = &ctx;
     exInfo._passNumber = 1;
+    exInfo._stackBoundsPassNumber = 1;
     exInfo._kind = ExKind::Throw;
     exInfo._idxCurClause = 0xffffffff;
     exInfo._pRD = &rd;

@@ -4230,6 +4230,7 @@ HCIMPL1(void, IL_Throw,  Object* obj)
     exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
     exInfo._pExContext = &ctx;
     exInfo._passNumber = 1;
+    exInfo._stackBoundsPassNumber = 1;
     exInfo._kind = ExKind::Throw;
     exInfo._idxCurClause = 0xffffffff;
     exInfo._pRD = &rd;
@@ -4278,6 +4279,7 @@ extern "C" HCIMPL2(void, RhInternalThrow, int exceptionId, TransitionBlock* pTra
     exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
     exInfo._pExContext = &ctx;
     exInfo._passNumber = 1;
+    exInfo._stackBoundsPassNumber = 1;
     exInfo._kind = ExKind::Throw;
     exInfo._idxCurClause = 0xffffffff;
     exInfo._pRD = &rd;
@@ -4351,6 +4353,7 @@ extern "C" HCIMPL2(void, RhThrowEx, Object* obj, TransitionBlock* pTransitionBlo
     exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
     exInfo._pExContext = &ctx;
     exInfo._passNumber = 1;
+    exInfo._stackBoundsPassNumber = 1;
     exInfo._kind = ExKind::Throw;
     exInfo._idxCurClause = 0xffffffff;
     exInfo._pRD = &rd;
@@ -4402,6 +4405,7 @@ extern "C" HCIMPL1(void, RhRethrow, TransitionBlock* pTransitionBlock)
     exInfo._pPrevExInfo = pActiveExInfo;
     exInfo._pExContext = &ctx;
     exInfo._passNumber = 1;
+    exInfo._stackBoundsPassNumber = 1;
     exInfo._kind = ExKind::None;
     exInfo._idxCurClause = 0xffffffff;
     exInfo._pRD = &rd;
