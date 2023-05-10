@@ -1238,6 +1238,29 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
     ExInfo* pExInfo = pThis->m_pNextExInfo;
     ExInfo* pTopExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
 
+    bool invalidRevPInvoke;
+#ifdef USE_GC_INFO_DECODER
+    GcInfoDecoder gcInfoDecoder(pThis->m_crawl.GetCodeInfo()->GetGCInfoToken(), DECODE_REVERSE_PINVOKE_VAR);
+    invalidRevPInvoke = gcInfoDecoder.GetReversePInvokeFrameStackSlot() != NO_REVERSE_PINVOKE_FRAME;
+#else // USE_GC_INFO_DECODER
+    hdrInfo gcHdrInfo;
+    DecodeGCHdrInfo(codeInfo.GetGCInfoToken(), 0, &gcHdrInfo);
+    invalidRevPInvoke = gcHdrInfo.revPInvokeOffset != INVALID_REV_PINVOKE_OFFSET;
+#endif // USE_GC_INFO_DECODER
+
+    if (fUnwoundReversePInvoke)
+    {
+        *fUnwoundReversePInvoke = invalidRevPInvoke;
+    }
+
+    if (invalidRevPInvoke)
+    {
+//        __debugbreak();
+        retVal = pThis->Next();
+        _ASSERTE(retVal != SWA_FAILED);
+        return true;
+    }
+
     BEGIN_QCALL;
     do
     {
@@ -1275,6 +1298,10 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
             // Detect collided unwind
             Frame *pFrame = pThis->m_crawl.GetFrame();
             // pFrame->ExceptionUnwind(); ??? Add this?
+            // if (pFrame->GetVTablePtr() == ReversePInvokeFrame::GetMethodFrameVPtr())
+            // {
+            //     __debugbreak();
+            // }
 
             if (InlinedCallFrame::FrameHasActiveCall(pFrame))
             {

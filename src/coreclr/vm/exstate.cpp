@@ -110,6 +110,10 @@ OBJECTREF ThreadExceptionState::GetThrowable()
     {
         return ObjectFromHandle(m_pCurrentTracker->m_hThrowable);
     }
+    // if (m_pExInfo && m_pExInfo->_exception)
+    // {
+    //     return m_pExInfo->_exception;
+    // }
 #else // FEATURE_EH_FUNCLETS
     if (m_currentExInfo.m_hThrowable)
     {

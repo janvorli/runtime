@@ -855,7 +855,7 @@ OFFSETOF__Thread__m_pExInfoStackHead equ 080h
 ;NESTED_END RhpThrowEx, _TEXT
 
 extern RhThrowEx:proc
-extern RhRethrow:proc
+;extern RhRethrow:proc
 extern RhInternalThrow:proc
 
 NESTED_ENTRY IL_ThrowNew, _TEXT
@@ -915,18 +915,18 @@ NESTED_ENTRY JIT_ThrowNullRef, _TEXT
 NESTED_END JIT_ThrowNullRef, _TEXT
 
 
-NESTED_ENTRY IL_Rethrow, _TEXT
-
-        PROLOG_WITH_TRANSITION_BLOCK
-
-        lea             rcx, [rsp + __PWTB_TransitionBlock]     ; pTransitionBlock*
-        call    RhRethrow
-        ;; no return
-        int 3
-
-        EPILOG_WITH_TRANSITION_BLOCK_RETURN
-
-NESTED_END IL_Rethrow, _TEXT
+;NESTED_ENTRY IL_Rethrow, _TEXT
+;
+;        PROLOG_WITH_TRANSITION_BLOCK
+;
+;        lea             rcx, [rsp + __PWTB_TransitionBlock]     ; pTransitionBlock*
+;        call    RhRethrow
+;        ;; no return
+;        int 3
+;
+;        EPILOG_WITH_TRANSITION_BLOCK_RETURN
+;
+;NESTED_END IL_Rethrow, _TEXT
 
         end
 

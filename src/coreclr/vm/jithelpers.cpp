@@ -4198,6 +4198,7 @@ HCIMPL1(void, IL_Throw,  Object* obj)
 
     if (oref == 0)
         COMPlusThrow(kNullReferenceException);
+        //RealCOMPlusThrowEx(kNullReferenceException);
     else
     if (!IsException(oref->GetMethodTable()))
     {
@@ -4382,18 +4383,72 @@ extern "C" HCIMPL2(void, RhThrowEx, Object* obj, TransitionBlock* pTransitionBlo
 }
 HCIMPLEND
 
-extern "C" void IL_Rethrow(Object* obj);
+// extern "C" void IL_Rethrow(Object* obj);
 
-extern "C" HCIMPL1(void, RhRethrow, TransitionBlock* pTransitionBlock)
+// extern "C" HCIMPL1(void, RhRethrow, TransitionBlock* pTransitionBlock)
+// {
+//     FCALL_CONTRACT;
+
+//     FC_GC_POLL_NOT_NEEDED();    // throws always open up for GC
+
+//     INCONTRACT(FCallGCCanTrigger::Enter());
+
+//     FrameWithCookie<ThrowMethodFrame> frame(pTransitionBlock);
+//     frame.Push();
+
+//     CONTEXT ctx;
+//     REGDISPLAY rd;
+//     Thread *pThread = GetThread();
+
+//     ExInfo *pActiveExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+
+//     ExInfo exInfo = {};
+//     exInfo._pPrevExInfo = pActiveExInfo;
+//     exInfo._pExContext = &ctx;
+//     exInfo._passNumber = 1;
+//     exInfo._stackBoundsPassNumber = 1;
+//     exInfo._kind = ExKind::None;
+//     exInfo._idxCurClause = 0xffffffff;
+//     exInfo._pRD = &rd;
+//     exInfo._stackTraceInfo.Init();
+//     exInfo._stackTraceInfo.AllocateStackTrace();
+//     exInfo._pFrame = GetThread()->GetFrame();
+//     exInfo._sfLowBound.SetMaxVal();
+//     exInfo._exception = NULL;
+//     pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
+
+//     GCPROTECT_BEGIN(exInfo._exception);
+//     PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_RETHROW);
+//     DECLARE_ARGHOLDER_ARRAY(args, 2);
+//     args[ARGNUM_0] = PTR_TO_ARGHOLDER(pActiveExInfo);
+//     args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
+
+//     //Ex.RhRethrow(ref ExInfo activeExInfo, ref ExInfo exInfo)
+//     CALL_MANAGED_METHOD_NORET(args)
+//     GCPROTECT_END();
+    
+//     INCONTRACT(FCallGCCanTrigger::Leave(__FUNCTION__, __FILE__, __LINE__));
+// }
+// HCIMPLEND
+
+/*************************************************************/
+
+HCIMPL0(void, IL_Rethrow)
 {
     FCALL_CONTRACT;
 
     FC_GC_POLL_NOT_NEEDED();    // throws always open up for GC
 
-    INCONTRACT(FCallGCCanTrigger::Enter());
+    HELPER_METHOD_FRAME_BEGIN_ATTRIB_NOPOLL(Frame::FRAME_ATTR_EXCEPTION);    // Set up a frame
 
-    FrameWithCookie<ThrowMethodFrame> frame(pTransitionBlock);
-    frame.Push();
+    // OBJECTREF throwable = GetThread()->GetThrowable();
+    // if (throwable == NULL)
+    // {
+    //     // This can only be the result of bad IL (or some internal EE failure).
+    //     _ASSERTE(!"No throwable on rethrow");
+    //     // TODO: fixme
+    //     RealCOMPlusThrow(kInvalidProgramException, (UINT)IDS_EE_RETHROW_NOT_ALLOWED);
+    // }
 
     CONTEXT ctx;
     REGDISPLAY rd;
@@ -4425,32 +4480,6 @@ extern "C" HCIMPL1(void, RhRethrow, TransitionBlock* pTransitionBlock)
     //Ex.RhRethrow(ref ExInfo activeExInfo, ref ExInfo exInfo)
     CALL_MANAGED_METHOD_NORET(args)
     GCPROTECT_END();
-    
-    INCONTRACT(FCallGCCanTrigger::Leave(__FUNCTION__, __FILE__, __LINE__));
-}
-HCIMPLEND
-
-/*************************************************************/
-
-HCIMPL0(void, IL_RethrowOld)
-{
-    FCALL_CONTRACT;
-
-    FC_GC_POLL_NOT_NEEDED();    // throws always open up for GC
-
-    HELPER_METHOD_FRAME_BEGIN_ATTRIB_NOPOLL(Frame::FRAME_ATTR_EXCEPTION);    // Set up a frame
-
-    OBJECTREF throwable = GetThread()->GetThrowable();
-    if (throwable != NULL)
-    {
-        RaiseTheExceptionInternalOnly(throwable, TRUE);
-    }
-    else
-    {
-        // This can only be the result of bad IL (or some internal EE failure).
-        _ASSERTE(!"No throwable on rethrow");
-        RealCOMPlusThrow(kInvalidProgramException, (UINT)IDS_EE_RETHROW_NOT_ALLOWED);
-    }
 
     HELPER_METHOD_FRAME_END();
 }

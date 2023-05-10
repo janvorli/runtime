@@ -869,6 +869,62 @@ ProcessCLRException(IN     PEXCEPTION_RECORD   pExceptionRecord,
     STATIC_CONTRACT_GC_TRIGGERS;
     STATIC_CONTRACT_THROWS;
 
+    // TODO: verify that this is a pinvoke call, otherwise we should not get here.
+    if (!(pExceptionRecord->ExceptionFlags & EXCEPTION_UNWINDING))
+    {
+        Thread* pThread         = GetThread();
+        ClrUnwindEx(pExceptionRecord,
+                    (UINT_PTR)pThread,
+                    INVALID_RESUME_ADDRESS,
+                    pDispatcherContext->EstablisherFrame);
+
+        UNREACHABLE();
+    }
+    else
+    {
+//        __debugbreak();
+        GCX_COOP();
+        // TODO: use something else than faulting exception frame???
+        FrameWithCookie<FaultingExceptionFrame> frameWithCookie;
+        FaultingExceptionFrame *frame = &frameWithCookie;
+    #if defined(FEATURE_EH_FUNCLETS)
+        *frame->GetGSCookiePtr() = GetProcessGSCookie();
+    #endif // FEATURE_EH_FUNCLETS
+        frame->InitAndLink(pContextRecord);
+
+        CONTEXT ctx;
+        REGDISPLAY rd;
+        Thread *pThread = GetThread();
+
+        ExInfo exInfo = {};
+        exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+        exInfo._pExContext = &ctx; // TODO: or the pContext?
+        exInfo._passNumber = 1;
+        exInfo._stackBoundsPassNumber = 1;
+        exInfo._kind = ExKind::Throw;
+        exInfo._idxCurClause = 0xffffffff;
+        exInfo._pRD = &rd;
+        exInfo._stackTraceInfo.Init();
+        exInfo._stackTraceInfo.AllocateStackTrace();
+        exInfo._pFrame = GetThread()->GetFrame();
+        exInfo._sfLowBound.SetMaxVal();
+        exInfo._exception = NULL;
+        pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
+
+        GCPROTECT_BEGIN(exInfo._exception);
+        OBJECTREF oref = ExceptionTracker::CreateThrowable(pExceptionRecord, FALSE) ;// CreateCOMPlusExceptionObject(pThread, pExceptionRecord, FALSE);
+        GCPROTECT_BEGIN(oref);
+        PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_EX);
+        DECLARE_ARGHOLDER_ARRAY(args, 2);
+        args[ARGNUM_0] = OBJECTREF_TO_ARGHOLDER(oref);
+        args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
+
+        //Ex.RhThrowEx(oref, &exInfo)
+        CALL_MANAGED_METHOD_NORET(args)
+
+        GCPROTECT_END();
+        GCPROTECT_END();
+    }
     __debugbreak();
     EEPOLICY_HANDLE_FATAL_ERROR_WITH_MESSAGE(E_FAIL, _T("SEH exception leaked into managed code"));
 
@@ -7341,6 +7397,17 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         Frame* pFrame = pThread->GetFrame();
         MarkInlinedCallFrameAsFuncletCall(pFrame);
         HandlerFn* pfnHandler = (HandlerFn*)pHandlerIP;
+        // TODO: verify both of these
+#ifdef ESTABLISHER_FRAME_ADDRESS_IS_CALLER_SP
+        exInfo->_sfCallerOfActualHandlerFrame = StackFrame(establisherFrame); 
+#else
+        exInfo->_sfCallerOfActualHandlerFrame = exInfo->_csfEnclosingClause;
+#endif        
+
+        DWORD_PTR dwResumePC;
+        ULONG64 targetSp;
+        if (pHandlerIP != (BYTE*)1)
+        {
         OBJECTREF throwable = exceptionObj.Get();
         throwable = PossiblyUnwrapThrowable(throwable, exInfo->_frameIter.m_crawl.GetAssembly());
 
@@ -7349,25 +7416,26 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         // TODO: it seems we can evaluate that during stack walk
         exInfo->_csfEnclosingClause = CallerStackFrame::FromRegDisplay(exInfo->_frameIter.m_crawl.GetRegisterSet());
 
-        // TODO: verify both of these
-#ifdef ESTABLISHER_FRAME_ADDRESS_IS_CALLER_SP
-        exInfo->_sfCallerOfActualHandlerFrame = StackFrame(establisherFrame); 
-#else
-        exInfo->_sfCallerOfActualHandlerFrame = exInfo->_csfEnclosingClause;
-#endif        
+            dwResumePC = pfnHandler(establisherFrame, OBJECTREFToObject(throwable));
+            pvRegDisplay->pCurrentContext->Rip = dwResumePC;
+            targetSp = pvRegDisplay->pCurrentContext->Rsp;
+        }
+        else
+        {
+            //targetSp = pvRegDisplay->pCallerContext->Rsp;
+            targetSp = pvRegDisplay->pCurrentContext->Rsp;
+        }
 
-        DWORD_PTR dwResumePC = pfnHandler(establisherFrame, OBJECTREFToObject(throwable));
-        pvRegDisplay->pCurrentContext->Rip = dwResumePC;
         // TODO: the coreclr EH has a concept of limit frame which we should employ here
         // TODO: handle invalid frame
-        while (pFrame < (void*)pvRegDisplay->pCurrentContext->Rsp)
+        while (pFrame < (void*)targetSp)
         {
             pFrame->Pop(pThread);
             pFrame = pThread->GetFrame();
         }
 
         GCFrame* pGCFrame = pThread->GetGCFrame();
-        while (pGCFrame && pGCFrame < (void*)pvRegDisplay->pCurrentContext->Rsp)
+        while (pGCFrame && pGCFrame < (void*)targetSp)
         {
             pGCFrame->Pop();
             pGCFrame = pThread->GetGCFrame();
@@ -7376,15 +7444,43 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         // Pop ExInfos
         // TODO: use the ResetNextExInfoForSP
         ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-        while (pExInfo && pExInfo < (void*)pvRegDisplay->pCurrentContext->Rsp)
+        while (pExInfo && pExInfo < (void*)targetSp)
         {
             pExInfo = pExInfo->_pPrevExInfo;
         }
 
         pThread->GetExceptionState()->SetCurrentExInfo(pExInfo);
 
-        //pvRegDisplay->pCurrentContext->ContextFlags &= ~((CONTEXT_XSTATE | CONTEXT_FLOATING_POINT) & 0xffff);
-        ClrRestoreNonvolatileContext(pvRegDisplay->pCurrentContext);
+        if (pHandlerIP != (BYTE*)1)
+        {
+            ClrRestoreNonvolatileContext(pvRegDisplay->pCurrentContext);
+        }
+        else
+        {
+            // Throw exception from the caller context
+            /*
+            Idea:
+            Start with the context of the caller
+            Push the return address
+            Restore the context to a C function that will raise the exception
+            */
+            ULONG64* returnAddress = (ULONG64*)targetSp;
+//            *returnAddress = pvRegDisplay->pCallerContext->Rip;
+            *returnAddress = pvRegDisplay->pCurrentContext->Rip;
+            thread_local OBJECTREF oref = exInfo->_exception;
+            // pvRegDisplay->pCallerContext->Rip = (ULONG64)(void (*)(OBJECTREF))RealCOMPlusThrow;
+            // pvRegDisplay->pCallerContext->Rsp = targetSp - 8;
+            pvRegDisplay->pCurrentContext->Rip = (ULONG64)(void (*)(OBJECTREF))RealCOMPlusThrow;
+            pvRegDisplay->pCurrentContext->Rsp = targetSp - 8;
+            // TODO: this doesn't work, the _exception is in a region that's going to be unwound.
+            // And even if that worked, the RaiseTheExceptionInternalOnly that is ultimately called
+            // would still check the throwable on the thread, which would be popped out.
+//            pvRegDisplay->pCallerContext->Rcx = (ULONG64)(size_t)(ULONG64*)&oref;
+            pvRegDisplay->pCurrentContext->Rcx = (ULONG64)(size_t)(ULONG64*)&oref;
+            //ClrRestoreNonvolatileContext(pvRegDisplay->pCallerContext);
+//            RtlRestoreContext(pvRegDisplay->pCallerContext, NULL);
+            RtlRestoreContext(pvRegDisplay->pCurrentContext, NULL);
+        }
         END_QCALL;
         return NULL;
     }

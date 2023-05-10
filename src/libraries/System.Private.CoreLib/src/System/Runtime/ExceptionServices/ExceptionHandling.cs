@@ -926,8 +926,14 @@ namespace System.Runtime
                 // For GC stackwalking, we'll happily walk across native code blocks, but for EH dispatch, we
                 // disallow dispatching exceptions across native code.
                 if (unwoundReversePInvoke)
+                {
+                    handlingFrameSP = frameIter.SP;
+//                    System.Diagnostics.Debug.WriteLine($"Found reverse pinvoke frame at SP={handlingFrameSP:X}");
+                    pCatchHandler = (byte*)1;
                     break;
+                }
 
+                // TODO: move above ^^^
                 prevControlPC = frameIter.ControlPC;
                 prevOriginalPC = frameIter.OriginalControlPC;
 
@@ -996,8 +1002,12 @@ namespace System.Runtime
 #endif
                     )
                 {
-                    // invoke only a partial second-pass here...
-                    InvokeSecondPass(ref exInfo, startIdx, catchingTryRegionIdx);
+                    if (!unwoundReversePInvoke)
+                    {
+                        // invoke only a partial second-pass here...
+                        InvokeSecondPass(ref exInfo, startIdx, catchingTryRegionIdx);
+                    }
+//                    System.Diagnostics.Debug.WriteLine($"Second pass terminating at SP={frameIter.SP:X}");
                     break;
                 }
 
