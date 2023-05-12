@@ -436,7 +436,7 @@ public:
 
     const EE_ILEXCEPTION_CLAUSE& GetEHClauseForCatch()
     {
-        __debugbreak();
+        //__debugbreak();
         return ehClauseForCatch;
     }
 

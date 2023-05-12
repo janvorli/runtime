@@ -989,6 +989,7 @@ namespace System.Runtime
             // TODO: we have a race here. If GC kicks in before we reset the scanned stack range in the exInfo, the stack walked would think that the frames covered
             // by the scanned range were already unwound. This needs to be fixed, as it causes crashes.
             exInfo._passNumber = 2;
+            exInfo._idxCurClause = catchingTryRegionIdx;
             startIdx = MaxTryRegionIdx;
             isValid = frameIter.Init(exInfo._pExContext, exInfo._pRD, (exInfo._kind & ExKind.InstructionFaultFlag) != 0);
             for (; isValid && ((byte*)frameIter.SP <= (byte*)handlingFrameSP); isValid = frameIter.Next(&startIdx))

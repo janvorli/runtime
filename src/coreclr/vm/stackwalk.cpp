@@ -1176,6 +1176,30 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
     // Skip the pinvoke frame
     Frame* pFrame = pThread->GetFrame()->PtrNextFrame();
 
+    {
+        ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+        if (pExInfo->_stackBoundsPassNumber == 1 && pExInfo->_passNumber == 2)
+        {
+            // TODO: verify both of these
+#ifdef ESTABLISHER_FRAME_ADDRESS_IS_CALLER_SP
+            pExInfo->_sfCallerOfActualHandlerFrame = StackFrame(establisherFrame); 
+#else
+            // TODO: or use the pExInfo->pRD?
+            EECodeManager::EnsureCallerContextIsValid(pExInfo->_frameIter.m_crawl.GetRegisterSet(), NULL);
+            pExInfo->_sfCallerOfActualHandlerFrame = CallerStackFrame::FromRegDisplay(pExInfo->_frameIter.m_crawl.GetRegisterSet());//pThis->m_pNextExInfo->_csfEnclosingClause;
+#endif        
+            if (pExInfo->_idxCurClause != 0xffffffff) //  the reverse pinvoke case doesn't have the _idxCurClause set
+            {
+                EH_CLAUSE_ENUMERATOR EHEnum;
+                const METHODTOKEN& MethToken = pThis->m_crawl.GetMethodToken();
+                IJitManager* pJitMan = pThis->m_crawl.GetJitManager();
+                pJitMan->InitializeEHEnumeration(MethToken, &EHEnum);
+                EHEnum.iCurrentPos = pExInfo->_idxCurClause;
+                pJitMan->GetNextEHClause(&EHEnum, &pExInfo->_ClauseForCatch);
+            }
+        }
+    }
+
     memset(pStackwalkCtx, 0x00, sizeof(T_CONTEXT));
     pStackwalkCtx->ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
     SetIP(pStackwalkCtx, 0);
@@ -1202,7 +1226,7 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
     pThis->m_pNextExInfo->_sfLowBound = pThis->m_pNextExInfo->_sfHighBound;
     // Prevent race between setting the pass number and the range
     pThis->m_pNextExInfo->_stackBoundsPassNumber = pThis->m_pNextExInfo->_passNumber;
-
+    
     ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
 
     // if (pThis->m_crawl.IsFunclet())
@@ -1317,7 +1341,8 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                         retVal = pThis->Next();
                         if (retVal == SWA_FAILED)
                         {
-                            __debugbreak();
+                            //__debugbreak();
+                            _ASSERTE_MSG(FALSE, "StackFrameIterator::Next failed");
                         }
                         // if (pThis->m_pNextExInfo)
                         // {
@@ -2487,7 +2512,7 @@ ProcessFuncletsForGCReporting:
                                         if (pExInfo->_sfCallerOfActualHandlerFrame == m_sfFuncletParent)
                                         //if (pTracker->GetCallerOfActualHandlingFrame() == m_sfFuncletParent)
                                         {
-                                            _ASSERTE_MSG(FALSE, "@#$@#$@#$@#$@#$@#$");
+                                            //_ASSERTE_MSG(FALSE, "@#$@#$@#$@#$@#$@#$");
                                             // we should not skip reporting for this parent frame
                                             shouldSkipReporting = false;
 
@@ -2502,7 +2527,10 @@ ProcessFuncletsForGCReporting:
                                             // address of catch funclet to report live GC references.
                                             m_crawl.fShouldParentFrameUseUnwindTargetPCforGCReporting = true;
                                             // Store catch clause info. Helps retrieve IP of resume address.
-                                            m_crawl.ehClauseForCatch = pTracker->GetEHClauseForCatch();
+                                            //m_crawl.ehClauseForCatch = pTracker->GetEHClauseForCatch();
+                                            
+                                            //TODO: fixme
+                                            m_crawl.ehClauseForCatch = pExInfo->_ClauseForCatch;
 
                                             // STRESS_LOG3(LF_GCROOTS, LL_INFO100,
                                             // "STACKWALK: Parent of funclet which didn't report GC roots is handling an exception at 0x%p"

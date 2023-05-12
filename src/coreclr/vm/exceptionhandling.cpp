@@ -925,7 +925,7 @@ ProcessCLRException(IN     PEXCEPTION_RECORD   pExceptionRecord,
         GCPROTECT_END();
         GCPROTECT_END();
     }
-    __debugbreak();
+    //__debugbreak();
     EEPOLICY_HANDLE_FATAL_ERROR_WITH_MESSAGE(E_FAIL, _T("SEH exception leaked into managed code"));
 
     // We must preserve this so that GCStress=4 eh processing doesnt kill last error.
@@ -7397,24 +7397,28 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         Frame* pFrame = pThread->GetFrame();
         MarkInlinedCallFrameAsFuncletCall(pFrame);
         HandlerFn* pfnHandler = (HandlerFn*)pHandlerIP;
-        // TODO: verify both of these
-#ifdef ESTABLISHER_FRAME_ADDRESS_IS_CALLER_SP
-        exInfo->_sfCallerOfActualHandlerFrame = StackFrame(establisherFrame); 
-#else
-        exInfo->_sfCallerOfActualHandlerFrame = exInfo->_csfEnclosingClause;
-#endif        
 
         DWORD_PTR dwResumePC;
         ULONG64 targetSp;
         if (pHandlerIP != (BYTE*)1)
         {
-        OBJECTREF throwable = exceptionObj.Get();
-        throwable = PossiblyUnwrapThrowable(throwable, exInfo->_frameIter.m_crawl.GetAssembly());
+            OBJECTREF throwable = exceptionObj.Get();
+            throwable = PossiblyUnwrapThrowable(throwable, exInfo->_frameIter.m_crawl.GetAssembly());
 
-        UINT_PTR establisherFrame = GetEstablisherFrame(pvRegDisplay, exInfo);
-        exInfo->_csfEHClause = CallerStackFrame((UINT_PTR)GetCurrentSP());
-        // TODO: it seems we can evaluate that during stack walk
-        exInfo->_csfEnclosingClause = CallerStackFrame::FromRegDisplay(exInfo->_frameIter.m_crawl.GetRegisterSet());
+            UINT_PTR establisherFrame = GetEstablisherFrame(pvRegDisplay, exInfo);
+            
+            exInfo->_csfEHClause = CallerStackFrame((UINT_PTR)GetCurrentSP());
+            // TODO: it seems we can evaluate that during stack walk
+            exInfo->_csfEnclosingClause = CallerStackFrame::FromRegDisplay(exInfo->_frameIter.m_crawl.GetRegisterSet());
+            // TODO: it seems we can evaluate that during stack walk too?
+            // exInfo->_ClauseForCatch = get it from the exInfo->_idxCurClause
+            // TODO: get pEHEnum and set it to the _idxCurClause
+            // EH_CLAUSE_ENUMERATOR EHEnum;
+            // const METHODTOKEN& MethToken = exInfo->_frameIter.m_crawl.GetMethodToken();
+            // IJitManager* pJitMan = exInfo->_frameIter.m_crawl.GetJitManager();
+            // pJitMan->InitializeEHEnumeration(MethToken, &EHEnum);
+            // EHEnum.iCurrentPos = exInfo->_idxCurClause;
+            // pJitMan->GetNextEHClause(&EHEnum, &exInfo->_ClauseForCatch);
 
             dwResumePC = pfnHandler(establisherFrame, OBJECTREFToObject(throwable));
             pvRegDisplay->pCurrentContext->Rip = dwResumePC;
@@ -7446,14 +7450,17 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
         while (pExInfo && pExInfo < (void*)targetSp)
         {
+            pExInfo->_stackTraceInfo.FreeStackTrace();
             pExInfo = pExInfo->_pPrevExInfo;
         }
 
         pThread->GetExceptionState()->SetCurrentExInfo(pExInfo);
 
+        ExceptionTracker::UpdateNonvolatileRegisters(pvRegDisplay->pCurrentContext, pvRegDisplay, FALSE);
         if (pHandlerIP != (BYTE*)1)
         {
-            ClrRestoreNonvolatileContext(pvRegDisplay->pCurrentContext);
+//            ClrRestoreNonvolatileContext(pvRegDisplay->pCurrentContext);
+            RtlRestoreContext(pvRegDisplay->pCurrentContext, NULL);
         }
         else
         {
@@ -7499,6 +7506,7 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         exInfo->_csfEHClause = CallerStackFrame((UINT_PTR)GetCurrentSP());
         // TODO: it seems we can evaluate that during stack walk
         exInfo->_csfEnclosingClause = CallerStackFrame::FromRegDisplay(exInfo->_frameIter.m_crawl.GetRegisterSet());
+
         DWORD_PTR dwResumePC = pfnHandler(establisherFrame, NULL);
         END_QCALL;
     }
@@ -7622,4 +7630,5 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
 
 
 #endif // FEATURE_EH_FUNCLETS
+
 
