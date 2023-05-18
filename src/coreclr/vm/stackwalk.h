@@ -678,6 +678,7 @@ private:
 
         if (!ResetOnlyIntermediaryState)
         {
+            m_fFuncletNotSeen = false;
             m_sfFuncletParent = StackFrame();
             m_fProcessNonFilterFunclet = false;
         }
@@ -726,6 +727,8 @@ private:
     bool          m_fDidFuncletReportGCReferences;
 #endif // FEATURE_EH_FUNCLETS
     BYTE          m_forceReportingWhileSkipping;
+    bool          m_movedPastFirstExInfo;
+    bool          m_fFuncletNotSeen;
 #if defined(RECORD_RESUMABLE_FRAME_SP)
     LPVOID m_pvResumableFrameTargetSP;
 #endif // RECORD_RESUMABLE_FRAME_SP

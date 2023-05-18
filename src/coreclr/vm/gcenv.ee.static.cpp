@@ -21,5 +21,6 @@
 extern void FinalizeWeakReference(Object* obj);
 
 extern GCHeapHardLimitInfo g_gcHeapHardLimitInfo;
+extern int doubleReportTrackingIndex;
 
 #include "gcenv.ee.cpp"

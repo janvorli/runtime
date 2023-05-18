@@ -337,6 +337,7 @@ HRESULT CorHost2::ExecuteAssembly(DWORD dwAppDomainId,
         }
         else
         {
+            //g_pConfig->SetGCStress(3);
             DWORD retval = pAssembly->ExecuteMainMethod(&arguments, TRUE /* waitForOtherThreads */);
             if (pReturnValue)
             {

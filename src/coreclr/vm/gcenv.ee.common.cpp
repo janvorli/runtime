@@ -136,6 +136,9 @@ inline bool SafeToReportGenericParamContext(CrawlFrame* pCF)
     return true;
 }
 
+void *doubleReportTracking[4096];
+int doubleReportTrackingIndex = 0;
+
 /*
  * GcEnumObject()
  *
@@ -147,6 +150,13 @@ void GcEnumObject(LPVOID pData, OBJECTREF *pObj, uint32_t flags)
 {
     Object ** ppObj = (Object **)pObj;
     GCCONTEXT   * pCtx  = (GCCONTEXT *) pData;
+
+    for (int i = 0; i < doubleReportTrackingIndex; i++)
+    {
+        _ASSERTE_MSG(doubleReportTracking[i] != pObj, "Double reporting detected");
+    }
+
+    doubleReportTracking[doubleReportTrackingIndex++] = pObj;
 
     // Since we may be asynchronously walking another thread's stack,
     // check (frequently) for stack-buffer-overrun corruptions after
@@ -296,6 +306,11 @@ StackWalkAction GcStackCrawlCallBack(CrawlFrame* pCF, VOID* pData)
                 pFrame, pFrame->GetFunction(), *((void**) pFrame));
             pFrame->GcScanRoots( gcctx->f, gcctx->sc);
         }
+    }
+    else
+    {
+        STRESS_LOG2(LF_GCROOTS, LL_INFO1000, "Skipping GC scanning in frame method at SP: %p, PC: %p\n",
+            GetRegdisplaySP(pCF->GetRegisterSet()), GetControlPC(pCF->GetRegisterSet()));
     }
 
 
