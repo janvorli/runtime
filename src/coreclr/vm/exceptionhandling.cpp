@@ -7398,7 +7398,8 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         Frame* pFrame = pThread->GetFrame();
         MarkInlinedCallFrameAsFuncletCall(pFrame);
         HandlerFn* pfnHandler = (HandlerFn*)pHandlerIP;
-        _ASSERTE(exInfo->_sfCallerOfActualHandlerFrame == pvRegDisplay->pCallerContext->Rsp); // This fails for the exception interop - the caller context is wrong - the current context has larger SP! However, this is actually ok, we don't use the caller context for anything
+        _ASSERTE(exInfo->_sfCallerOfActualHandlerFrame == EECodeManager::GetCallerSp(pvRegDisplay)); // This fails for the exception interop - the caller context is wrong - the current context has larger SP! However, this is actually ok, we don't use the caller context for anything
+        exInfo->_sfHighBound = exInfo->_frameIter.m_crawl.GetRegisterSet()->SP;
         DWORD_PTR dwResumePC;
         ULONG64 targetSp;
         if (pHandlerIP != (BYTE*)1)
@@ -7508,6 +7509,7 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         exInfo->_csfEHClause = CallerStackFrame((UINT_PTR)GetCurrentSP());
         // TODO: it seems we can evaluate that during stack walk
         exInfo->_csfEnclosingClause = CallerStackFrame::FromRegDisplay(exInfo->_frameIter.m_crawl.GetRegisterSet());
+        //exInfo->_sfHighBound = exInfo->_frameIter.m_crawl.GetRegisterSet()->SP;
 
         DWORD_PTR dwResumePC = pfnHandler(establisherFrame, NULL);
         END_QCALL;

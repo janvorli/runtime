@@ -151,12 +151,18 @@ void GcEnumObject(LPVOID pData, OBJECTREF *pObj, uint32_t flags)
     Object ** ppObj = (Object **)pObj;
     GCCONTEXT   * pCtx  = (GCCONTEXT *) pData;
 
-    for (int i = 0; i < doubleReportTrackingIndex; i++)
+    if ((flags & GC_CALL_PINNED) == 0)
     {
-        _ASSERTE_MSG(doubleReportTracking[i] != pObj, "Double reporting detected");
-    }
+        for (int i = 0; i < doubleReportTrackingIndex; i++)
+        {
+            _ASSERTE_MSG(doubleReportTracking[i] != pObj, "Double reporting detected");
+        }
 
-    doubleReportTracking[doubleReportTrackingIndex++] = pObj;
+        if (doubleReportTrackingIndex < sizeof(doubleReportTracking) / sizeof(void*))
+        {
+            doubleReportTracking[doubleReportTrackingIndex++] = pObj;
+        }
+    }
 
     // Since we may be asynchronously walking another thread's stack,
     // check (frequently) for stack-buffer-overrun corruptions after
