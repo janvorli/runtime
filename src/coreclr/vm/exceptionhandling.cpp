@@ -7509,7 +7509,7 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         exInfo->_csfEHClause = CallerStackFrame((UINT_PTR)GetCurrentSP());
         // TODO: it seems we can evaluate that during stack walk
         exInfo->_csfEnclosingClause = CallerStackFrame::FromRegDisplay(exInfo->_frameIter.m_crawl.GetRegisterSet());
-        //exInfo->_sfHighBound = exInfo->_frameIter.m_crawl.GetRegisterSet()->SP;
+        exInfo->_sfHighBound = exInfo->_frameIter.m_crawl.GetRegisterSet()->SP;
 
         DWORD_PTR dwResumePC = pfnHandler(establisherFrame, NULL);
         END_QCALL;
