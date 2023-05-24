@@ -8,6 +8,7 @@
 #include "common.h"
 #include "exstate.h"
 #include "exinfo.h"
+#include "exceptionhandlingqcalls.h"
 
 #ifdef _DEBUG
 #include "comutilnative.h"      // for assertions only
@@ -110,10 +111,10 @@ OBJECTREF ThreadExceptionState::GetThrowable()
     {
         return ObjectFromHandle(m_pCurrentTracker->m_hThrowable);
     }
-    // if (m_pExInfo && m_pExInfo->_exception)
-    // {
-    //     return m_pExInfo->_exception;
-    // }
+    if (m_pExInfo && m_pExInfo->_exception != NULL)
+    {
+        return m_pExInfo->_exception;
+    }
 #else // FEATURE_EH_FUNCLETS
     if (m_currentExInfo.m_hThrowable)
     {
@@ -199,8 +200,12 @@ DWORD ThreadExceptionState::GetExceptionCode()
     LIMITED_METHOD_CONTRACT;
 
 #ifdef FEATURE_EH_FUNCLETS
-    _ASSERTE(m_pCurrentTracker);
-    return m_pCurrentTracker->m_ExceptionCode;
+    if (m_pCurrentTracker)
+    {
+        return m_pCurrentTracker->m_ExceptionCode;
+    }
+    _ASSERTE(m_pExInfo);
+    return ((EXCEPTIONREF)m_pExInfo->_exception)->GetXCode();
 #else // FEATURE_EH_FUNCLETS
     return m_currentExInfo.m_ExceptionCode;
 #endif // FEATURE_EH_FUNCLETS
@@ -232,7 +237,7 @@ BOOL ThreadExceptionState::IsExceptionInProgress()
     LIMITED_METHOD_DAC_CONTRACT;
 
 #ifdef FEATURE_EH_FUNCLETS
-    return (m_pCurrentTracker != NULL);
+    return (m_pCurrentTracker != NULL) || (m_pExInfo != NULL);
 #else // FEATURE_EH_FUNCLETS
     return (m_currentExInfo.m_pBottomMostHandler != NULL);
 #endif // FEATURE_EH_FUNCLETS

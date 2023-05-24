@@ -17,6 +17,21 @@ using System.Threading.Tasks;
 // just temporary
 #pragma warning disable IDE0060
 
+namespace System
+{
+    public static partial class AppContext
+    {
+        internal static void OnFirstChanceException(object e)
+        {
+            FirstChanceException?.Invoke(AppDomain.CurrentDomain, new FirstChanceExceptionEventArgs((Exception)e));
+        }
+        internal static void OnUnhandledException(object e)
+        {
+            UnhandledException?.Invoke(AppDomain.CurrentDomain, new UnhandledExceptionEventArgs(e, true));
+        }
+    }
+}
+
 namespace System.Runtime
 {
     // TODO: move to ExceptionIDs.cs like in AOT
@@ -298,6 +313,14 @@ namespace System.Runtime
 
         private static void OnFirstChanceExceptionViaClassLib(object exception)
         {
+            try
+            {
+                AppContext.OnFirstChanceException(exception);
+            }
+            catch when (true)
+            {
+                // disallow all exceptions leaking out of callbacks
+            }
             // IntPtr pOnFirstChanceFunction =
             //     (IntPtr)InternalCalls.RhpGetClasslibFunctionFromEEType(exception.GetMethodTable(), ClassLibFunctionId.OnFirstChance);
 
@@ -318,6 +341,15 @@ namespace System.Runtime
 
         private static void OnUnhandledExceptionViaClassLib(object exception)
         {
+            try
+            {
+                AppContext.OnUnhandledException(exception);
+            }
+            catch when (true)
+            {
+                // disallow all exceptions leaking out of callbacks
+            }
+
             // IntPtr pOnUnhandledExceptionFunction =
             //     (IntPtr)InternalCalls.RhpGetClasslibFunctionFromEEType(exception.GetMethodTable(), ClassLibFunctionId.OnUnhandledException);
 
@@ -1057,7 +1089,9 @@ namespace System.Runtime
             // want to know about funclets, so we strip them out by only reporting the first frame of a
             // sequence of funclets.  This is correct because the leafmost funclet is first in the sequence
             // and corresponds to the current 'IP state' of the method.
+#if NATIVEAOT_ORWHATEVER
             if ((prevFramePtr == UIntPtr.Zero) || (curFramePtr != prevFramePtr))
+#endif
             {
                 AppendExceptionStackFrameViaClasslib(exceptionObj, ip, sp, ref exInfo,
                     ref isFirstRethrowFrame, ref isFirstFrame);

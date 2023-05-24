@@ -6058,10 +6058,15 @@ CallDescrWorkerUnwindFrameChainHandler(IN     PEXCEPTION_RECORD   pExceptionReco
         return ExceptionContinueSearch;
     }
 
+#if 0
     EXCEPTION_DISPOSITION retVal = ProcessCLRException(pExceptionRecord,
                                                        pEstablisherFrame,
                                                        pContextRecord,
                                                        pDispatcherContext);
+#else
+    EXCEPTION_DISPOSITION retVal = ExceptionContinueSearch;
+    // TODO: unwind the frame chain?
+#endif
 
     if (retVal == ExceptionContinueSearch)
     {
@@ -7387,7 +7392,76 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
             return pvRegDisplay->SP;
         }
     }
+/*
+    void MakeCallbacksRelatedToHandler(
+        bool fBeforeCallingHandler,
+        Thread*                pThread,
+        MethodDesc*            pMD,
+        EE_ILEXCEPTION_CLAUSE* pEHClause,
+        DWORD_PTR              dwHandlerStartPC,
+        StackFrame             sf
+        )
+    {
+        // Here we need to make an extra check for filter handlers because we could be calling the catch handler
+        // associated with a filter handler and yet the EH clause we have saved is for the filter handler.
+        BOOL fIsFilterHandler         = IsFilterHandler(pEHClause) && ExceptionTracker::IsFilterStartOffset(pEHClause, dwHandlerStartPC);
+        BOOL fIsFaultOrFinallyHandler = IsFaultOrFinally(pEHClause);
 
+        if (fBeforeCallingHandler)
+        {
+            if (pMD->IsILStub())
+            {
+                return;
+            }
+
+            if (fIsFilterHandler)
+            {
+                EEToDebuggerExceptionInterfaceWrapper::ExceptionFilter(pMD, (TADDR) dwHandlerStartPC, pEHClause->FilterOffset, (BYTE*)sf.SP);
+
+                EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFilterEnter(pMD);
+            }
+            else
+            {
+                EEToDebuggerExceptionInterfaceWrapper::ExceptionHandle(pMD, (TADDR) dwHandlerStartPC, pEHClause->HandlerStartPC, (BYTE*)sf.SP);
+
+                if (fIsFaultOrFinallyHandler)
+                {
+                    EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFinallyEnter(pMD);
+                }
+                else
+                {
+                    EEToProfilerExceptionInterfaceWrapper::ExceptionCatcherEnter(pThread, pMD);
+
+                    DACNotify::DoExceptionCatcherEnterNotification(pMD, pEHClause->HandlerStartPC);
+                }
+            }
+        }
+        else
+        {
+            if (pMD->IsILStub())
+            {
+                return;
+            }
+
+            if (fIsFilterHandler)
+            {
+                EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFilterLeave();
+            }
+            else
+            {
+                if (fIsFaultOrFinallyHandler)
+                {
+                    EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFinallyLeave();
+                }
+                else
+                {
+                    EEToProfilerExceptionInterfaceWrapper::ExceptionCatcherLeave();
+                }
+            }
+            m_EHClauseInfo.ResetInfo();
+        }
+    }
+*/
     extern "C" void * QCALLTYPE RhpCallCatchFunclet(QCall::ObjectHandleOnStack exceptionObj, BYTE* pHandlerIP, REGDISPLAY* pvRegDisplay, ExInfo* exInfo)
     {
         QCALL_CONTRACT;
@@ -7422,7 +7496,9 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
             // EHEnum.iCurrentPos = exInfo->_idxCurClause;
             // pJitMan->GetNextEHClause(&EHEnum, &exInfo->_ClauseForCatch);
 
+            //MakeCallbacksRelatedToHandler(true, pThread, pMD, &exInfo->_ClauseForCatch, pHandlerIP, pvRegDisplay->pCurrentContext->Rsp);
             dwResumePC = pfnHandler(establisherFrame, OBJECTREFToObject(throwable));
+            //MakeCallbacksRelatedToHandler(false, pThread, pMD, &exInfo->_ClauseForCatch, pHandlerIP, pvRegDisplay->pCurrentContext->Rsp);
             pvRegDisplay->pCurrentContext->Rip = dwResumePC;
             targetSp = pvRegDisplay->pCurrentContext->Rsp;
         }
@@ -7476,7 +7552,10 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
             ULONG64* returnAddress = (ULONG64*)targetSp;
 //            *returnAddress = pvRegDisplay->pCallerContext->Rip;
             *returnAddress = pvRegDisplay->pCurrentContext->Rip;
-            thread_local OBJECTREF oref = exInfo->_exception;
+            //oref = exInfo->_exception;
+            thread_local OBJECTREF oref;
+
+            oref = exceptionObj.Get();
             // pvRegDisplay->pCallerContext->Rip = (ULONG64)(void (*)(OBJECTREF))RealCOMPlusThrow;
             // pvRegDisplay->pCallerContext->Rsp = targetSp - 8;
             pvRegDisplay->pCurrentContext->Rip = (ULONG64)(void (*)(OBJECTREF))RealCOMPlusThrow;

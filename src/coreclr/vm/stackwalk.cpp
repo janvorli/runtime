@@ -1234,6 +1234,8 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
     return result;
 }
 
+extern "C" void CallDescrWorkerInternalReturnAddress();
+
 extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollideClauseIdx, bool* fUnwoundReversePInvoke)
 {
     QCALL_CONTRACT;
@@ -1265,6 +1267,14 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
         DecodeGCHdrInfo(codeInfo.GetGCInfoToken(), 0, &gcHdrInfo);
         invalidRevPInvoke = gcHdrInfo.revPInvokeOffset != INVALID_REV_PINVOKE_OFFSET;
 #endif // USE_GC_INFO_DECODER
+
+        if (!invalidRevPInvoke)
+        {
+            if (pThis->m_crawl.GetRegisterSet()->pCallerContext->Rip == (SIZE_T)CallDescrWorkerInternalReturnAddress)
+            {
+                invalidRevPInvoke = true;
+            }
+        }
 
         if (fUnwoundReversePInvoke)
         {
