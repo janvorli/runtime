@@ -72,6 +72,7 @@ struct ExInfo
     CallerStackFrame    _csfEnclosingClause;
     StackFrame          _sfCallerOfActualHandlerFrame;
     EE_ILEXCEPTION_CLAUSE _ClauseForCatch;
+    EE_ILEXCEPTION_CLAUSE _CurrentClause;
 };
 
 //  class StackFrameIterator;

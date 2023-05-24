@@ -7392,7 +7392,15 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
             return pvRegDisplay->SP;
         }
     }
-/*
+
+    bool IsFilterStartOffset(EE_ILEXCEPTION_CLAUSE* pEHClause, DWORD_PTR dwHandlerStartPC)
+    {
+        EECodeInfo codeInfo((PCODE)dwHandlerStartPC);
+        _ASSERTE(codeInfo.IsValid());
+
+        return pEHClause->FilterOffset == codeInfo.GetRelOffset();
+    }
+
     void MakeCallbacksRelatedToHandler(
         bool fBeforeCallingHandler,
         Thread*                pThread,
@@ -7404,7 +7412,7 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
     {
         // Here we need to make an extra check for filter handlers because we could be calling the catch handler
         // associated with a filter handler and yet the EH clause we have saved is for the filter handler.
-        BOOL fIsFilterHandler         = IsFilterHandler(pEHClause) && ExceptionTracker::IsFilterStartOffset(pEHClause, dwHandlerStartPC);
+        BOOL fIsFilterHandler         = IsFilterHandler(pEHClause) && IsFilterStartOffset(pEHClause, dwHandlerStartPC);
         BOOL fIsFaultOrFinallyHandler = IsFaultOrFinally(pEHClause);
 
         if (fBeforeCallingHandler)
@@ -7419,6 +7427,7 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
                 EEToDebuggerExceptionInterfaceWrapper::ExceptionFilter(pMD, (TADDR) dwHandlerStartPC, pEHClause->FilterOffset, (BYTE*)sf.SP);
 
                 EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFilterEnter(pMD);
+                ETW::ExceptionLog::ExceptionFilterBegin(pMD, (PVOID)dwHandlerStartPC);
             }
             else
             {
@@ -7427,12 +7436,14 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
                 if (fIsFaultOrFinallyHandler)
                 {
                     EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFinallyEnter(pMD);
+                    ETW::ExceptionLog::ExceptionFinallyBegin(pMD, (PVOID)dwHandlerStartPC);
                 }
                 else
                 {
                     EEToProfilerExceptionInterfaceWrapper::ExceptionCatcherEnter(pThread, pMD);
 
                     DACNotify::DoExceptionCatcherEnterNotification(pMD, pEHClause->HandlerStartPC);
+                    ETW::ExceptionLog::ExceptionCatchBegin(pMD, (PVOID)dwHandlerStartPC);
                 }
             }
         }
@@ -7445,23 +7456,28 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
 
             if (fIsFilterHandler)
             {
+                ETW::ExceptionLog::ExceptionFilterEnd();
                 EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFilterLeave();
             }
             else
             {
                 if (fIsFaultOrFinallyHandler)
                 {
+                    ETW::ExceptionLog::ExceptionFinallyEnd();
                     EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFinallyLeave();
                 }
                 else
                 {
+                    ETW::ExceptionLog::ExceptionCatchEnd();
+                    ETW::ExceptionLog::ExceptionThrownEnd();
                     EEToProfilerExceptionInterfaceWrapper::ExceptionCatcherLeave();
                 }
             }
-            m_EHClauseInfo.ResetInfo();
+            // TODO: add the m_EHClauseInfo for profiler 
+            //m_EHClauseInfo.ResetInfo();
         }
     }
-*/
+
     extern "C" void * QCALLTYPE RhpCallCatchFunclet(QCall::ObjectHandleOnStack exceptionObj, BYTE* pHandlerIP, REGDISPLAY* pvRegDisplay, ExInfo* exInfo)
     {
         QCALL_CONTRACT;
@@ -7486,19 +7502,12 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
             exInfo->_csfEHClause = CallerStackFrame((UINT_PTR)GetCurrentSP());
             // TODO: it seems we can evaluate that during GC stack walk 
             exInfo->_csfEnclosingClause = CallerStackFrame::FromRegDisplay(exInfo->_frameIter.m_crawl.GetRegisterSet());
-            // TODO: it seems we can evaluate that during stack walk too?
-            // exInfo->_ClauseForCatch = get it from the exInfo->_idxCurClause
-            // TODO: get pEHEnum and set it to the _idxCurClause
-            // EH_CLAUSE_ENUMERATOR EHEnum;
-            // const METHODTOKEN& MethToken = exInfo->_frameIter.m_crawl.GetMethodToken();
-            // IJitManager* pJitMan = exInfo->_frameIter.m_crawl.GetJitManager();
-            // pJitMan->InitializeEHEnumeration(MethToken, &EHEnum);
-            // EHEnum.iCurrentPos = exInfo->_idxCurClause;
-            // pJitMan->GetNextEHClause(&EHEnum, &exInfo->_ClauseForCatch);
 
-            //MakeCallbacksRelatedToHandler(true, pThread, pMD, &exInfo->_ClauseForCatch, pHandlerIP, pvRegDisplay->pCurrentContext->Rsp);
+            // TODO: is this the right MethodDesc?
+            MethodDesc *pMD = exInfo->_frameIter.m_crawl.GetFunction();
+            MakeCallbacksRelatedToHandler(true, pThread, pMD, &exInfo->_ClauseForCatch, (DWORD_PTR)pHandlerIP, pvRegDisplay->pCurrentContext->Rsp);
             dwResumePC = pfnHandler(establisherFrame, OBJECTREFToObject(throwable));
-            //MakeCallbacksRelatedToHandler(false, pThread, pMD, &exInfo->_ClauseForCatch, pHandlerIP, pvRegDisplay->pCurrentContext->Rsp);
+            MakeCallbacksRelatedToHandler(false, pThread, pMD, &exInfo->_ClauseForCatch, (DWORD_PTR)pHandlerIP, pvRegDisplay->pCurrentContext->Rsp);
             pvRegDisplay->pCurrentContext->Rip = dwResumePC;
             targetSp = pvRegDisplay->pCurrentContext->Rsp;
         }
@@ -7512,6 +7521,7 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         // TODO: handle invalid frame
         while (pFrame < (void*)targetSp)
         {
+            pFrame->ExceptionUnwind();
             pFrame->Pop(pThread);
             pFrame = pThread->GetFrame();
         }
@@ -7590,7 +7600,10 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         exInfo->_csfEnclosingClause = CallerStackFrame::FromRegDisplay(exInfo->_frameIter.m_crawl.GetRegisterSet());
         exInfo->_sfHighBound = exInfo->_frameIter.m_crawl.GetRegisterSet()->SP;
 
+        MethodDesc *pMD = exInfo->_frameIter.m_crawl.GetFunction();
+        MakeCallbacksRelatedToHandler(true, pThread, pMD, &exInfo->_CurrentClause, (DWORD_PTR)pHandlerIP, pvRegDisplay->pCurrentContext->Rsp);
         DWORD_PTR dwResumePC = pfnHandler(establisherFrame, NULL);
+        MakeCallbacksRelatedToHandler(false, pThread, pMD, &exInfo->_CurrentClause, (DWORD_PTR)pHandlerIP, pvRegDisplay->pCurrentContext->Rsp);
         END_QCALL;
     }
 
@@ -7603,7 +7616,7 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         BEGIN_QCALL;
         GCX_COOP();
 
-        // Thread* pThread = GET_THREAD();
+        Thread* pThread = GET_THREAD();
         // Frame* pFrame = pThread->GetFrame();
         // MarkInlinedCallFrameAsFuncletCall(pFrame);
 
@@ -7616,7 +7629,10 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         pExInfo->_csfEHClause = CallerStackFrame((UINT_PTR)GetCurrentSP());
         // TODO: it seems we can evaluate that during stack walk
         pExInfo->_csfEnclosingClause = CallerStackFrame::FromRegDisplay(pExInfo->_frameIter.m_crawl.GetRegisterSet());
+        MethodDesc *pMD = pExInfo->_frameIter.m_crawl.GetFunction();
+        MakeCallbacksRelatedToHandler(true, pThread, pMD, &pExInfo->_CurrentClause, (DWORD_PTR)pFilterIP, pvRegDisplay->pCurrentContext->Rsp);
         dwResult = pfnHandler(establisherFrame, OBJECTREFToObject(throwable));
+        MakeCallbacksRelatedToHandler(false, pThread, pMD, &pExInfo->_CurrentClause, (DWORD_PTR)pFilterIP, pvRegDisplay->pCurrentContext->Rsp);
         END_QCALL;
 
         return dwResult == EXCEPTION_EXECUTE_HANDLER;
@@ -7659,7 +7675,11 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
             const METHODTOKEN& MethToken = pFrameIter->m_crawl.GetMethodToken();
 
             EE_ILEXCEPTION_CLAUSE EHClause;
+            memset(&EHClause, 0, sizeof(EE_ILEXCEPTION_CLAUSE));
             PTR_EXCEPTION_CLAUSE_TOKEN pEHClauseToken = pJitMan->GetNextEHClause(pEHEnum, &EHClause);
+            Thread* pThread = GET_THREAD();
+            ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+            pExInfo->_CurrentClause = EHClause;
 
             pEHClause->_tryStartOffset = EHClause.TryStartPC;
             pEHClause->_tryEndOffset = EHClause.TryEndPC;
@@ -7670,10 +7690,7 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
             pEHClause->_handlerAddress = (BYTE*)pJitMan->GetCodeAddressForRelOffset(MethToken, EHClause.HandlerStartPC);
 
             result = TRUE;
-//            EHClause.Flags = (CorExceptionFlag)(EHClause.Flags & ~(ULONG)COR_ILEXCEPTION_CLAUSE_DUPLICATED);
             pEHClause->_isSameTry = (EHClause.Flags & 0x10) != 0; // CORINFO_EH_CLAUSE_SAMETRY
-//            EHClause.Flags = (CorExceptionFlag)(EHClause.Flags & ~(ULONG)0x10);
-
 
             // Clear special flags - like COR_ILEXCEPTION_CLAUSE_CACHED_CLASS
             ULONG flags = (CorExceptionFlag)(EHClause.Flags & 0x0f);

@@ -21,6 +21,7 @@
 #include "gcinfodecoder.h"
 #include "exceptionhandlingqcalls.h"
 #ifdef FEATURE_EH_FUNCLETS
+#include "eetoprofinterfacewrapper.inl"
 #define PROCESS_EXPLICIT_FRAME_BEFORE_MANAGED_FRAME
 #endif
 
@@ -1148,6 +1149,17 @@ void ResetNextExInfoForSP(StackFrameIterator* pThis, TADDR SP)
     }
 }
 
+extern uint32_t g_exceptionCount;
+
+static inline void UpdatePerformanceMetrics(CrawlFrame *pcfThisFrame, BOOL bIsRethrownException, BOOL bIsNewException)
+{
+    WRAPPER_NO_CONTRACT;
+    g_exceptionCount++;
+
+    // Fire an exception thrown ETW event when an exception occurs
+    ETW::ExceptionLog::ExceptionThrown(pcfThisFrame, bIsRethrownException, bIsNewException);
+}
+
 extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalkCtx, REGDISPLAY* pRD, bool instructionFault)
 {
     QCALL_CONTRACT;
@@ -1162,6 +1174,13 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
 
     {
         ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+        if (pExInfo->_passNumber == 1)
+        {
+            GCX_COOP();
+            EEToProfilerExceptionInterfaceWrapper::ExceptionThrown(pThread);
+            UpdatePerformanceMetrics(&pThis->m_crawl, false, ((uint8_t)pExInfo->_kind & (uint8_t)ExKind::RethrowFlag) == 0);
+        }
+
         if (pExInfo->_stackBoundsPassNumber == 1 && pExInfo->_passNumber == 2)
         {
             // TODO: verify both of these
@@ -1181,7 +1200,9 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
                 IJitManager* pJitMan = pThis->m_crawl.GetJitManager();
                 pJitMan->InitializeEHEnumeration(MethToken, &EHEnum);
                 EHEnum.iCurrentPos = pExInfo->_idxCurClause;
+                memset(&pExInfo->_ClauseForCatch, 0, sizeof(EE_ILEXCEPTION_CLAUSE));
                 pJitMan->GetNextEHClause(&EHEnum, &pExInfo->_ClauseForCatch);
+                _ASSERTE(memcmp(&pExInfo->_ClauseForCatch, &pExInfo->_CurrentClause, sizeof(EE_ILEXCEPTION_CLAUSE)) == 0);
             }
         }
     }
@@ -1406,141 +1427,6 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                     else
                     {
                         // TODO: Handle Non-exceptionally invoked funclet case. Hmm, is this the right place?
-                    }
-                }
-            }
-            else if (ThrowMethodFrame::GetMethodFrameVPtr() == pFrame->GetVTablePtr())
-            {
-                // passing through exception throwing site
-            }
-        }
-    }
-    while (retVal != SWA_FAILED && (pThis->GetFrameState() != StackFrameIterator::SFITER_FRAMELESS_METHOD));
-
-    _ASSERTE(retVal == SWA_FAILED || pThis->GetFrameState() == StackFrameIterator::SFITER_FRAMELESS_METHOD);
-    END_QCALL;
-
-    if (retVal != SWA_FAILED)
-    {
-        return true;
-    }
-
-    return false;
-}
-
-
-extern "C" bool QCALLTYPE RhpSfiNextOld(StackFrameIterator* pThis, uint* uExCollideClauseIdx, bool* fUnwoundReversePInvoke)
-{
-    QCALL_CONTRACT;
-
-    // TODO: unhijack?
-    // TODO: detect collided unwind and set uExCollideClauseIdx
-    // Collided unwind can be detected by passing through the catch handler call. We could do that by processing the explicit frames and checking for pinvoke frames
-    // that refer to RhpCallCatchFunclet or maybe just checking that we've passed through System.Runtime.EH.DispatchEx.
-    // The NativeAOT stack frame iterator also has m_pNextExInfo that it uses for collision detection too. It is set when the stack frame iterator is initialized to the one from the Thread
-    // Maybe we could just skip frames until we cross the Thread::m_pExInfo location?
-
-    Thread* pThread = GetThread();
-    StackWalkAction retVal = SWA_FAILED;
-    bool exCollide = false;
-
-    BEGIN_QCALL;
-    do
-    {
-        *uExCollideClauseIdx = 0xffffffff;
-        bool doingFuncletUnwind = pThis->m_crawl.IsFunclet();
-
-        retVal = pThis->Next();
-        if (retVal == SWA_FAILED)
-        {
-            break;
-        }
-
-        if (!pThis->m_crawl.IsFrameless())
-        {
-            // Detect collided unwind
-            Frame *pFrame = pThis->m_crawl.GetFrame();
-            // pFrame->ExceptionUnwind(); ??? Add this?
-
-            if (InlinedCallFrame::FrameHasActiveCall(pFrame))
-            {
-                InlinedCallFrame* pInlinedCallFrame = (InlinedCallFrame*)pFrame;
-                if ((TADDR)pInlinedCallFrame->m_Datum & 2)
-                {
-                    // passing through RhpCallCatchFunclet et al
-                    if (doingFuncletUnwind)
-                    {
-                        // TODO: the m_FramePointer needs to be the previous frame's one
-                        //m_pendingFuncletFramePointer = m_FramePointer;
-                        exCollide = true;
-                        //collapsingTargetFrame = HandleExCollide(m_pNextExInfo);
-                        // //
-                        // // Copy our state from the previous StackFrameIterator
-                        // //
-                        // this->UpdateFromExceptionDispatch((PTR_StackFrameIterator)&pExInfo->m_frameIter);
-
-                        // // Sync our 'current' ExInfo with the updated state (we may have skipped other dispatches)
-                        // ResetNextExInfoForSP(m_RegDisplay.GetSP());
-
-
-#if 0
-                        //Hacky quick solution - just keep walking the stack until we cross the other ExInfo - it seems to work
-                        ExInfo* pPrevExInfo = pThread->GetExceptionState()->m_pExInfo->_pPrevExInfo;
-                        while (retVal != SWA_FAILED && pThis->m_crawl.GetRegisterSet()->SP < (TADDR)pPrevExInfo->_frameIter.m_crawl.GetRegisterSet()->SP)
-                        {
-                            retVal = pThis->Next();
-                        }
-
-                        if (retVal == SWA_FAILED)
-                        {
-                            break;
-                        }
-
-                        //pThread->m_pExInfo->_idxCurClause = pPrevExInfo->_idxCurClause + 1;
-                        *uExCollideClauseIdx = pPrevExInfo->_idxCurClause;
-#else
-                        // TODO: what if we just copied everything including REGDISPLAY (*) from the prev ex info (excluding the prev pointer)?
-                        // Seems like there is some problem there, the StackFrameIterator doesn't cleanly execute the "Next" below
-                        // ExInfo* pPrevExInfo = pThread->m_pExInfo->_pPrevExInfo;
-                        // memcpy(pThread->m_pExInfo, pPrevExInfo, sizeof(ExInfo));
-                        // pThread->m_pExInfo->_pPrevExInfo = pPrevExInfo;
-
-                        // TODO: deep copy pRD? Keep context pointers? Probably add a clone method to the stack walker so that we can access private vars.
-                        //ExInfo* pPrevExInfo = pThread->m_pExInfo->_pPrevExInfo;
-//                        __debugbreak();
-                        if ((pThis->m_pNextExInfo->_stackBoundsPassNumber == 1) ||
-                            (pThis->m_pNextExInfo->_idxCurClause == 0xFFFFFFFF))
-                        {
-                            __debugbreak();
-                            ExInfo* pPrevExInfo = pThis->m_pNextExInfo->_pPrevExInfo;
-                            pThis->Init(pThread, pThis->m_pNextExInfo->_pFrame, pThis->m_pNextExInfo->_pRD, pThis->m_flags);
-                            pThis->m_pNextExInfo = pThis->m_pNextExInfo->_pPrevExInfo;
-                        }
-                        else
-                        {
-                            ExInfo* pPrevExInfo = pThis->m_pNextExInfo->_pPrevExInfo;
-
-                            // //T_KNONVOLATILE_CONTEXT_POINTERS *pContextPointers = pThis->m_crawl.pRD->pCurrentContextPointers;
-                            // memcpy(pThis, &pPrevExInfo->_frameIter, sizeof(StackFrameIterator));
-                            // //pThis->m_crawl.pRD->pCurrentContextPointers = pContextPointers;
-                            pThis->Clone(&pPrevExInfo->_frameIter);
-                            ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
-                            *uExCollideClauseIdx = pPrevExInfo->_idxCurClause;
-                            /*
-                            *uExCollideClauseIdx = pExInfo->_idxCurClause;// pThis->m_pNextExInfo->_idxCurClause;
-                            pThis->Clone(&pThis->m_pNextExInfo->_frameIter);
-                            ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
-                                                        */
-                            // pThis->m_dwFlags |= ExCollide; ????
-                        }
-#endif                        
-
-                        //memcpy(this, &pThread->m_pExInfo->_pPrevExInfo->_frameIter, sizeof(StackFrameIterator));
-                        // Sync our 'current' ExInfo with the updated state (we may have skipped other dispatches)
-                        //ResetNextExInfoForSP(m_RegDisplay.GetSP()); // TODO: we don't have the nextExInfo in the StackFrameIterator, should we?
-
-                        // TODO: this should be done only when all clauses in the previous frame were used up. Maybe never
-                        //retVal = pThis->Next();
                     }
                 }
             }

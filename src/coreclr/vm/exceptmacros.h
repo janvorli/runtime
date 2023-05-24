@@ -309,17 +309,24 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
 #else // TARGET_UNIX
 
 #define INSTALL_MANAGED_EXCEPTION_DISPATCHER                                                \
-    EX_TRY                                                                                  \
-    {
+    {                                                                                       \
+        OBJECTREF caughtException = NULL;                                                        \
+        EX_TRY                                                                                  \
+        {
 
 #define UNINSTALL_MANAGED_EXCEPTION_DISPATCHER                                              \
-    }                                                                                       \
-    EX_CATCH                                                                                \
-    {                                                                                       \
-        GCX_COOP_NO_DTOR();                                                                 \
-        RealCOMPlusThrowEx(GET_THROWABLE());                                                \
-    }                                                                                       \
-    EX_END_CATCH(SwallowAllExceptions);
+        }                                                                                       \
+        EX_CATCH                                                                                \
+        {                                                                                       \
+            GCX_COOP_NO_DTOR();                                                                 \
+            caughtException = GET_THROWABLE();                                                          \
+        }                                                                                       \
+        EX_END_CATCH(SwallowAllExceptions);                                                     \
+        if (caughtException != NULL)                                                                 \
+        {                                                                                       \
+            RealCOMPlusThrowEx(caughtException);                                                \
+        }                                                                                       \
+    }
 
 #define INSTALL_UNHANDLED_MANAGED_EXCEPTION_TRAP
 #define UNINSTALL_UNHANDLED_MANAGED_EXCEPTION_TRAP
