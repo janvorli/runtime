@@ -258,8 +258,8 @@ StackWalkAction GcStackCrawlCallBack(CrawlFrame* pCF, VOID* pData)
             _ASSERTE(pMD != 0);
 
     #ifdef _DEBUG
-            LOG((LF_GCROOTS, LL_INFO1000, "Scanning Frame for method %s:%s\n",
-                    pMD->m_pszDebugClassName, pMD->m_pszDebugMethodName));
+            LOG((LF_GCROOTS, LL_INFO1000, "Scanning Frame for method %s:%s, ShouldParentToFuncletUseUnwindTargetLocationForGCReporting=%s\n",
+                    pMD->m_pszDebugClassName, pMD->m_pszDebugMethodName, (pCF->ShouldParentToFuncletUseUnwindTargetLocationForGCReporting() ? "true": "false")));
     #endif // _DEBUG
 
             DWORD relOffsetOverride = NO_OVERRIDE_OFFSET;
@@ -295,6 +295,7 @@ StackWalkAction GcStackCrawlCallBack(CrawlFrame* pCF, VOID* pData)
             }
 #endif // FEATURE_EH_FUNCLETS && USE_GC_INFO_DECODER
 
+            LOG((LF_GCROOTS, LL_INFO1000, "Scanning Frame: pCM->EnumGcRefs\n"));
             pCM->EnumGcRefs(pCF->GetRegisterSet(),
                             pCF->GetCodeInfo(),
                             flags,

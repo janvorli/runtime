@@ -357,6 +357,10 @@ DebuggerExState*    ThreadExceptionState::GetDebuggerState()
     {
         return &(m_pCurrentTracker->m_DebuggerExState);
     }
+    else if (m_pExInfo)
+    {
+        return &(m_pExInfo->_DebuggerExState);
+    }
     else
     {
         _ASSERTE(!"unexpected use of GetDebuggerState() when no exception in flight");

@@ -72,7 +72,10 @@ struct ExInfo
     CallerStackFrame    _csfEnclosingClause;
     StackFrame          _sfCallerOfActualHandlerFrame;
     EE_ILEXCEPTION_CLAUSE _ClauseForCatch;
+
+    // These are for profiler / debugger use only
     EE_ILEXCEPTION_CLAUSE _CurrentClause;
+    DebuggerExState _DebuggerExState;
 };
 
 //  class StackFrameIterator;

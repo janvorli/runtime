@@ -6918,6 +6918,8 @@ VEH_ACTION WINAPI CLRVectoredExceptionHandler(PEXCEPTION_POINTERS pExceptionInfo
         //
         // Not an Out-of-memory situation, so no need for a forbid fault region here
         //
+        // TODO: make this conditional for the old / new EH
+        EEPolicy::HandleStackOverflow();
         return VEH_CONTINUE_SEARCH;
     }
 

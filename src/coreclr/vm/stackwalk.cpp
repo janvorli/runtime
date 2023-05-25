@@ -22,6 +22,7 @@
 #include "exceptionhandlingqcalls.h"
 #ifdef FEATURE_EH_FUNCLETS
 #include "eetoprofinterfacewrapper.inl"
+#include "eedbginterfaceimpl.inl"
 #define PROCESS_EXPLICIT_FRAME_BEFORE_MANAGED_FRAME
 #endif
 
@@ -1160,6 +1161,8 @@ static inline void UpdatePerformanceMetrics(CrawlFrame *pcfThisFrame, BOOL bIsRe
     ETW::ExceptionLog::ExceptionThrown(pcfThisFrame, bIsRethrownException, bIsNewException);
 }
 
+MethodDesc * GetUserMethodForILStub(Thread * pThread, UINT_PTR uStubSP, MethodDesc * pILStubMD, Frame ** ppFrameOut);
+
 extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalkCtx, REGDISPLAY* pRD, bool instructionFault)
 {
     QCALL_CONTRACT;
@@ -1183,6 +1186,7 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
 
         if (pExInfo->_stackBoundsPassNumber == 1 && pExInfo->_passNumber == 2)
         {
+            EEToDebuggerExceptionInterfaceWrapper::ManagedExceptionUnwindBegin(pThread);
             // TODO: verify both of these
 #ifdef ESTABLISHER_FRAME_ADDRESS_IS_CALLER_SP
             pExInfo->_sfCallerOfActualHandlerFrame = StackFrame(establisherFrame); 
@@ -1195,14 +1199,54 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
             pExInfo->_csfEnclosingClause.Clear();
             if (pExInfo->_idxCurClause != 0xffffffff) //  the reverse pinvoke case doesn't have the _idxCurClause set
             {
-                EH_CLAUSE_ENUMERATOR EHEnum;
-                const METHODTOKEN& MethToken = pThis->m_crawl.GetMethodToken();
-                IJitManager* pJitMan = pThis->m_crawl.GetJitManager();
-                pJitMan->InitializeEHEnumeration(MethToken, &EHEnum);
-                EHEnum.iCurrentPos = pExInfo->_idxCurClause;
-                memset(&pExInfo->_ClauseForCatch, 0, sizeof(EE_ILEXCEPTION_CLAUSE));
-                pJitMan->GetNextEHClause(&EHEnum, &pExInfo->_ClauseForCatch);
-                _ASSERTE(memcmp(&pExInfo->_ClauseForCatch, &pExInfo->_CurrentClause, sizeof(EE_ILEXCEPTION_CLAUSE)) == 0);
+                // EH_CLAUSE_ENUMERATOR EHEnum;
+                // const METHODTOKEN& MethToken = pThis->m_crawl.GetMethodToken();
+                // IJitManager* pJitMan = pThis->m_crawl.GetJitManager();
+                // pJitMan->InitializeEHEnumeration(MethToken, &EHEnum);
+                // EHEnum.iCurrentPos = pExInfo->_idxCurClause;
+                // memset(&pExInfo->_ClauseForCatch, 0, sizeof(EE_ILEXCEPTION_CLAUSE));
+                // pJitMan->GetNextEHClause(&EHEnum, &pExInfo->_ClauseForCatch);
+                // _ASSERTE(memcmp(&pExInfo->_ClauseForCatch, &pExInfo->_CurrentClause, sizeof(EE_ILEXCEPTION_CLAUSE)) == 0);
+                // the 1st pass has just ended, so the _CurrentClause is the catch clause
+                pExInfo->_ClauseForCatch = pExInfo->_CurrentClause;
+                // TODO: Experimental
+                MethodDesc *pMD = pExInfo->_frameIter.m_crawl.GetFunction();
+                TADDR sp = GetRegdisplaySP(pExInfo->_frameIter.m_crawl.GetRegisterSet());
+                if (pMD->IsILStub())
+                {
+                    MethodDesc * pUserMDForILStub = NULL;
+                    Frame * pILStubFrame = NULL;
+                    if (!pExInfo->_frameIter.m_crawl.IsFunclet())    // only make this callback on the main method body of IL stubs
+                    {
+                        pUserMDForILStub = GetUserMethodForILStub(pThread, sp, pMD, &pILStubFrame);
+                    }
+                    //
+                    // NotifyOfCHFFilter has two behaviors
+                    //  * Notifify debugger, get interception info and unwind (function will not return)
+                    //          In this case, m_sfResumeStackFrame is expected to be NULL or the frame of interception.
+                    //          We NULL it out because we get the interception event after this point.
+                    //  * Notifify debugger and return.
+                    //      In this case the normal EH proceeds and we need to reset m_sfResumeStackFrame to the sf catch handler.
+                    //  TODO: remove this call and try to report the IL catch handler in the IL stub itself.
+                    EXCEPTION_POINTERS ptrs;
+                    // TODO: this is probably wrong
+                    ptrs.ContextRecord = (CONTEXT*)pExInfo->_pExContext;
+                    EXCEPTION_RECORD exRecord = {0};
+                    // TODO: This is fake
+                    ptrs.ExceptionRecord = &exRecord;
+                    //m_sfResumeStackFrame.Clear();
+                    EEToDebuggerExceptionInterfaceWrapper::NotifyOfCHFFilter(&ptrs, pILStubFrame);
+                    //m_sfResumeStackFrame    = sf;
+                }
+                else
+                {
+                    // We don't need to do anything special for continuable exceptions after calling
+                    // this callback.  We are going to start unwinding anyway.
+                    PCODE uMethodStartPC = pExInfo->_frameIter.m_crawl.GetCodeInfo()->GetStartAddress();
+                    EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedExceptionCatcherFound(pThread, pMD, (TADDR) uMethodStartPC, sp,
+                                                                                                    &pExInfo->_ClauseForCatch);
+                    EEToProfilerExceptionInterfaceWrapper::ExceptionSearchCatcherFound(pMD);
+                }
             }
         }
     }
@@ -1218,7 +1262,6 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
     //pThread->InitRegDisplay(pRD, pStackwalkCtx, false);
     memset(pThis, 0, sizeof(StackFrameIterator));
     result = pThis->Init(pThread, pFrame, pRD, THREAD_EXECUTING_MANAGED_CODE | HANDLESKIPPEDFRAMES/* | FUNCTIONSONLY*/) != FALSE;
-//    pThis->m_pNextExInfo = pThread->GetExceptionState()->GetCurrentExInfo(); // TODO: integrate this into the init
 
     // Q: I am not sure if this should be set here or in the Next - to be specific - what it should really cover. The problem
     // is that after this call, the EH will process the current stack frame. It is not clear then how the stack walk with GC should consider this frame.
@@ -1228,26 +1271,22 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
         StackWalkAction retVal = pThis->Next();
         result = (retVal != SWA_FAILED);
     }
-    
-    // pThis->m_pNextExInfo->_sfHighBound = pThis->m_crawl.GetRegisterSet()->SP;
-    // pThis->m_pNextExInfo->_sfLowBound = pThis->m_pNextExInfo->_sfHighBound;
-    pThis->m_pNextExInfo->_sfLowBound = pThis->m_crawl.GetRegisterSet()->SP;
 
-    // TODO: this is just to make sure that in 2nd pass, GC can use the null / not-null state of the _csfEnclosingClause as an indicator to show whether finally funclet was called or not. That 
-    //pThis->m_pNextExInfo->_csfEnclosingClause = CallerStackFrame();
+    if (pThis->m_pNextExInfo->_passNumber == 1)
+    {
+        MethodDesc *pMD = pThis->m_crawl.GetFunction();
+        EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionEnter(pMD);
+
+        // Notify the debugger that we are on the first pass for a managed exception.
+        // Note that this callback is made for every managed frame.
+        EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedException(pThread, GetControlPC(pThis->m_crawl.GetRegisterSet()), GetRegdisplaySP(pThis->m_crawl.GetRegisterSet()));
+    }
+
+    pThis->m_pNextExInfo->_sfLowBound = GetRegdisplaySP(pThis->m_crawl.GetRegisterSet());
+
     // Prevent race between setting the pass number and the range
     pThis->m_pNextExInfo->_stackBoundsPassNumber = pThis->m_pNextExInfo->_passNumber;
     ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
-
-    // if (pThis->m_crawl.IsFunclet())
-    // {
-    //     ExInfo* pPrevExInfo = pThis->m_pNextExInfo->_pPrevExInfo;;
-    //     // //T_KNONVOLATILE_CONTEXT_POINTERS *pContextPointers = pThis->m_crawl.pRD->pCurrentContextPointers;
-    //     // memcpy(pThis, &pPrevExInfo->_frameIter, sizeof(StackFrameIterator));
-    //     // //pThis->m_crawl.pRD->pCurrentContextPointers = pContextPointers;
-    //     pThis->Clone(&pPrevExInfo->_frameIter);
-    //     ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
-    // }
 
     _ASSERTE(!result || pThis->GetFrameState() == StackFrameIterator::SFITER_FRAMELESS_METHOD);
     END_QCALL;
@@ -1319,18 +1358,7 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
         TADDR prevSP = pThis->m_crawl.GetRegisterSet()->SP;
         TADDR prevPC = pThis->m_crawl.GetRegisterSet()->ControlPC;
         retVal = pThis->Next();
-        // // TODO: this doesn't seem to be right, should we update the thread's ExInfo instead?
-        // if (pThis->m_pNextExInfo)
-        // {
-        //     pThis->m_pNextExInfo->_sfHighBound = pThis->m_crawl.GetRegisterSet()->SP;
-        // }
 
-        //pTopExInfo->_sfHighBound = pThis->m_crawl.GetRegisterSet()->SP;
-#ifdef _DEBUG
-        // char msg[512];
-        // sprintf(msg, "Unwinding from SP=%p, PC=%p to SP=%p, PC=%p\n", (void*)prevSP, (void*)prevPC, (void*)pThis->m_crawl.GetRegisterSet()->SP, (void*)pThis->m_crawl.GetRegisterSet()->ControlPC);
-        // OutputDebugStringA(msg);
-#endif
         if (pThis->GetFrameState() == StackFrameIterator::SFITER_DONE)
         {
             // TODO: make this cleaner
@@ -1346,11 +1374,6 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
         {
             // Detect collided unwind
             Frame *pFrame = pThis->m_crawl.GetFrame();
-            // pFrame->ExceptionUnwind(); ??? Add this?
-            // if (pFrame->GetVTablePtr() == ReversePInvokeFrame::GetMethodFrameVPtr())
-            // {
-            //     __debugbreak();
-            // }
 
             if (InlinedCallFrame::FrameHasActiveCall(pFrame))
             {
@@ -1369,14 +1392,6 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                             //__debugbreak();
                             _ASSERTE_MSG(FALSE, "StackFrameIterator::Next failed");
                         }
-                        // if (pThis->m_pNextExInfo)
-                        // {
-                        //     pThis->m_pNextExInfo->_sfHighBound = pThis->m_crawl.GetRegisterSet()->SP;
-                        // }
-                        //pTopExInfo->_sfHighBound = pThis->m_crawl.GetRegisterSet()->SP;
-                        
-                        // sprintf(msg, "RhpCallCatchFunclet Unwinding from SP=%p, PC=%p to SP=%p, PC=%p\n", (void*)prevSP, (void*)prevPC, (void*)pThis->m_crawl.GetRegisterSet()->SP, (void*)pThis->m_crawl.GetRegisterSet()->ControlPC);
-                        // OutputDebugStringA(msg);
                         exCollide = true;
                         if ((pThis->m_pNextExInfo->_stackBoundsPassNumber == 1) ||
                             (pThis->m_pNextExInfo->_idxCurClause == 0xFFFFFFFF))
@@ -1389,7 +1404,6 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                         }
                         else
                         {
-#if 1
                             *uExCollideClauseIdx = pExInfo->_idxCurClause;// pThis->m_pNextExInfo->_idxCurClause;
                             pExInfo->_kind = (ExKind)((uint8_t)pExInfo->_kind | (uint8_t)ExKind::SupersededFlag);
 
@@ -1401,26 +1415,10 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                             }
                             while ((retVal == SWA_CONTINUE) && pThis->m_crawl.GetRegisterSet()->SP != pPrevExInfo->_pRD->SP);
                             _ASSERTE(retVal != SWA_FAILED);
-                            // if (pThis->m_pNextExInfo)
-                            // {
-                            //     pThis->m_pNextExInfo->_sfHighBound = pThis->m_crawl.GetRegisterSet()->SP;
-                            // }
-                            //pTopExInfo->_sfHighBound = pThis->m_crawl.GetRegisterSet()->SP;
+
                             _ASSERTE(pThis->m_crawl.GetRegisterSet()->ControlPC == pPrevExInfo->_pRD->ControlPC);
 
                             ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
-#else
-                            // This will likely have better performance for cases when there are many frames that are skipped
-                            *uExCollideClauseIdx = pExInfo->_idxCurClause;// pThis->m_pNextExInfo->_idxCurClause;
-                            pExInfo->_kind = (ExKind)((uint8_t)pExInfo->_kind | (uint8_t)ExKind::SupersededFlag);
-                            prevSP = pThis->m_crawl.GetRegisterSet()->SP;
-                            prevPC = pThis->m_crawl.GetRegisterSet()->ControlPC;
-                            pThis->Clone(&pThis->m_pNextExInfo->_frameIter);
-                            // sprintf(msg, "Skipping from SP=%p, PC=%p to SP=%p, PC=%p\n", (void*)prevSP, (void*)prevPC, (void*)pThis->m_crawl.GetRegisterSet()->SP, (void*)pThis->m_crawl.GetRegisterSet()->ControlPC);
-                            // OutputDebugStringA(msg);
-
-                            ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
-#endif                                                       
                             // pThis->m_dwFlags |= ExCollide; ????
                         }
                     }
@@ -1439,6 +1437,17 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
     while (retVal != SWA_FAILED && (pThis->GetFrameState() != StackFrameIterator::SFITER_FRAMELESS_METHOD));
 
     _ASSERTE(retVal == SWA_FAILED || pThis->GetFrameState() == StackFrameIterator::SFITER_FRAMELESS_METHOD);
+
+    if (pTopExInfo->_passNumber == 1)
+    {
+        MethodDesc *pMD = pThis->m_crawl.GetFunction();
+        EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionEnter(pMD);
+
+        // Notify the debugger that we are on the first pass for a managed exception.
+        // Note that this callback is made for every managed frame.
+        EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedException(pThread, GetControlPC(pThis->m_crawl.GetRegisterSet()), GetRegdisplaySP(pThis->m_crawl.GetRegisterSet()));
+    }
+
     END_QCALL;
 
     if (retVal != SWA_FAILED)
@@ -2506,6 +2515,8 @@ ProcessFuncletsForGCReporting:
                                             _ASSERTE(m_crawl.fShouldCrawlframeReportGCReferences);
                                             m_fDidFuncletReportGCReferences = true;
                                             shouldSkipReporting = false;//fShouldCrawlframeReportGCReferences
+                                            m_crawl.fShouldParentFrameUseUnwindTargetPCforGCReporting = true;
+                                            m_crawl.ehClauseForCatch = pExInfo->_ClauseForCatch;
                                         }                                                
 
                                         // if (m_fFuncletNotSeen)
