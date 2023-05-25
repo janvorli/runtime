@@ -1266,8 +1266,23 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
     // Q: I am not sure if this should be set here or in the Next - to be specific - what it should really cover. The problem
     // is that after this call, the EH will process the current stack frame. It is not clear then how the stack walk with GC should consider this frame.
 
+    // TODO: check if this is needed at all
     while (result && pThis->GetFrameState() != StackFrameIterator::SFITER_FRAMELESS_METHOD)
     {
+        if (pThis->m_pNextExInfo->_passNumber == 1)
+        {
+            Frame *pFrame = pThis->m_crawl.GetFrame();
+            MethodDesc *pMD = pFrame->GetFunction();
+            if (pMD != NULL)
+            {
+                GCX_COOP();
+                bool canAllocateMemory = !(pThis->m_pNextExInfo->_exception == CLRException::GetPreallocatedOutOfMemoryException()) &&
+                    !(pThis->m_pNextExInfo->_exception == CLRException::GetPreallocatedStackOverflowException());
+
+                // TODO: is the sp correct?                    
+                pThis->m_pNextExInfo->_stackTraceInfo.AppendElement(canAllocateMemory, NULL, GetRegdisplaySP(pThis->m_pNextExInfo->_frameIter.m_crawl.GetRegisterSet()), pMD, &pThis->m_pNextExInfo->_frameIter.m_crawl);
+            }
+        }
         StackWalkAction retVal = pThis->Next();
         result = (retVal != SWA_FAILED);
     }
@@ -1431,6 +1446,20 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
             else if (ThrowMethodFrame::GetMethodFrameVPtr() == pFrame->GetVTablePtr())
             {
                 // passing through exception throwing site
+            }
+            else if (pExInfo->_passNumber == 1)
+            {
+                MethodDesc *pMD = pFrame->GetFunction();
+                if (pMD != NULL)
+                {
+                    GCX_COOP();
+                    bool canAllocateMemory = !(pExInfo->_exception == CLRException::GetPreallocatedOutOfMemoryException()) &&
+                        !(pExInfo->_exception == CLRException::GetPreallocatedStackOverflowException());
+
+                    // TODO: is the sp correct?                    
+                    pExInfo->_stackTraceInfo.AppendElement(canAllocateMemory, NULL, GetRegdisplaySP(pExInfo->_frameIter.m_crawl.GetRegisterSet()), pMD, &pExInfo->_frameIter.m_crawl);
+
+                }
             }
         }
     }
