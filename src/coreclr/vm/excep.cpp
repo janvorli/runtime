@@ -2860,10 +2860,10 @@ VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(OBJECTREF throwable, BOOL rethrow)
         ExceptionPreserveStackTrace(throwable);
     }
 
-    CONTEXT ctx;
+    CONTEXT ctx = {0};
+    ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
     REGDISPLAY rd;
     Thread *pThread = GetThread();
-
     ExInfo exInfo = {};
     exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
     exInfo._pExContext = &ctx;
@@ -2877,6 +2877,7 @@ VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(OBJECTREF throwable, BOOL rethrow)
     exInfo._pFrame = GetThread()->GetFrame();
     exInfo._sfLowBound.SetMaxVal();
     exInfo._exception = NULL;
+    exInfo._hThrowable = NULL;
     pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
 
     GCPROTECT_BEGIN(exInfo._exception);
@@ -6622,13 +6623,13 @@ void HandleManagedFault(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext)
 #endif // FEATURE_EH_FUNCLETS
     frame->InitAndLink(pContext);
 
-    CONTEXT ctx;
+    ///CONTEXT ctx;
     REGDISPLAY rd;
     Thread *pThread = GetThread();
 
     ExInfo exInfo = {};
     exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-    exInfo._pExContext = &ctx; // TODO: or the pContext?
+    exInfo._pExContext = pContext;//&ctx; // TODO: or the pContext?
     exInfo._passNumber = 1;
     exInfo._stackBoundsPassNumber = 1;
     exInfo._kind = ExKind::HardwareFault;
@@ -6639,6 +6640,7 @@ void HandleManagedFault(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext)
     exInfo._pFrame = GetThread()->GetFrame();
     exInfo._sfLowBound.SetMaxVal();
     exInfo._exception = NULL;
+    exInfo._hThrowable = NULL;
     pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
 
     DWORD exceptionCode = pExceptionRecord->ExceptionCode;

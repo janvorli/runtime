@@ -74,8 +74,10 @@ struct ExInfo
     EE_ILEXCEPTION_CLAUSE _ClauseForCatch;
 
     // These are for profiler / debugger use only
+    OBJECTHANDLE    _hThrowable;       // thrown exception handle
     EE_ILEXCEPTION_CLAUSE _CurrentClause;
     DebuggerExState _DebuggerExState;
+    ExceptionFlags _ExceptionFlags;
 };
 
 //  class StackFrameIterator;

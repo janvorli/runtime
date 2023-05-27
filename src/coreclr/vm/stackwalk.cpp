@@ -1180,13 +1180,13 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
         if (pExInfo->_passNumber == 1)
         {
             GCX_COOP();
+            pThread->SafeSetThrowables(pExInfo->_exception);
             EEToProfilerExceptionInterfaceWrapper::ExceptionThrown(pThread);
             UpdatePerformanceMetrics(&pThis->m_crawl, false, ((uint8_t)pExInfo->_kind & (uint8_t)ExKind::RethrowFlag) == 0);
         }
 
         if (pExInfo->_stackBoundsPassNumber == 1 && pExInfo->_passNumber == 2)
         {
-            EEToDebuggerExceptionInterfaceWrapper::ManagedExceptionUnwindBegin(pThread);
             // TODO: verify both of these
 #ifdef ESTABLISHER_FRAME_ADDRESS_IS_CALLER_SP
             pExInfo->_sfCallerOfActualHandlerFrame = StackFrame(establisherFrame); 
@@ -1248,14 +1248,16 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
                     EEToProfilerExceptionInterfaceWrapper::ExceptionSearchCatcherFound(pMD);
                 }
             }
+            pExInfo->_ExceptionFlags.SetUnwindHasStarted();
+            EEToDebuggerExceptionInterfaceWrapper::ManagedExceptionUnwindBegin(pThread);
         }
     }
 
-    memset(pStackwalkCtx, 0x00, sizeof(T_CONTEXT));
-    pStackwalkCtx->ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-    SetIP(pStackwalkCtx, 0);
-    SetSP(pStackwalkCtx, 0);
-    SetFP(pStackwalkCtx, 0);
+    // memset(pStackwalkCtx, 0x00, sizeof(T_CONTEXT));
+    // pStackwalkCtx->ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
+    // SetIP(pStackwalkCtx, 0);
+    // SetSP(pStackwalkCtx, 0);
+    // SetFP(pStackwalkCtx, 0);
     //LOG((LF_GCROOTS, LL_INFO100000, "STACKWALK    starting with partial context\n"));
     pThread->FillRegDisplay(pRD, pStackwalkCtx);
 

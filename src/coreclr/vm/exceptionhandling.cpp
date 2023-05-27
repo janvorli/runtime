@@ -892,12 +892,12 @@ ProcessCLRException(IN     PEXCEPTION_RECORD   pExceptionRecord,
     #endif // FEATURE_EH_FUNCLETS
         frame->InitAndLink(pContextRecord);
 
-        CONTEXT ctx;
+        CONTEXT ctx = {0};
+        ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
         REGDISPLAY rd;
         Thread *pThread = GetThread();
 
         ExInfo exInfo = {};
-        exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
         exInfo._pExContext = &ctx; // TODO: or the pContext?
         exInfo._passNumber = 1;
         exInfo._stackBoundsPassNumber = 1;
@@ -909,6 +909,7 @@ ProcessCLRException(IN     PEXCEPTION_RECORD   pExceptionRecord,
         exInfo._pFrame = GetThread()->GetFrame();
         exInfo._sfLowBound.SetMaxVal();
         exInfo._exception = NULL;
+        exInfo._hThrowable = NULL;
         pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
 
         GCPROTECT_BEGIN(exInfo._exception);
@@ -7538,6 +7539,15 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
         while (pExInfo && pExInfo < (void*)targetSp)
         {
+            // ExceptionTracker::ReleaseResources variant, should have more stuff
+            if (pExInfo->_hThrowable)
+            {
+                if (!CLRException::IsPreallocatedExceptionHandle(pExInfo->_hThrowable))
+                {
+                    DestroyHandle(pExInfo->_hThrowable);
+                }
+                pExInfo->_hThrowable = NULL;
+            }
             pExInfo->_stackTraceInfo.FreeStackTrace();
             pExInfo = pExInfo->_pPrevExInfo;
         }
@@ -7574,7 +7584,11 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
             // And even if that worked, the RaiseTheExceptionInternalOnly that is ultimately called
             // would still check the throwable on the thread, which would be popped out.
 //            pvRegDisplay->pCallerContext->Rcx = (ULONG64)(size_t)(ULONG64*)&oref;
+#ifdef _DEBUG
             pvRegDisplay->pCurrentContext->Rcx = (ULONG64)(size_t)(ULONG64*)&oref;
+#else
+            pvRegDisplay->pCurrentContext->Rcx = (ULONG64)(size_t)oref;
+#endif            
             //ClrRestoreNonvolatileContext(pvRegDisplay->pCallerContext);
 //            RtlRestoreContext(pvRegDisplay->pCallerContext, NULL);
             RtlRestoreContext(pvRegDisplay->pCurrentContext, NULL);

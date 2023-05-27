@@ -261,6 +261,18 @@ BOOL DacDbiInterfaceImpl::UnwindStackWalkFrame(StackWalkHandle pSFIHandle)
                 // Just continue onto the next managed stack frame.
                 continue;
             }
+            else if (pIter->GetFrameState() == StackFrameIterator::SFITER_FRAMELESS_METHOD)
+            {
+                MethodDesc *pMD = pIter->m_crawl.GetFunction();
+                PTR_MethodDesc ptrMD = dac_cast<PTR_MethodDesc>(pMD);
+                LPCUTF8 name = ptrMD->GetName();
+                if (strcmp(name, "DispatchEx") == 0 || strcmp(name, "RhThrowEx") == 0 || strcmp(name, "RhThrowHwEx") == 0)
+                {
+                    continue;
+                }
+
+                fIsAtEndOfStack = FALSE;
+            }
             else
             {
                 fIsAtEndOfStack = FALSE;

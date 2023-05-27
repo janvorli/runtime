@@ -23,6 +23,10 @@ OBJECTHANDLE ThreadExceptionState::GetThrowableAsHandle()
     {
         return m_pCurrentTracker->m_hThrowable;
     }
+    else if (m_pExInfo)
+    {
+        return m_pExInfo->_hThrowable;
+    }
 
     return NULL;
 #else // FEATURE_EH_FUNCLETS
@@ -181,13 +185,17 @@ void ThreadExceptionState::SetThrowable(OBJECTREF throwable DEBUG_ARG(SetThrowab
 #endif // FEATURE_INTERPRETER
             )
         {
-            CONSISTENCY_CHECK(CheckPointer(m_pCurrentTracker));
+            CONSISTENCY_CHECK(CheckPointer(m_pCurrentTracker, NULL_OK) || CheckPointer(m_pExInfo));
         }
 #endif
 
         if (m_pCurrentTracker != NULL)
         {
             m_pCurrentTracker->m_hThrowable = hNewThrowable;
+        }
+        if (m_pExInfo != NULL)
+        {
+            m_pExInfo->_hThrowable = hNewThrowable;
         }
 #else // FEATURE_EH_FUNCLETS
         m_currentExInfo.m_hThrowable = hNewThrowable;
@@ -205,7 +213,10 @@ DWORD ThreadExceptionState::GetExceptionCode()
         return m_pCurrentTracker->m_ExceptionCode;
     }
     _ASSERTE(m_pExInfo);
-    return ((EXCEPTIONREF)m_pExInfo->_exception)->GetXCode();
+    {   
+        GCX_COOP();
+        return ((EXCEPTIONREF)m_pExInfo->_exception)->GetXCode();
+    }
 #else // FEATURE_EH_FUNCLETS
     return m_currentExInfo.m_ExceptionCode;
 #endif // FEATURE_EH_FUNCLETS
@@ -317,6 +328,17 @@ PTR_CONTEXT ThreadExceptionState::GetContextRecord()
     {
         return m_pCurrentTracker->m_ptrs.ContextRecord;
     }
+    else if (m_pExInfo)
+    {
+        // if (m_pExInfo->_pFrame->GetVTablePtr() == FaultingExceptionFrame::GetMethodFrameVTbl())
+        // {
+        //     return ((FaultingExceptionFrame*)m_pExInfo->_pFrame)->GetExceptionContext();
+        // }
+        // else
+        {
+            return (PTR_CONTEXT)(CONTEXT*)m_pExInfo->_pExContext;
+        }
+    }
     else
     {
         return NULL;
@@ -333,6 +355,10 @@ ExceptionFlags* ThreadExceptionState::GetFlags()
     if (m_pCurrentTracker)
     {
         return &(m_pCurrentTracker->m_ExceptionFlags);
+    }
+    else if (m_pExInfo)
+    {
+        return &(m_pExInfo->_ExceptionFlags);
     }
     else
     {

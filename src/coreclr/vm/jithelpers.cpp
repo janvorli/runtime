@@ -4223,7 +4223,8 @@ HCIMPL1(void, IL_Throw,  Object* obj)
         }
     }
 
-    CONTEXT ctx;
+    CONTEXT ctx = {0};
+    ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
     REGDISPLAY rd;
     Thread *pThread = GetThread();
 
@@ -4240,6 +4241,7 @@ HCIMPL1(void, IL_Throw,  Object* obj)
     exInfo._pFrame = GetThread()->GetFrame();
     exInfo._sfLowBound.SetMaxVal();
     exInfo._exception = NULL;
+    exInfo._hThrowable = NULL;
     pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
 
     GCPROTECT_BEGIN(exInfo._exception);
@@ -4272,7 +4274,8 @@ extern "C" HCIMPL2(void, RhInternalThrow, int exceptionId, TransitionBlock* pTra
     FrameWithCookie<ThrowMethodFrame> frame(pTransitionBlock);
     frame.Push();
 
-    CONTEXT ctx;
+    CONTEXT ctx = {0};
+    ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
     REGDISPLAY rd;
     Thread *pThread = GetThread();
 
@@ -4289,6 +4292,7 @@ extern "C" HCIMPL2(void, RhInternalThrow, int exceptionId, TransitionBlock* pTra
     exInfo._pFrame = GetThread()->GetFrame();
     exInfo._sfLowBound.SetMaxVal();
     exInfo._exception = NULL;
+    exInfo._hThrowable = NULL;
     pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
 
     GCPROTECT_BEGIN(exInfo._exception);
@@ -4346,7 +4350,8 @@ extern "C" HCIMPL2(void, RhThrowEx, Object* obj, TransitionBlock* pTransitionBlo
         }
     }
 
-    CONTEXT ctx;
+    CONTEXT ctx = {0};
+    ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
     REGDISPLAY rd;
     Thread *pThread = GetThread();
 
@@ -4363,6 +4368,7 @@ extern "C" HCIMPL2(void, RhThrowEx, Object* obj, TransitionBlock* pTransitionBlo
     exInfo._pFrame = GetThread()->GetFrame();
     exInfo._sfLowBound.SetMaxVal();
     exInfo._exception = NULL;
+    exInfo._hThrowable = NULL;
     pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
 
     GCPROTECT_BEGIN(exInfo._exception);
@@ -4383,54 +4389,6 @@ extern "C" HCIMPL2(void, RhThrowEx, Object* obj, TransitionBlock* pTransitionBlo
 }
 HCIMPLEND
 
-// extern "C" void IL_Rethrow(Object* obj);
-
-// extern "C" HCIMPL1(void, RhRethrow, TransitionBlock* pTransitionBlock)
-// {
-//     FCALL_CONTRACT;
-
-//     FC_GC_POLL_NOT_NEEDED();    // throws always open up for GC
-
-//     INCONTRACT(FCallGCCanTrigger::Enter());
-
-//     FrameWithCookie<ThrowMethodFrame> frame(pTransitionBlock);
-//     frame.Push();
-
-//     CONTEXT ctx;
-//     REGDISPLAY rd;
-//     Thread *pThread = GetThread();
-
-//     ExInfo *pActiveExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-
-//     ExInfo exInfo = {};
-//     exInfo._pPrevExInfo = pActiveExInfo;
-//     exInfo._pExContext = &ctx;
-//     exInfo._passNumber = 1;
-//     exInfo._stackBoundsPassNumber = 1;
-//     exInfo._kind = ExKind::None;
-//     exInfo._idxCurClause = 0xffffffff;
-//     exInfo._pRD = &rd;
-//     exInfo._stackTraceInfo.Init();
-//     exInfo._stackTraceInfo.AllocateStackTrace();
-//     exInfo._pFrame = GetThread()->GetFrame();
-//     exInfo._sfLowBound.SetMaxVal();
-//     exInfo._exception = NULL;
-//     pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
-
-//     GCPROTECT_BEGIN(exInfo._exception);
-//     PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_RETHROW);
-//     DECLARE_ARGHOLDER_ARRAY(args, 2);
-//     args[ARGNUM_0] = PTR_TO_ARGHOLDER(pActiveExInfo);
-//     args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
-
-//     //Ex.RhRethrow(ref ExInfo activeExInfo, ref ExInfo exInfo)
-//     CALL_MANAGED_METHOD_NORET(args)
-//     GCPROTECT_END();
-    
-//     INCONTRACT(FCallGCCanTrigger::Leave(__FUNCTION__, __FILE__, __LINE__));
-// }
-// HCIMPLEND
-
 /*************************************************************/
 
 HCIMPL0(void, IL_Rethrow)
@@ -4450,7 +4408,8 @@ HCIMPL0(void, IL_Rethrow)
     //     RealCOMPlusThrow(kInvalidProgramException, (UINT)IDS_EE_RETHROW_NOT_ALLOWED);
     // }
 
-    CONTEXT ctx;
+    CONTEXT ctx = {0};
+    ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
     REGDISPLAY rd;
     Thread *pThread = GetThread();
 
@@ -4469,6 +4428,7 @@ HCIMPL0(void, IL_Rethrow)
     exInfo._pFrame = GetThread()->GetFrame();
     exInfo._sfLowBound.SetMaxVal();
     exInfo._exception = NULL;
+    exInfo._hThrowable = NULL;
     pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
 
     GCPROTECT_BEGIN(exInfo._exception);

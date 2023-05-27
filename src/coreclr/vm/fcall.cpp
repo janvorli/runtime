@@ -42,7 +42,8 @@ NOINLINE LPVOID __FCThrow(LPVOID __me, RuntimeExceptionKind reKind, UINT resID, 
     _ASSERTE((reKind != kExecutionEngineException) ||
              !"Don't throw kExecutionEngineException from here. Go to EEPolicy directly, or throw something better.");
 
-    CONTEXT ctx;
+    CONTEXT ctx = {0};
+    ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
     REGDISPLAY rd;
     Thread *pThread = GetThread();
 
@@ -59,6 +60,7 @@ NOINLINE LPVOID __FCThrow(LPVOID __me, RuntimeExceptionKind reKind, UINT resID, 
     exInfo._pFrame = GetThread()->GetFrame();
     exInfo._sfLowBound.SetMaxVal();
     exInfo._exception = NULL;
+    exInfo._hThrowable = NULL;
     pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
 
     GCPROTECT_BEGIN(exInfo._exception);
