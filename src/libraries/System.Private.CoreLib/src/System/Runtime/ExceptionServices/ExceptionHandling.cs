@@ -63,15 +63,24 @@ namespace System.Runtime
     internal static class AsmOffsets
     {
 #if DEBUG
+#if TARGET_UNIX
+        public const int SIZEOF__REGDISPLAY = 0x1a90;
+        public const int OFFSETOF__REGDISPLAY__SP = 0x1a78;
+        public const int OFFSETOF__REGDISPLAY__ControlPC = 0x1a80;
+#else
         public const int SIZEOF__REGDISPLAY = 0xbf0;
         public const int OFFSETOF__REGDISPLAY__SP = 0xbd8;
         public const int OFFSETOF__REGDISPLAY__ControlPC = 0xbe0;
+#endif
         public const int OFFSETOF__REGDISPLAY__m_pCurrentContext = 0x8;
-        public const int SIZEOF__StackFrameIterator = 0x360+0x10; // +8 for the m_pNextExInfo, +8 for alignment
+        public const int SIZEOF__StackFrameIterator = 0x370;
+#else
+#if TARGET_UNIX
 #else
         public const int SIZEOF__REGDISPLAY = 0xbe0;
         public const int OFFSETOF__REGDISPLAY__SP = 0xbd0;
         public const int OFFSETOF__REGDISPLAY__ControlPC = 0xbd8;
+#endif
         public const int OFFSETOF__REGDISPLAY__m_pCurrentContext = 0x8;
         public const int SIZEOF__StackFrameIterator = 0x360;
 #endif
@@ -82,7 +91,11 @@ namespace System.Runtime
         public const int OFFSETOF__StackFrameIterator__m_pRegDisplay = 0x228;
         //public const int OFFSETOF__StackFrameIterator__m_OriginalControlPC = ;
 
+#if TARGET_UNIX
+        public const int SIZEOF__PAL_LIMITED_CONTEXT = 0xc20;
+#else
         public const int SIZEOF__PAL_LIMITED_CONTEXT = 0x4d0;
+#endif
         public const int OFFSETOF__PAL_LIMITED_CONTEXT__IP = 0xf8;
         public const int OFFSETOF__PAL_LIMITED_CONTEXT__SP = 0x98;
         public const int OFFSETOF__PAL_LIMITED_CONTEXT__FP = 0xa0;

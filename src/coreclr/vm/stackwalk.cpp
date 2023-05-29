@@ -1162,6 +1162,7 @@ static inline void UpdatePerformanceMetrics(CrawlFrame *pcfThisFrame, BOOL bIsRe
 }
 
 MethodDesc * GetUserMethodForILStub(Thread * pThread, UINT_PTR uStubSP, MethodDesc * pILStubMD, Frame ** ppFrameOut);
+void MarkInlinedCallFrameAsEHHelperCall(Frame* pFrame);
 
 extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalkCtx, REGDISPLAY* pRD, bool instructionFault)
 {
@@ -1171,9 +1172,12 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
     BEGIN_QCALL;
     // TODO: unhijack?
 
-    Thread* pThread = GetThread();
+    Thread* pThread = GET_THREAD();
+    Frame* pFrame = pThread->GetFrame();
+    MarkInlinedCallFrameAsEHHelperCall(pFrame);
+
     // Skip the pinvoke frame
-    Frame* pFrame = pThread->GetFrame()->PtrNextFrame();
+    pFrame = pThread->GetFrame()->PtrNextFrame();
 
     {
         ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
@@ -1253,6 +1257,10 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
         }
     }
 
+    if (pStackwalkCtx->Rip == 0)
+    {
+        RtlCaptureContext(pStackwalkCtx);
+    }
     // memset(pStackwalkCtx, 0x00, sizeof(T_CONTEXT));
     // pStackwalkCtx->ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
     // SetIP(pStackwalkCtx, 0);
@@ -1324,7 +1332,10 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
     // The NativeAOT stack frame iterator also has m_pNextExInfo that it uses for collision detection too. It is set when the stack frame iterator is initialized to the one from the Thread
     // Maybe we could just skip frames until we cross the Thread::m_pExInfo location?
 
-    Thread* pThread = GetThread();
+    Thread* pThread = GET_THREAD();
+    Frame* pFrame = pThread->GetFrame();
+    MarkInlinedCallFrameAsEHHelperCall(pFrame);
+
     StackWalkAction retVal = SWA_FAILED;
     bool exCollide = false;
     ExInfo* pExInfo = pThis->m_pNextExInfo;
@@ -1390,12 +1401,12 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
         if (!pThis->m_crawl.IsFrameless())
         {
             // Detect collided unwind
-            Frame *pFrame = pThis->m_crawl.GetFrame();
+            pFrame = pThis->m_crawl.GetFrame();
 
             if (InlinedCallFrame::FrameHasActiveCall(pFrame))
             {
                 InlinedCallFrame* pInlinedCallFrame = (InlinedCallFrame*)pFrame;
-                if ((TADDR)pInlinedCallFrame->m_Datum & 2)
+                if (((TADDR)pInlinedCallFrame->m_Datum & 6) == 6)
                 {
                     // passing through RhpCallCatchFunclet et al
                     if (doingFuncletUnwind)
@@ -2618,8 +2629,8 @@ ProcessFuncletsForGCReporting:
                             if (!m_sfParent.IsNull() && m_forceReportingWhileSkipping == 0)// && !m_fFuncletNotSeen)
                             {
 #ifdef _DEBUG                                
-                                char msg[1024];
-                                sprintf(msg, "  Not making callback for skipped function m_crawl.pFunc = %pM (%s.%s)\n", m_crawl.pFunc, m_crawl.pFunc->m_pszDebugClassName, m_crawl.pFunc->m_pszDebugMethodName);
+//                                char msg[1024];
+  //                              sprintf(msg, "  Not making callback for skipped function m_crawl.pFunc = %pM (%s.%s)\n", m_crawl.pFunc, m_crawl.pFunc->m_pszDebugClassName, m_crawl.pFunc->m_pszDebugMethodName);
 //                                OutputDebugStringA(msg);
 #endif                                
                                 STRESS_LOG4(LF_GCROOTS, LL_INFO100,
@@ -2646,8 +2657,8 @@ ProcessFuncletsForGCReporting:
 #ifdef _DEBUG                                
                             if (m_forceReportingWhileSkipping != 0)
                             {
-                                char msg[1024];
-                                sprintf(msg, "  Force callback for skipped function m_crawl.pFunc = %pM (%s.%s)\n", m_crawl.pFunc, m_crawl.pFunc->m_pszDebugClassName, m_crawl.pFunc->m_pszDebugMethodName);
+                                //char msg[1024];
+                                //sprintf(msg, "  Force callback for skipped function m_crawl.pFunc = %pM (%s.%s)\n", m_crawl.pFunc, m_crawl.pFunc->m_pszDebugClassName, m_crawl.pFunc->m_pszDebugMethodName);
 //                                OutputDebugStringA(msg);
                                 STRESS_LOG3(LF_GCROOTS, LL_INFO100,
                                     "STACKWALK: Force callback for skipped function m_crawl.pFunc = %pM (%s.%s)\n", m_crawl.pFunc, m_crawl.pFunc->m_pszDebugClassName, m_crawl.pFunc->m_pszDebugMethodName);

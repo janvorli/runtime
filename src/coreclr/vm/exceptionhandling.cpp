@@ -868,7 +868,7 @@ ProcessCLRException(IN     PEXCEPTION_RECORD   pExceptionRecord,
     STATIC_CONTRACT_MODE_ANY;
     STATIC_CONTRACT_GC_TRIGGERS;
     STATIC_CONTRACT_THROWS;
-
+#ifndef HOST_UNIX
     // TODO: verify that this is a pinvoke call, otherwise we should not get here.
     if (!(pExceptionRecord->ExceptionFlags & EXCEPTION_UNWINDING))
     {
@@ -928,7 +928,7 @@ ProcessCLRException(IN     PEXCEPTION_RECORD   pExceptionRecord,
     }
     //__debugbreak();
     EEPOLICY_HANDLE_FATAL_ERROR_WITH_MESSAGE(E_FAIL, _T("SEH exception leaked into managed code"));
-
+#endif // HOST_UNIX
     // We must preserve this so that GCStress=4 eh processing doesnt kill last error.
     DWORD   dwLastError     = GetLastError();
 
@@ -5383,7 +5383,49 @@ BOOL HandleHardwareException(PAL_SEHException* ex)
             fef.InitAndLink(ex->GetContextRecord());
         }
 
+#if 1
+    REGDISPLAY rd;
+    Thread *pThread = GetThread();
+
+    ExInfo exInfo = {};
+    exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+    exInfo._pExContext = ex->GetContextRecord();// &ctx; // TODO: or the pContext? The RtlRestoreContext fails if I use this context (with patched Rip) for some reason
+    exInfo._passNumber = 1;
+    exInfo._stackBoundsPassNumber = 1;
+    exInfo._kind = ExKind::HardwareFault;
+    exInfo._idxCurClause = 0xffffffff;
+    exInfo._pRD = &rd;
+    exInfo._stackTraceInfo.Init();
+    exInfo._stackTraceInfo.AllocateStackTrace();
+    exInfo._pFrame = GetThread()->GetFrame();
+    exInfo._sfLowBound.SetMaxVal();
+    exInfo._exception = NULL;
+    //exInfo._hThrowable = NULL;
+    pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
+
+    DWORD exceptionCode = ex->GetExceptionRecord()->ExceptionCode;
+    if (exceptionCode == STATUS_ACCESS_VIOLATION)
+    {
+        #define NULL_AREA_SIZE   (64 * 1024)
+        if (ex->GetExceptionRecord()->ExceptionInformation[1] < NULL_AREA_SIZE)
+        {
+            exceptionCode = 0; //STATUS_REDHAWK_NULL_REFERENCE;
+        }
+    }
+
+    GCPROTECT_BEGIN(exInfo._exception);
+    PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROWHW_EX);
+    DECLARE_ARGHOLDER_ARRAY(args, 2);
+    args[ARGNUM_0] = DWORD_TO_ARGHOLDER(exceptionCode);
+    args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
+
+    //Ex.RhThrowHwEx(exceptionCode, &exInfo)
+    CALL_MANAGED_METHOD_NORET(args)
+
+    GCPROTECT_END();
+#else        
         DispatchManagedException(*ex, true /* isHardwareException */);
+#endif        
         UNREACHABLE();
     }
     else
@@ -6299,9 +6341,9 @@ bool ExceptionTracker::IsInStackRegionUnwoundBySpecifiedException(CrawlFrame * p
 
     // The tracker must be in the second pass, and its stack range must not be empty.
     if ( (pExInfo == NULL) ||
-         pExInfo->_stackBoundsPassNumber == 1 ||
-         pExInfo->_sfLowBound.IsMaxVal() &&
-         pExInfo->_sfHighBound.IsNull())
+         (pExInfo->_stackBoundsPassNumber == 1) ||
+         (pExInfo->_sfLowBound.IsMaxVal() &&
+         pExInfo->_sfHighBound.IsNull()))
     {
         return false;
     }
@@ -7377,7 +7419,14 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
     {
         // TODO: assert that this is an inlined call frame
         InlinedCallFrame* pInlinedCallFrame = (InlinedCallFrame*)pFrame;
-        pInlinedCallFrame->m_Datum = (PTR_NDirectMethodDesc)((TADDR)pInlinedCallFrame->m_Datum | 2); // Mark the pinvoke frame as invoking RhpCallCatchFunclet (and similar) for collided unwind detection
+        pInlinedCallFrame->m_Datum = (PTR_NDirectMethodDesc)((TADDR)pInlinedCallFrame->m_Datum | 6); // Mark the pinvoke frame as invoking RhpCallCatchFunclet (and similar) for collided unwind detection
+    }
+
+    void MarkInlinedCallFrameAsEHHelperCall(Frame* pFrame)
+    {
+        // TODO: assert that this is an inlined call frame
+        InlinedCallFrame* pInlinedCallFrame = (InlinedCallFrame*)pFrame;
+        pInlinedCallFrame->m_Datum = (PTR_NDirectMethodDesc)((TADDR)pInlinedCallFrame->m_Datum | 2); // Mark the pinvoke frame as invoking any exception handling helper
     }
 
     UINT_PTR GetEstablisherFrame(REGDISPLAY* pvRegDisplay, ExInfo* exInfo)
@@ -7557,8 +7606,8 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         ExceptionTracker::UpdateNonvolatileRegisters(pvRegDisplay->pCurrentContext, pvRegDisplay, FALSE);
         if (pHandlerIP != (BYTE*)1)
         {
-//            ClrRestoreNonvolatileContext(pvRegDisplay->pCurrentContext);
-            RtlRestoreContext(pvRegDisplay->pCurrentContext, NULL);
+            ClrRestoreNonvolatileContext(pvRegDisplay->pCurrentContext);
+//            RtlRestoreContext(pvRegDisplay->pCurrentContext, NULL);
         }
         else
         {
@@ -7631,8 +7680,8 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         GCX_COOP();
 
         Thread* pThread = GET_THREAD();
-        // Frame* pFrame = pThread->GetFrame();
-        // MarkInlinedCallFrameAsFuncletCall(pFrame);
+        Frame* pFrame = pThread->GetFrame();
+        MarkInlinedCallFrameAsEHHelperCall(pFrame);
 
         ExInfo* pExInfo = GET_THREAD()->GetExceptionState()->GetCurrentExInfo();
         OBJECTREF throwable = exceptionObj.Get();
@@ -7665,6 +7714,10 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         ExtendedEHClauseEnumerator *pExtendedEHEnum = (ExtendedEHClauseEnumerator*)pEHEnum;
 
         BEGIN_QCALL;
+        Thread* pThread = GET_THREAD();
+        Frame* pFrame = pThread->GetFrame();
+        MarkInlinedCallFrameAsEHHelperCall(pFrame);
+
         IJitManager* pJitMan = pFrameIter->m_crawl.GetJitManager();
         const METHODTOKEN& MethToken = pFrameIter->m_crawl.GetMethodToken();
         *pMethodStartAddress = (BYTE*)pJitMan->JitTokenToStartAddress(MethToken);
@@ -7681,6 +7734,9 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         BOOL result = FALSE;
 
         BEGIN_QCALL;
+        Thread* pThread = GET_THREAD();
+        Frame* pFrame = pThread->GetFrame();
+        MarkInlinedCallFrameAsEHHelperCall(pFrame);
 
         ExtendedEHClauseEnumerator *pExtendedEHEnum = (ExtendedEHClauseEnumerator*)pEHEnum;
         if (pEHEnum->iCurrentPos < pExtendedEHEnum->EHCount)

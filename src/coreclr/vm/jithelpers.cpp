@@ -4582,10 +4582,10 @@ HCIMPL3(void, JIT_ThrowAmbiguousResolutionException,
 }
 HCIMPLEND
 
-extern "C" void JIT_Overflow();
+//extern "C" void JIT_Overflow();
 
 /*********************************************************************/
-HCIMPL0(void, JIT_OverflowOld)
+HCIMPL0(void, JIT_Overflow)
 {
     FCALL_CONTRACT;
 
@@ -4602,10 +4602,10 @@ HCIMPL0(void, JIT_OverflowOld)
 }
 HCIMPLEND
 
-extern "C" void JIT_ThrowDivZero();
+//extern "C" void JIT_ThrowDivZero();
 
 /*********************************************************************/
-HCIMPL0(void, JIT_ThrowDivZeroOld)
+HCIMPL0(void, JIT_ThrowDivZero)
 {
     FCALL_CONTRACT;
 
@@ -4622,10 +4622,10 @@ HCIMPL0(void, JIT_ThrowDivZeroOld)
 }
 HCIMPLEND
 
-extern "C" void JIT_ThrowNullRef();
+//extern "C" void JIT_ThrowNullRef();
 
 /*********************************************************************/
-HCIMPL0(void, JIT_ThrowNullRefOld)
+HCIMPL0(void, JIT_ThrowNullRef)
 {
   FCALL_CONTRACT;
 
