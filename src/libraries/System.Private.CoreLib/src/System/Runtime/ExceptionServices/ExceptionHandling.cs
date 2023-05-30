@@ -762,7 +762,44 @@ namespace System.Runtime
         public static void RhThrowInternalEx(uint exceptionId, ref ExInfo exInfo)
         {
             Exception? exceptionToThrow = null;
-
+#if TARGET_UNIX
+            switch (exceptionId)
+            {
+                case 4:
+                    exceptionToThrow = new ArgumentOutOfRangeException();
+                    break;
+                case 6:
+                    exceptionToThrow = new BadImageFormatException();
+                    break;
+                case 12:
+                    exceptionToThrow = new DivideByZeroException();
+                    break;
+                case 23:
+                    exceptionToThrow = new IndexOutOfRangeException();
+                    break;
+                case 25:
+                    exceptionToThrow = new InvalidCastException();
+                    break;
+                case 39:
+                    exceptionToThrow = new AmbiguousImplementationException();
+                    break;
+                case 42:
+                    exceptionToThrow = new NullReferenceException();
+                    break;
+                case 46:
+                    exceptionToThrow = new OverflowException();
+                    break;
+                case 74:
+                    exceptionToThrow = new OutOfMemoryException();
+                    break;
+                case 75:
+                    exceptionToThrow = new ArgumentNullException();
+                    break;
+                default:
+                    FallbackFailFast(RhFailFastReason.InternalError, null);
+                    break;
+            }
+#else
             switch (exceptionId)
             {
                 case 4:
@@ -799,7 +836,7 @@ namespace System.Runtime
                     FallbackFailFast(RhFailFastReason.InternalError, null);
                     break;
             }
-
+#endif
             exInfo.Init(exceptionToThrow!);
             DispatchEx(ref exInfo._frameIter, ref exInfo, MaxTryRegionIdx);
             FallbackFailFast(RhFailFastReason.InternalError, null);

@@ -1191,7 +1191,10 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
 
         if (pExInfo->_stackBoundsPassNumber == 1 && pExInfo->_passNumber == 2)
         {
-            // TODO: verify both of these
+            // Clear the enclosing clause to indicate we have not processed any 2nd pass funclet yet.
+            pExInfo->_csfEnclosingClause.Clear();
+            if (pExInfo->_idxCurClause != 0xffffffff) //  the reverse pinvoke case doesn't have the _idxCurClause set
+            {
 #ifdef ESTABLISHER_FRAME_ADDRESS_IS_CALLER_SP
             pExInfo->_sfCallerOfActualHandlerFrame = StackFrame(establisherFrame); 
 #else
@@ -1199,10 +1202,6 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
             EECodeManager::EnsureCallerContextIsValid(pExInfo->_frameIter.m_crawl.GetRegisterSet(), NULL);
             pExInfo->_sfCallerOfActualHandlerFrame = CallerStackFrame::FromRegDisplay(pExInfo->_frameIter.m_crawl.GetRegisterSet());//pThis->m_pNextExInfo->_csfEnclosingClause;
 #endif       
-            // Clear the enclosing clause to indicate we have not processed any 2nd pass funclet yet.
-            pExInfo->_csfEnclosingClause.Clear();
-            if (pExInfo->_idxCurClause != 0xffffffff) //  the reverse pinvoke case doesn't have the _idxCurClause set
-            {
                 // EH_CLAUSE_ENUMERATOR EHEnum;
                 // const METHODTOKEN& MethToken = pThis->m_crawl.GetMethodToken();
                 // IJitManager* pJitMan = pThis->m_crawl.GetJitManager();
@@ -1260,6 +1259,10 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
     if (pStackwalkCtx->Rip == 0)
     {
         RtlCaptureContext(pStackwalkCtx);
+        pStackwalkCtx->ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
+        SetIP(pStackwalkCtx, 0);
+        SetSP(pStackwalkCtx, 0);
+        SetFP(pStackwalkCtx, 0);
     }
     // memset(pStackwalkCtx, 0x00, sizeof(T_CONTEXT));
     // pStackwalkCtx->ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
@@ -1282,15 +1285,18 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
         if (pThis->m_pNextExInfo->_passNumber == 1)
         {
             Frame *pFrame = pThis->m_crawl.GetFrame();
-            MethodDesc *pMD = pFrame->GetFunction();
-            if (pMD != NULL)
+            if (pFrame != FRAME_TOP)
             {
-                GCX_COOP();
-                bool canAllocateMemory = !(pThis->m_pNextExInfo->_exception == CLRException::GetPreallocatedOutOfMemoryException()) &&
-                    !(pThis->m_pNextExInfo->_exception == CLRException::GetPreallocatedStackOverflowException());
+                MethodDesc *pMD = pFrame->GetFunction();
+                if (pMD != NULL)
+                {
+                    GCX_COOP();
+                    bool canAllocateMemory = !(pThis->m_pNextExInfo->_exception == CLRException::GetPreallocatedOutOfMemoryException()) &&
+                        !(pThis->m_pNextExInfo->_exception == CLRException::GetPreallocatedStackOverflowException());
 
-                // TODO: is the sp correct?                    
-                pThis->m_pNextExInfo->_stackTraceInfo.AppendElement(canAllocateMemory, NULL, GetRegdisplaySP(pThis->m_pNextExInfo->_frameIter.m_crawl.GetRegisterSet()), pMD, &pThis->m_pNextExInfo->_frameIter.m_crawl);
+                    // TODO: is the sp correct?                    
+                    pThis->m_pNextExInfo->_stackTraceInfo.AppendElement(canAllocateMemory, NULL, GetRegdisplaySP(pThis->m_pNextExInfo->_frameIter.m_crawl.GetRegisterSet()), pMD, &pThis->m_pNextExInfo->_frameIter.m_crawl);
+                }
             }
         }
         StackWalkAction retVal = pThis->Next();

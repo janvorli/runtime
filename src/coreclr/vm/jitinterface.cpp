@@ -15009,7 +15009,15 @@ ULONG EECodeInfo::GetFrameOffsetFromUnwindInfo()
         DebugBreak();
     }
 
-    return pInfo->FrameOffset;
+    ULONG frameOffset = pInfo->FrameOffset;
+#ifdef UNIX_AMD64_ABI
+    if ((frameOffset == 15) && (pInfo->UnwindCode[0].UnwindOp == UWOP_SET_FPREG_LARGE))
+    {
+        frameOffset = *(ULONG*)&pInfo->UnwindCode[1];
+    }
+#endif
+
+    return frameOffset;
 }
 
 

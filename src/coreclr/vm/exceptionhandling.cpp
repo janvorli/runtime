@@ -4861,6 +4861,14 @@ VOID DECLSPEC_NORETURN UnwindManagedExceptionPass1(PAL_SEHException& ex, CONTEXT
 
 VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHardwareException)
 {
+    GCX_COOP();
+    Thread *pThread = GetThread();
+    OBJECTREF throwable = ExceptionTracker::CreateThrowable(ex.GetExceptionRecord(), FALSE);
+    RealCOMPlusThrowEx(throwable);
+}
+
+VOID DECLSPEC_NORETURN DispatchManagedExceptionOld(PAL_SEHException& ex, bool isHardwareException)
+{
     do
     {
         try
@@ -7538,12 +7546,12 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         Frame* pFrame = pThread->GetFrame();
         MarkInlinedCallFrameAsFuncletCall(pFrame);
         HandlerFn* pfnHandler = (HandlerFn*)pHandlerIP;
-        _ASSERTE(exInfo->_sfCallerOfActualHandlerFrame == EECodeManager::GetCallerSp(pvRegDisplay)); // This fails for the exception interop - the caller context is wrong - the current context has larger SP! However, this is actually ok, we don't use the caller context for anything
         exInfo->_sfHighBound = exInfo->_frameIter.m_crawl.GetRegisterSet()->SP;
         DWORD_PTR dwResumePC;
         ULONG64 targetSp;
         if (pHandlerIP != (BYTE*)1)
         {
+            _ASSERTE(exInfo->_sfCallerOfActualHandlerFrame == EECodeManager::GetCallerSp(pvRegDisplay)); // This fails for the exception interop - the caller context is wrong - the current context has larger SP! However, this is actually ok, we don't use the caller context for anything
             OBJECTREF throwable = exceptionObj.Get();
             throwable = PossiblyUnwrapThrowable(throwable, exInfo->_frameIter.m_crawl.GetAssembly());
 
@@ -7633,11 +7641,17 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
             // And even if that worked, the RaiseTheExceptionInternalOnly that is ultimately called
             // would still check the throwable on the thread, which would be popped out.
 //            pvRegDisplay->pCallerContext->Rcx = (ULONG64)(size_t)(ULONG64*)&oref;
-#ifdef _DEBUG
-            pvRegDisplay->pCurrentContext->Rcx = (ULONG64)(size_t)(ULONG64*)&oref;
+#ifdef UNIX_AMD64_ABI
+#define FIRST_ARG_REG Rdi
 #else
-            pvRegDisplay->pCurrentContext->Rcx = (ULONG64)(size_t)oref;
+#define FIRST_ARG_REG Rcx
+#endif
+#ifdef _DEBUG
+            pvRegDisplay->pCurrentContext->FIRST_ARG_REG = (ULONG64)(size_t)(ULONG64*)&oref;
+#else
+            pvRegDisplay->pCurrentContext->FIRST_ARG_REG = (ULONG64)(size_t)oref;
 #endif            
+#undef FIRST_ARG_REG
             //ClrRestoreNonvolatileContext(pvRegDisplay->pCallerContext);
 //            RtlRestoreContext(pvRegDisplay->pCallerContext, NULL);
             RtlRestoreContext(pvRegDisplay->pCurrentContext, NULL);
