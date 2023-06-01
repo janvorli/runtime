@@ -26,6 +26,8 @@
 #define PROCESS_EXPLICIT_FRAME_BEFORE_MANAGED_FRAME
 #endif
 
+#include "interoplibinterface.h"
+
 CrawlFrame::CrawlFrame()
 {
     LIMITED_METHOD_DAC_CONTRACT;
@@ -1181,6 +1183,8 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
 
     {
         ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+        //fprintf(stderr, "RhpSfiInit pass %d\n", (int)pExInfo->_passNumber);
+
         if (pExInfo->_passNumber == 1)
         {
             GCX_COOP();
@@ -1255,8 +1259,8 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
             EEToDebuggerExceptionInterfaceWrapper::ManagedExceptionUnwindBegin(pThread);
         }
     }
-
-    if (pStackwalkCtx->Rip == 0)
+#if defined(HOST_UNIX) && defined(HOST_AMD64)
+    if (GetIP(pStackwalkCtx) == 0)
     {
         RtlCaptureContext(pStackwalkCtx);
         pStackwalkCtx->ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
@@ -1264,6 +1268,7 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
         SetSP(pStackwalkCtx, 0);
         SetFP(pStackwalkCtx, 0);
     }
+#endif    
     // memset(pStackwalkCtx, 0x00, sizeof(T_CONTEXT));
     // pStackwalkCtx->ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
     // SetIP(pStackwalkCtx, 0);
@@ -1322,6 +1327,17 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
     _ASSERTE(!result || pThis->GetFrameState() == StackFrameIterator::SFITER_FRAMELESS_METHOD);
     END_QCALL;
 
+    if (result)
+    {
+    #ifdef TARGET_ARM
+        pThis->m_crawl.GetRegisterSet()->ControlPC -= 2;
+    #elif defined(TARGET_ARM64)
+        pThis->m_crawl.GetRegisterSet()->ControlPC -= 4;
+    #else
+        pThis->m_crawl.GetRegisterSet()->ControlPC -= 1;
+    #endif
+    }
+
     return result;
 }
 
@@ -1331,12 +1347,22 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
 {
     QCALL_CONTRACT;
 
+    // #ifdef TARGET_ARM
+    //     pThis->m_crawl.GetRegisterSet()->ControlPC += 2;
+    // #elif defined(TARGET_ARM64)
+    //     pThis->m_crawl.GetRegisterSet()->ControlPC += 4;
+    // #else
+    //     pThis->m_crawl.GetRegisterSet()->ControlPC += 1;
+    // #endif
+
     // TODO: unhijack?
     // TODO: detect collided unwind and set uExCollideClauseIdx
     // Collided unwind can be detected by passing through the catch handler call. We could do that by processing the explicit frames and checking for pinvoke frames
     // that refer to RhpCallCatchFunclet or maybe just checking that we've passed through System.Runtime.EH.DispatchEx.
     // The NativeAOT stack frame iterator also has m_pNextExInfo that it uses for collision detection too. It is set when the stack frame iterator is initialized to the one from the Thread
     // Maybe we could just skip frames until we cross the Thread::m_pExInfo location?
+
+    //fprintf(stderr, "RhpSfiNext\n");
 
     Thread* pThread = GET_THREAD();
     Frame* pFrame = pThread->GetFrame();
@@ -1350,7 +1376,7 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
     //pTopExInfo->_csfEnclosingClause.Clear();
 
     // Check for reverse pinvoke, but eliminate the case when the caller is managed, see TestUnmanagedCallersOnlyViaUnmanagedCalli_ThrowException
-    if (!ExecutionManager::IsManagedCode(pThis->m_crawl.GetRegisterSet()->pCallerContext->Rip))
+    if (!ExecutionManager::IsManagedCode(GetIP(pThis->m_crawl.GetRegisterSet()->pCallerContext)))
     {
         bool invalidRevPInvoke;
 #ifdef USE_GC_INFO_DECODER
@@ -1358,13 +1384,30 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
         invalidRevPInvoke = gcInfoDecoder.GetReversePInvokeFrameStackSlot() != NO_REVERSE_PINVOKE_FRAME;
 #else // USE_GC_INFO_DECODER
         hdrInfo gcHdrInfo;
-        DecodeGCHdrInfo(codeInfo.GetGCInfoToken(), 0, &gcHdrInfo);
+        DecodeGCHdrInfo(pThis->m_crawl.GetCodeInfo()->GetGCInfoToken(), 0, &gcHdrInfo);
         invalidRevPInvoke = gcHdrInfo.revPInvokeOffset != INVALID_REV_PINVOKE_OFFSET;
 #endif // USE_GC_INFO_DECODER
 
-        if (!invalidRevPInvoke)
+        if (invalidRevPInvoke)
         {
-            if (pThis->m_crawl.GetRegisterSet()->pCallerContext->Rip == (SIZE_T)CallDescrWorkerInternalReturnAddress)
+            void* callbackCxt = NULL;
+            Interop::ManagedToNativeExceptionCallback callback = Interop::GetPropagatingExceptionCallback(
+                pThis->m_crawl.GetCodeInfo(),
+                pTopExInfo->_hThrowable,
+                &callbackCxt);
+
+            // If a callback doesn't exist we immediately crash.
+            if (callback != NULL)
+            {
+                pTopExInfo->_propagateExceptionCallback = callback;
+                pTopExInfo->_propagateExceptionContext = callbackCxt;
+                // ex.SetPropagateExceptionCallback(callback, callbackCxt);
+                // _ASSERTE(ex.HasPropagateExceptionCallback());
+            }
+        }
+        else
+        {
+            if (GetIP(pThis->m_crawl.GetRegisterSet()->pCallerContext) - (size_t)&CallDescrWorkerInternal == 0x84)
             {
                 invalidRevPInvoke = true;
             }
@@ -1381,6 +1424,13 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
             retVal = pThis->Next();
             _ASSERTE(retVal != SWA_FAILED);
             return true;
+        }
+    }
+    else
+    {
+        if (fUnwoundReversePInvoke)
+        {
+            *fUnwoundReversePInvoke = false;
         }
     }
     BEGIN_QCALL;
@@ -1450,7 +1500,7 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                             while ((retVal == SWA_CONTINUE) && pThis->m_crawl.GetRegisterSet()->SP != pPrevExInfo->_pRD->SP);
                             _ASSERTE(retVal != SWA_FAILED);
 
-                            _ASSERTE(pThis->m_crawl.GetRegisterSet()->ControlPC == pPrevExInfo->_pRD->ControlPC);
+                            //_ASSERTE(pThis->m_crawl.GetRegisterSet()->ControlPC == pPrevExInfo->_pRD->ControlPC);
 
                             ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
                             // pThis->m_dwFlags |= ExCollide; ????
@@ -1499,7 +1549,15 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
     END_QCALL;
 
     if (retVal != SWA_FAILED)
-    {
+    {      
+    #ifdef TARGET_ARM
+        pThis->m_crawl.GetRegisterSet()->ControlPC -= 2;
+    #elif defined(TARGET_ARM64)
+        pThis->m_crawl.GetRegisterSet()->ControlPC -= 4;
+    #else
+        pThis->m_crawl.GetRegisterSet()->ControlPC -= 1;
+    #endif
+
         return true;
     }
 
@@ -1976,38 +2034,38 @@ StackWalkAction StackFrameIterator::Next(void)
     return retVal;
 }
 
-StackWalkAction StackFrameIterator::NextSimple(void)
-{
-    WRAPPER_NO_CONTRACT;
-    SUPPORTS_DAC;
+// StackWalkAction StackFrameIterator::NextSimple(void)
+// {
+//     WRAPPER_NO_CONTRACT;
+//     SUPPORTS_DAC;
 
-    if (!IsValid())
-    {
-        return SWA_FAILED;
-    }
+//     if (!IsValid())
+//     {
+//         return SWA_FAILED;
+//     }
 
-    BEGIN_FORBID_TYPELOAD();
-    Thread::VirtualUnwindCallFrame(m_crawl.pRD->pCurrentContext);//, NULL, &m_crawl.codeInfo);
-    m_crawl.pRD->SP = m_crawl.pRD->pCurrentContext->Rsp;
-    m_crawl.pRD->ControlPC = m_crawl.pRD->pCurrentContext->Rip;
-    // DWORD64 rbp = m_crawl.pRD->pCurrentContext->Rbp;
-    // m_crawl.pRD->pCurrentContext->Rbp = *(DWORD64*)rbp;
-    // m_crawl.pRD->pCurrentContext->Rip = *(DWORD64*)(rbp + 8);
-    // m_crawl.pRD->ControlPC = m_crawl.pRD->pCurrentContext->Rip;
-    // m_crawl.pRD->pCurrentContext->Rsp = rbp + 16;
-    // m_crawl.pRD->SP = m_crawl.pRD->pCurrentContext->Rsp;
-    StackWalkAction retVal = SWA_CONTINUE;
+//     BEGIN_FORBID_TYPELOAD();
+//     Thread::VirtualUnwindCallFrame(m_crawl.pRD->pCurrentContext);//, NULL, &m_crawl.codeInfo);
+//     m_crawl.pRD->SP = m_crawl.pRD->pCurrentContext->Rsp;
+//     m_crawl.pRD->ControlPC = m_crawl.pRD->pCurrentContext->Rip;
+//     // DWORD64 rbp = m_crawl.pRD->pCurrentContext->Rbp;
+//     // m_crawl.pRD->pCurrentContext->Rbp = *(DWORD64*)rbp;
+//     // m_crawl.pRD->pCurrentContext->Rip = *(DWORD64*)(rbp + 8);
+//     // m_crawl.pRD->ControlPC = m_crawl.pRD->pCurrentContext->Rip;
+//     // m_crawl.pRD->pCurrentContext->Rsp = rbp + 16;
+//     // m_crawl.pRD->SP = m_crawl.pRD->pCurrentContext->Rsp;
+//     StackWalkAction retVal = SWA_CONTINUE;
 
-    ProcessIp(GetControlPC(m_crawl.pRD));
-    // StackWalkAction retVal = NextRaw();
-    // if (retVal == SWA_CONTINUE)
-    // {
-    //     retVal = Filter();
-    // }
+//     ProcessIp(GetControlPC(m_crawl.pRD));
+//     // StackWalkAction retVal = NextRaw();
+//     // if (retVal == SWA_CONTINUE)
+//     // {
+//     //     retVal = Filter();
+//     // }
 
-    END_FORBID_TYPELOAD();
-    return retVal;
-}
+//     END_FORBID_TYPELOAD();
+//     return retVal;
+// }
 
 //---------------------------------------------------------------------------------------
 //
@@ -2270,7 +2328,7 @@ ProcessFuncletsForGCReporting:
                                         // {
                                         //     _ASSERTE_MSG(FALSE, "Should not find funclet while scanning filter parent and be below first exinfo");
                                         //     // Only the first managed EH code is force reported
-                                        if (!ExecutionManager::IsManagedCode(m_crawl.GetRegisterSet()->pCallerContext->Rip))
+                                        if (!ExecutionManager::IsManagedCode(GetIP(m_crawl.GetRegisterSet()->pCallerContext)))
                                         {
                                             m_forceReportingWhileSkipping = 1;
                                             STRESS_LOG0(LF_GCROOTS, LL_INFO100, "STACKWALK: Setting m_forceReportingWhileSkipping = 1\n");
@@ -2320,7 +2378,7 @@ ProcessFuncletsForGCReporting:
                                         //if (!m_movedPastFirstExInfo)
                                         {
                                             // TODO: this is a hack, we need a better way - maybe detect passing over pinvoke frame to catch / finally
-                                            if (!ExecutionManager::IsManagedCode(m_crawl.GetRegisterSet()->pCallerContext->Rip))
+                                            if (!ExecutionManager::IsManagedCode(GetIP(m_crawl.GetRegisterSet()->pCallerContext)))
                                             {
                                                 // Only the first managed EH code is force reported
                                                 m_forceReportingWhileSkipping = 1;
@@ -3814,53 +3872,53 @@ void StackFrameIterator::PostProcessingForNoFrameTransition()
 #endif // ELIMINATE_FEF
 } // StackFrameIterator::PostProcessingForNoFrameTransition()
 
-void StackFrameIterator::Clone(StackFrameIterator *pSource)
-{
-    // keep the regdisplay
-    REGDISPLAY *pRD = m_crawl.pRD;
-    memcpy(this, pSource, sizeof(StackFrameIterator));
-    // put back the regdisplay
-    m_crawl.pRD = pRD;
+// void StackFrameIterator::Clone(StackFrameIterator *pSource)
+// {
+//     // keep the regdisplay
+//     REGDISPLAY *pRD = m_crawl.pRD;
+//     memcpy(this, pSource, sizeof(StackFrameIterator));
+//     // put back the regdisplay
+//     m_crawl.pRD = pRD;
 
-    REGDISPLAY *pSourceRD = pSource->m_crawl.pRD;
+//     REGDISPLAY *pSourceRD = pSource->m_crawl.pRD;
 
-// When the source context pointer points into the source context, set the context pointer to point to the current context
-// otherwise copy the source context pointer.
-#define CALLEE_SAVED_REGISTER(regname) \
-    pRD->pCurrentContext->regname = pSourceRD->pCurrentContext->regname; \
-    if (pSourceRD->pCurrentContextPointers->regname == &pSourceRD->pCurrentContext->regname) \
-    { \
-        pRD->pCurrentContextPointers->regname = &pRD->pCurrentContext->regname; \
-    } \
-    else \
-    { \
-        pRD->pCurrentContextPointers->regname = pSourceRD->pCurrentContextPointers->regname; \
-    }
+// // When the source context pointer points into the source context, set the context pointer to point to the current context
+// // otherwise copy the source context pointer.
+// #define CALLEE_SAVED_REGISTER(regname) \
+//     pRD->pCurrentContext->regname = pSourceRD->pCurrentContext->regname; \
+//     if (pSourceRD->pCurrentContextPointers->regname == &pSourceRD->pCurrentContext->regname) \
+//     { \
+//         pRD->pCurrentContextPointers->regname = &pRD->pCurrentContext->regname; \
+//     } \
+//     else \
+//     { \
+//         pRD->pCurrentContextPointers->regname = pSourceRD->pCurrentContextPointers->regname; \
+//     }
 
-    ENUM_CALLEE_SAVED_REGISTERS()
-#undef CALLEE_SAVED_REGISTER
+//     ENUM_CALLEE_SAVED_REGISTERS()
+// #undef CALLEE_SAVED_REGISTER
 
-#define CALLEE_SAVED_REGISTER(regname) \
-    pRD->pCallerContext->regname = pSourceRD->pCallerContext->regname; \
-    if (pSourceRD->pCallerContextPointers->regname == &pSourceRD->pCallerContext->regname) \
-    { \
-        pRD->pCallerContextPointers->regname = &pRD->pCallerContext->regname; \
-    } \
-    else \
-    { \
-        pRD->pCallerContextPointers->regname = pSourceRD->pCallerContextPointers->regname; \
-    }
+// #define CALLEE_SAVED_REGISTER(regname) \
+//     pRD->pCallerContext->regname = pSourceRD->pCallerContext->regname; \
+//     if (pSourceRD->pCallerContextPointers->regname == &pSourceRD->pCallerContext->regname) \
+//     { \
+//         pRD->pCallerContextPointers->regname = &pRD->pCallerContext->regname; \
+//     } \
+//     else \
+//     { \
+//         pRD->pCallerContextPointers->regname = pSourceRD->pCallerContextPointers->regname; \
+//     }
 
-    ENUM_CALLEE_SAVED_REGISTERS()
-#undef CALLEE_SAVED_REGISTER
+//     ENUM_CALLEE_SAVED_REGISTERS()
+// #undef CALLEE_SAVED_REGISTER
 
-    pRD->SP = pSourceRD->SP;
-    pRD->ControlPC = pSourceRD->ControlPC;
-    pRD->pCurrentContext->Rip = pSourceRD->pCurrentContext->Rip;
-    pRD->pCurrentContext->Rsp = pSourceRD->pCurrentContext->Rsp;
-    pRD->pCallerContext->Rip = pSourceRD->pCallerContext->Rip;
-    pRD->pCallerContext->Rsp = pSourceRD->pCallerContext->Rsp;
-}
+//     pRD->SP = pSourceRD->SP;
+//     pRD->ControlPC = pSourceRD->ControlPC;
+//     pRD->pCurrentContext->Rip = pSourceRD->pCurrentContext->Rip;
+//     pRD->pCurrentContext->Rsp = pSourceRD->pCurrentContext->Rsp;
+//     pRD->pCallerContext->Rip = pSourceRD->pCallerContext->Rip;
+//     pRD->pCallerContext->Rsp = pSourceRD->pCallerContext->Rsp;
+// }
 
 #if defined(TARGET_AMD64) && !defined(DACCESS_COMPILE)
 static CrstStatic g_StackwalkCacheLock;                // Global StackwalkCache lock; only used on AMD64

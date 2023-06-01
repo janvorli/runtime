@@ -579,7 +579,7 @@ public:
     // calling ResetRegDisp() on it.
     StackFrameIterator(Thread * pThread, PTR_Frame pFrame, ULONG32 flags);
 
-    void Clone(StackFrameIterator *pSource);
+    //void Clone(StackFrameIterator *pSource);
 
     //
     // We should consider merging Init() and ResetRegDisp().

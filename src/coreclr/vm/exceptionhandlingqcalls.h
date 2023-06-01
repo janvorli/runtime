@@ -73,6 +73,8 @@ struct ExInfo
     StackFrame          _sfCallerOfActualHandlerFrame;
     EE_ILEXCEPTION_CLAUSE _ClauseForCatch;
 
+    void(*_propagateExceptionCallback)(void* context);
+    void *_propagateExceptionContext;
     // These are for profiler / debugger use only
     OBJECTHANDLE    _hThrowable;       // thrown exception handle
     EE_ILEXCEPTION_CLAUSE _CurrentClause;

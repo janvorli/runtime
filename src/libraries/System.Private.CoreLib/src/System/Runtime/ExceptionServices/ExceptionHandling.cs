@@ -64,9 +64,15 @@ namespace System.Runtime
     {
 #if DEBUG
 #if TARGET_UNIX
+#if TARGET_AMD64
         public const int SIZEOF__REGDISPLAY = 0x1a90;
         public const int OFFSETOF__REGDISPLAY__SP = 0x1a78;
         public const int OFFSETOF__REGDISPLAY__ControlPC = 0x1a80;
+#elif TARGET_ARM64
+        public const int SIZEOF__REGDISPLAY = 0x940;
+        public const int OFFSETOF__REGDISPLAY__SP = 0x898;
+        public const int OFFSETOF__REGDISPLAY__ControlPC = 0x8a0;
+#endif
 #else
         public const int SIZEOF__REGDISPLAY = 0xbf0;
         public const int OFFSETOF__REGDISPLAY__SP = 0xbd8;
@@ -92,13 +98,23 @@ namespace System.Runtime
         //public const int OFFSETOF__StackFrameIterator__m_OriginalControlPC = ;
 
 #if TARGET_UNIX
+#if TARGET_AMD64
         public const int SIZEOF__PAL_LIMITED_CONTEXT = 0xc20;
+#elif TARGET_ARM64
+        public const int SIZEOF__PAL_LIMITED_CONTEXT = 0x390;
+#endif
 #else
         public const int SIZEOF__PAL_LIMITED_CONTEXT = 0x4d0;
 #endif
+#if TARGET_AMD64
         public const int OFFSETOF__PAL_LIMITED_CONTEXT__IP = 0xf8;
         public const int OFFSETOF__PAL_LIMITED_CONTEXT__SP = 0x98;
         public const int OFFSETOF__PAL_LIMITED_CONTEXT__FP = 0xa0;
+#elif TARGET_ARM64
+        public const int OFFSETOF__PAL_LIMITED_CONTEXT__IP = 0x108;
+        public const int OFFSETOF__PAL_LIMITED_CONTEXT__SP = 0x100;
+        public const int OFFSETOF__PAL_LIMITED_CONTEXT__FP = 0xf0;
+#endif
 
 
         public const int OFFSETOF__ExInfo__m_pPrevExInfo = 0;
@@ -1005,6 +1021,9 @@ namespace System.Runtime
 
             for (; isValid; isValid = frameIter.Next(&startIdx, &unwoundReversePInvoke))
             {
+                prevControlPC = frameIter.ControlPC;
+                prevOriginalPC = frameIter.OriginalControlPC;
+
                 // For GC stackwalking, we'll happily walk across native code blocks, but for EH dispatch, we
                 // disallow dispatching exceptions across native code.
                 if (unwoundReversePInvoke)
@@ -1016,9 +1035,6 @@ namespace System.Runtime
                 }
 
                 // TODO: move above ^^^
-                prevControlPC = frameIter.ControlPC;
-                prevOriginalPC = frameIter.OriginalControlPC;
-
                 DebugScanCallFrame(exInfo._passNumber, frameIter.ControlPC, frameIter.SP);
 
                 UpdateStackTrace(exceptionObj, exInfo._frameIter.FramePointer, (IntPtr)frameIter.OriginalControlPC, (IntPtr)frameIter.SP, ref isFirstRethrowFrame, ref prevFramePtr, ref isFirstFrame, ref exInfo);
