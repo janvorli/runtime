@@ -2106,7 +2106,8 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT, CallerGCMode callerGCMo
     //       issue can occur.
     if (pThread->IsAbortRequested())
     {
-        pThread->HandleThreadAbort();
+        // TODO: we can check that the MethodDesc is for any of the EH helpers and skip the abort handling
+        //pThread->HandleThreadAbort();
     }
 
     /**************************   BACKPATCHING   *************************/

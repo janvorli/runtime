@@ -195,6 +195,7 @@ void ThreadExceptionState::SetThrowable(OBJECTREF throwable DEBUG_ARG(SetThrowab
         }
         if (m_pExInfo != NULL)
         {
+            _ASSERTE(m_pExInfo->_hThrowable == NULL);
             m_pExInfo->_hThrowable = hNewThrowable;
         }
 #else // FEATURE_EH_FUNCLETS
@@ -527,6 +528,10 @@ EHClauseInfo* ThreadExceptionState::GetCurrentEHClauseInfo()
     {
         return &(m_pCurrentTracker->m_EHClauseInfo);
     }
+    // else if (m_pExInfo)
+    // {
+    //     return &(m_pExInfo->_EHClauseInfo)
+    // }
     else
     {
         _ASSERTE(!"unexpected use of GetCurrentEHClauseInfo() when no exception in flight");

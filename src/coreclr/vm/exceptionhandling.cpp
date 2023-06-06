@@ -872,6 +872,10 @@ ProcessCLRException(IN     PEXCEPTION_RECORD   pExceptionRecord,
     // TODO: verify that this is a pinvoke call, otherwise we should not get here.
     if (!(pExceptionRecord->ExceptionFlags & EXCEPTION_UNWINDING))
     {
+        if (pExceptionRecord->ExceptionCode == 0x80000003)
+        {
+            abort();
+        }
         Thread* pThread         = GetThread();
         ClrUnwindEx(pExceptionRecord,
                     (UINT_PTR)pThread,
@@ -7073,7 +7077,7 @@ StackFrame ExceptionTracker::FindParentStackFrameHelper(CrawlFrame* pCF,
 //This is wrong, especially the detection of whether we've unwound any frames in the ExInfo.
 //Idea: we can save the current SP in the RhpCallCatchFunclet similar to what coreclr does. 
 //Q: what is the difference between the pCurrentTracker->m_EHClauseInfo and pCurrentTracker->m_EnclosingClauseInfo?
-    for (ExInfo *pCurrentExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+    for (PTR_ExInfo pCurrentExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
          pCurrentExInfo != NULL;
          pCurrentExInfo = pCurrentExInfo->_pPrevExInfo)
     {
@@ -7589,6 +7593,25 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         }
     }
 
+    HCIMPL0(void, ThrowThreadAbort)
+    //void ThrowThreadAbort()
+    {
+        FCALL_CONTRACT;
+
+        /* Make no assumptions about the current machine state */
+        ResetCurrentContext();
+
+        FC_GC_POLL_NOT_NEEDED();    // throws always open up for GC
+
+        HELPER_METHOD_FRAME_BEGIN_ATTRIB_NOPOLL(Frame::FRAME_ATTR_EXCEPTION);    // Set up a frame
+
+        Thread* pThread = GET_THREAD();
+        pThread->HandleThreadAbort();
+
+        HELPER_METHOD_FRAME_END();
+    }
+    HCIMPLEND
+
     extern "C" void * QCALLTYPE RhpCallCatchFunclet(QCall::ObjectHandleOnStack exceptionObj, BYTE* pHandlerIP, REGDISPLAY* pvRegDisplay, ExInfo* exInfo)
     {
         QCALL_CONTRACT;
@@ -7665,8 +7688,10 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         // TODO: use the ResetNextExInfoForSP
         ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
 
+#ifdef HOST_UNIX
         Interop::ManagedToNativeExceptionCallback propagateExceptionCallback = pExInfo->_propagateExceptionCallback;
         void* propagateExceptionContext = pExInfo->_propagateExceptionContext;
+#endif // HOST_UNIX
 
         while (pExInfo && pExInfo < (void*)targetSp)
         {
@@ -7685,14 +7710,88 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
 
         pThread->GetExceptionState()->SetCurrentExInfo(pExInfo);
 
+        // TODO: should this be conditional - the original call to this was checking pThread->GetExceptionState()->IsExceptionInProgress()
+
+        pThread->SafeSetLastThrownObject(NULL);
+
         ExceptionTracker::UpdateNonvolatileRegisters(pvRegDisplay->pCurrentContext, pvRegDisplay, FALSE);
         if (pHandlerIP != (BYTE*)1)
         {
+            CONTEXT *pContextRecord = pvRegDisplay->pCurrentContext;
+            UINT_PTR uAbortAddr = 0;
+            UINT_PTR uResumePC = GetIP(pvRegDisplay->pCurrentContext);
+#if defined(DEBUGGING_SUPPORTED)
+        // // Don't honour thread abort requests at this time for intercepted exceptions.
+        // if (fIntercepted)
+        // {
+        //     uAbortAddr = 0;
+        // }
+        // else
+#endif // !DEBUGGING_SUPPORTED
+            {
+                CopyOSContext(pThread->m_OSContext, pContextRecord);
+                SetIP(pThread->m_OSContext, (PCODE)uResumePC);
+#ifdef TARGET_UNIX
+                uAbortAddr = NULL;
+#else
+                uAbortAddr = (UINT_PTR)COMPlusCheckForAbort(uResumePC);
+#endif
+            }
+
+            if (uAbortAddr)
+            {
+                // if (pfAborting != NULL)
+                // {
+                //     *pfAborting = true;
+                // }
+
+                EH_LOG((LL_INFO100, "thread abort in progress, resuming thread under control...\n"));
+
+                // We are aborting, so keep the reference to the current EH clause index.
+                // We will use this when the exception is reraised and we begin commencing
+                // exception dispatch. This is done in ExceptionTracker::ProcessOSExceptionNotification.
+                //
+                // The "if" condition below can be false if the exception has been intercepted (refer to
+                // ExceptionTracker::CallCatchHandler for details)
+                // if ((ehClauseCurrentHandlerIndex > 0) && (!sfEstablisherOfActualHandlerFrame.IsNull()))
+                // {
+                //     pThread->m_dwIndexClauseForCatch = ehClauseCurrentHandlerIndex;
+                //     pThread->m_sfEstablisherOfActualHandlerFrame = sfEstablisherOfActualHandlerFrame;
+                // }
+
+                CONSISTENCY_CHECK(CheckPointer(pContextRecord));
+
+                STRESS_LOG1(LF_EH, LL_INFO10, "resume under control: ip: %p\n", uResumePC);
+
+#ifdef TARGET_AMD64
+                pContextRecord->Rcx = uResumePC;
+#elif defined(TARGET_ARM) || defined(TARGET_ARM64)
+                // On ARM & ARM64, we save off the original PC in Lr. This is the same as done
+                // in HandleManagedFault for H/W generated exceptions.
+                pContextRecord->Lr = uResumePC;
+#elif defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+                pContextRecord->Ra = uResumePC;
+#endif
+
+                //uResumePC = uAbortAddr;
+                SetIP(pvRegDisplay->pCurrentContext, uAbortAddr);
+            }
+
+            // if (pThread->IsAbortRequested())
+            // {
+            //     ULONG64* returnAddress = (ULONG64*)targetSp;
+            //     *returnAddress = pvRegDisplay->pCurrentContext->Rip;
+            //     SetIP(pvRegDisplay->pCurrentContext, (ULONG64)(void (*)())ThrowThreadAbort);
+            //     SetSP(pvRegDisplay->pCurrentContext, targetSp - 8);
+
+            //     RtlRestoreContext(pvRegDisplay->pCurrentContext, NULL);            
+            // }
             ClrRestoreNonvolatileContext(pvRegDisplay->pCurrentContext);
 //            RtlRestoreContext(pvRegDisplay->pCurrentContext, NULL);
         }
         else
         {
+#ifdef HOST_UNIX
             if (propagateExceptionCallback)
             {
                 // A propagation callback was supplied.
@@ -7702,7 +7801,7 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
                 GCX_PREEMP_NO_DTOR();
                 ClrRestoreNonvolatileContext(pvRegDisplay->pCurrentContext);
             }
-
+#endif // HOST_UNIX
             // Throw exception from the caller context
             /*
             Idea:

@@ -40,7 +40,7 @@ enum class ExKind : uint8_t
 
 struct ExInfo
 {
-    ExInfo* _pPrevExInfo;
+    PTR_ExInfo _pPrevExInfo;
 
     void* _pExContext;
 

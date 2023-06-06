@@ -5059,11 +5059,14 @@ HCIMPL0(void, JIT_PInvokeEndRarePath)
 
     FC_GC_POLL_NOT_NEEDED();
 
-    HELPER_METHOD_FRAME_BEGIN_NOPOLL();    // Set up a frame
-    thread->HandleThreadAbort();
-    HELPER_METHOD_FRAME_END();
-
     InlinedCallFrame* frame = (InlinedCallFrame*)thread->m_pFrame;
+
+    if ((((TADDR)frame->m_Datum) & 6) != 2)
+    {
+        HELPER_METHOD_FRAME_BEGIN_NOPOLL();    // Set up a frame
+        thread->HandleThreadAbort();
+        HELPER_METHOD_FRAME_END();
+    }
 
     thread->m_pFrame->Pop(thread);
 
@@ -5121,7 +5124,7 @@ HCIMPL0(void, JIT_RareDisableHelper)
     FC_GC_POLL_NOT_NEEDED();
 
     HELPER_METHOD_FRAME_BEGIN_NOPOLL();    // Set up a frame
-    thread->HandleThreadAbort();
+    //thread->HandleThreadAbort();
     HELPER_METHOD_FRAME_END();
 
     END_PRESERVE_LAST_ERROR;

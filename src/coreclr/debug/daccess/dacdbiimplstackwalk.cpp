@@ -445,6 +445,17 @@ ULONG32 DacDbiInterfaceImpl::GetCountOfInternalFrames(VMPTR_Thread vmThread)
     ULONG32 uCount = 0;
     while (pFrame != FRAME_TOP)
     {
+        if (InlinedCallFrame::FrameHasActiveCall(pFrame))
+        {
+            InlinedCallFrame *pInlinedCallFrame = (InlinedCallFrame *)pFrame;
+            PTR_NDirectMethodDesc pMD = pInlinedCallFrame->m_Datum;
+            TADDR datum = dac_cast<TADDR>(pMD);
+            if ((datum & 6) == 2)
+            {
+                pFrame = pFrame->Next();
+                continue;
+            }
+        }
         CorDebugInternalFrameType ift = GetInternalFrameType(pFrame);
         if (ift != STUBFRAME_NONE)
         {
@@ -484,6 +495,17 @@ void DacDbiInterfaceImpl::EnumerateInternalFrames(VMPTR_Thread                  
 
     while (pFrame != FRAME_TOP)
     {
+        if (InlinedCallFrame::FrameHasActiveCall(pFrame))
+        {
+            InlinedCallFrame *pInlinedCallFrame = (InlinedCallFrame *)pFrame;
+            PTR_NDirectMethodDesc pMD = pInlinedCallFrame->m_Datum;
+            TADDR datum = dac_cast<TADDR>(pMD);
+            if ((datum & 6) == 2)
+            {
+                pFrame = pFrame->Next();
+                continue;
+            }
+        }
         // check if the internal frame is interesting
         frameData.stubFrame.frameType = GetInternalFrameType(pFrame);
         if (frameData.stubFrame.frameType != STUBFRAME_NONE)

@@ -2880,6 +2880,17 @@ VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(OBJECTREF throwable, BOOL rethrow)
     exInfo._hThrowable = NULL;
     pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
 
+    if (pThread->IsAbortInitiated () && IsExceptionOfType(kThreadAbortException,&throwable))
+    {
+        pThread->ResetPreparingAbort();
+
+        if (pThread->GetFrame() == FRAME_TOP)
+        {
+            // There is no more managed code on stack.
+            pThread->ResetAbort();
+        }
+    }
+
     GCPROTECT_BEGIN(exInfo._exception);
     PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_EX);
     DECLARE_ARGHOLDER_ARRAY(args, 2);
@@ -2887,6 +2898,7 @@ VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(OBJECTREF throwable, BOOL rethrow)
     args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
 
     //Ex.RhThrowEx(throwable, &exInfo)
+    CRITICAL_CALLSITE;
     CALL_MANAGED_METHOD_NORET(args)
 
     GCPROTECT_END();
@@ -6624,13 +6636,14 @@ void HandleManagedFault(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext)
 #endif // FEATURE_EH_FUNCLETS
     frame->InitAndLink(pContext);
 
-    ///CONTEXT ctx;
+    CONTEXT ctx = {0};
+    ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
     REGDISPLAY rd;
     Thread *pThread = GetThread();
 
     ExInfo exInfo = {};
     exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-    exInfo._pExContext = pContext;//&ctx; // TODO: or the pContext?
+    exInfo._pExContext = &ctx; // TODO: or the pContext? The RtlRestoreContext fails if I use this context (with patched Rip) for some reason
     exInfo._passNumber = 1;
     exInfo._stackBoundsPassNumber = 1;
     exInfo._kind = ExKind::HardwareFault;

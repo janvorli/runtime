@@ -1178,6 +1178,10 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
     Frame* pFrame = pThread->GetFrame();
     MarkInlinedCallFrameAsEHHelperCall(pFrame);
 
+    // we already fixed the context in HijackHandler, so let's
+    // just clear the thread state.
+    pThread->ResetThrowControlForThread();
+
     // Skip the pinvoke frame
     pFrame = pThread->GetFrame()->PtrNextFrame();
 
@@ -1268,7 +1272,7 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
         SetSP(pStackwalkCtx, 0);
         SetFP(pStackwalkCtx, 0);
     }
-#endif    
+#endif
     // memset(pStackwalkCtx, 0x00, sizeof(T_CONTEXT));
     // pStackwalkCtx->ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
     // SetIP(pStackwalkCtx, 0);
@@ -1367,6 +1371,10 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
     Thread* pThread = GET_THREAD();
     Frame* pFrame = pThread->GetFrame();
     MarkInlinedCallFrameAsEHHelperCall(pFrame);
+
+    // we already fixed the context in HijackHandler, so let's
+    // just clear the thread state.
+    pThread->ResetThrowControlForThread();
 
     StackWalkAction retVal = SWA_FAILED;
     bool exCollide = false;
