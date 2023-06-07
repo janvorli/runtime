@@ -1351,13 +1351,13 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
 {
     QCALL_CONTRACT;
 
-    // #ifdef TARGET_ARM
-    //     pThis->m_crawl.GetRegisterSet()->ControlPC += 2;
-    // #elif defined(TARGET_ARM64)
-    //     pThis->m_crawl.GetRegisterSet()->ControlPC += 4;
-    // #else
-    //     pThis->m_crawl.GetRegisterSet()->ControlPC += 1;
-    // #endif
+    #ifdef TARGET_ARM
+        pThis->m_crawl.GetRegisterSet()->ControlPC += 2;
+    #elif defined(TARGET_ARM64)
+        pThis->m_crawl.GetRegisterSet()->ControlPC += 4;
+    #else
+        pThis->m_crawl.GetRegisterSet()->ControlPC += 1;
+    #endif
 
     // TODO: unhijack?
     // TODO: detect collided unwind and set uExCollideClauseIdx
@@ -1415,7 +1415,7 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
         }
         else
         {
-            if (GetIP(pThis->m_crawl.GetRegisterSet()->pCallerContext) - (size_t)&CallDescrWorkerInternal == 0x84)
+            if (GetIP(pThis->m_crawl.GetRegisterSet()->pCallerContext) == (size_t)CallDescrWorkerInternalReturnAddress)
             {
                 invalidRevPInvoke = true;
             }
@@ -1524,17 +1524,17 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
             {
                 // passing through exception throwing site
             }
-            else if (pExInfo->_passNumber == 1)
+            else if (pTopExInfo->_passNumber == 1)
             {
                 MethodDesc *pMD = pFrame->GetFunction();
                 if (pMD != NULL)
                 {
                     GCX_COOP();
-                    bool canAllocateMemory = !(pExInfo->_exception == CLRException::GetPreallocatedOutOfMemoryException()) &&
-                        !(pExInfo->_exception == CLRException::GetPreallocatedStackOverflowException());
+                    bool canAllocateMemory = !(pTopExInfo->_exception == CLRException::GetPreallocatedOutOfMemoryException()) &&
+                        !(pTopExInfo->_exception == CLRException::GetPreallocatedStackOverflowException());
 
                     // TODO: is the sp correct?                    
-                    pExInfo->_stackTraceInfo.AppendElement(canAllocateMemory, NULL, GetRegdisplaySP(pExInfo->_frameIter.m_crawl.GetRegisterSet()), pMD, &pExInfo->_frameIter.m_crawl);
+                    pTopExInfo->_stackTraceInfo.AppendElement(canAllocateMemory, NULL, GetRegdisplaySP(pTopExInfo->_frameIter.m_crawl.GetRegisterSet()), pMD, &pTopExInfo->_frameIter.m_crawl);
 
                 }
             }

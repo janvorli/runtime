@@ -896,39 +896,8 @@ ProcessCLRException(IN     PEXCEPTION_RECORD   pExceptionRecord,
     #endif // FEATURE_EH_FUNCLETS
         frame->InitAndLink(pContextRecord);
 
-        CONTEXT ctx = {0};
-        ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-        REGDISPLAY rd;
-        Thread *pThread = GetThread();
-
-        ExInfo exInfo = {};
-        exInfo._pExContext = &ctx; // TODO: or the pContext?
-        exInfo._passNumber = 1;
-        exInfo._stackBoundsPassNumber = 1;
-        exInfo._kind = ExKind::Throw;
-        exInfo._idxCurClause = 0xffffffff;
-        exInfo._pRD = &rd;
-        exInfo._stackTraceInfo.Init();
-        exInfo._stackTraceInfo.AllocateStackTrace();
-        exInfo._pFrame = GetThread()->GetFrame();
-        exInfo._sfLowBound.SetMaxVal();
-        exInfo._exception = NULL;
-        exInfo._hThrowable = NULL;
-        pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
-
-        GCPROTECT_BEGIN(exInfo._exception);
         OBJECTREF oref = ExceptionTracker::CreateThrowable(pExceptionRecord, FALSE) ;// CreateCOMPlusExceptionObject(pThread, pExceptionRecord, FALSE);
-        GCPROTECT_BEGIN(oref);
-        PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_EX);
-        DECLARE_ARGHOLDER_ARRAY(args, 2);
-        args[ARGNUM_0] = OBJECTREF_TO_ARGHOLDER(oref);
-        args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
-
-        //Ex.RhThrowEx(oref, &exInfo)
-        CALL_MANAGED_METHOD_NORET(args)
-
-        GCPROTECT_END();
-        GCPROTECT_END();
+        RealCOMPlusThrowEx(oref);
     }
     //__debugbreak();
     EEPOLICY_HANDLE_FATAL_ERROR_WITH_MESSAGE(E_FAIL, _T("SEH exception leaked into managed code"));
@@ -5447,20 +5416,8 @@ BOOL HandleHardwareException(PAL_SEHException* ex)
     Thread *pThread = GetThread();
 
     ExInfo exInfo = {};
-    exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-    exInfo._pExContext = ex->GetContextRecord();// &ctx; // TODO: or the pContext? The RtlRestoreContext fails if I use this context (with patched Rip) for some reason
-    exInfo._passNumber = 1;
-    exInfo._stackBoundsPassNumber = 1;
+    InitializeExInfo(pThread, ex->GetContextRecord(), &rd, FALSE, &exInfo);  
     exInfo._kind = ExKind::HardwareFault;
-    exInfo._idxCurClause = 0xffffffff;
-    exInfo._pRD = &rd;
-    exInfo._stackTraceInfo.Init();
-    exInfo._stackTraceInfo.AllocateStackTrace();
-    exInfo._pFrame = GetThread()->GetFrame();
-    exInfo._sfLowBound.SetMaxVal();
-    exInfo._exception = NULL;
-    //exInfo._hThrowable = NULL;
-    pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
 
     DWORD exceptionCode = ex->GetExceptionRecord()->ExceptionCode;
     if (exceptionCode == STATUS_ACCESS_VIOLATION)
@@ -8017,7 +7974,7 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
             else if (flags == COR_ILEXCEPTION_CLAUSE_NONE)
             {
                 pEHClause->_clauseKind = RH_EH_CLAUSE_TYPED;
-                pEHClause->_pTargetType = pJitMan->ResolveEHClause(&EHClause, &pFrameIter->m_crawl);
+                pEHClause->_pTargetType = pJitMan->ResolveEHClause(&EHClause, &pFrameIter->m_crawl).AsMethodTable();
                 //TODO: EHClause.ClassToken == mdTypeRefNil is an extra token representing catch(...)
             }
             else if (flags & COR_ILEXCEPTION_CLAUSE_FILTER)

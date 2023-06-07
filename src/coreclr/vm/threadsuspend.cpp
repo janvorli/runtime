@@ -3965,7 +3965,7 @@ ThrowControlForThread(
     exceptionRecord.ExceptionFlags = 0;
 
     OBJECTREF throwable = ExceptionTracker::CreateThrowable(&exceptionRecord, TRUE);
-    RealCOMPlusThrowEx(throwable, false); // false is hack  
+    RealCOMPlusThrowEx(throwable);
 
 #else
     // Here we raise an exception.

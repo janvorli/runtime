@@ -670,40 +670,6 @@ HCIMPL1_V(INT64, JIT_Dbl2LngOvf, double val)
     if (val > -two63 - 0x402 && val < two63)
         return((INT64)val);
 
-    // /* Make no assumptions about the current machine state */
-    // ResetCurrentContext();
-
-    // FC_GC_POLL_NOT_NEEDED();    // throws always open up for GC
-
-    // HELPER_METHOD_FRAME_BEGIN_ATTRIB_NOPOLL(Frame::FRAME_ATTR_EXCEPTION);    // Set up a frame
-
-    // CONTEXT ctx;
-    // REGDISPLAY rd;
-    // Thread *pThread = GetThread();
-
-    // ExInfo exInfo = {};
-    // exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-    // exInfo._pExContext = &ctx;
-    // exInfo._passNumber = 1;
-    // exInfo._kind = ExKind::Throw;
-    // exInfo._idxCurClause = 0xffffffff;
-    // exInfo._pRD = &rd;
-    // exInfo._stackTraceInfo.Init();
-    // exInfo._stackTraceInfo.AllocateStackTrace();
-    // exInfo._pFrame = GetThread()->GetFrame();
-    // exInfo._sfLowBound.SetMaxVal();
-    // pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
-
-    // PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_INTERNAL_EX);
-    // DECLARE_ARGHOLDER_ARRAY(args, 2);
-    // printf("@@@@@ kNullReferenceException=%d\n", kNullReferenceException);
-    // args[ARGNUM_0] = DWORD_TO_ARGHOLDER(kOverflowException);//exceptionId);
-    // args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
-
-    // //Ex.RhThrowInternalEx(oref, &exInfo)
-    // CALL_MANAGED_METHOD_NORET(args)
-
-    // HELPER_METHOD_FRAME_END();
     FCThrow(kOverflowException);
 }
 HCIMPLEND
@@ -773,76 +739,6 @@ HCIMPLEND
 #endif // !TARGET_X86 || TARGET_UNIX
 
 #include <optdefault.h>
-
-// #undef COMPlusThrow
-// void COMPlusThrowEx(RuntimeExceptionKind reKind)
-// {
-//     CONTEXT ctx;
-//     REGDISPLAY rd;
-//     Thread *pThread = GetThread();
-
-//     ExInfo exInfo = {};
-//     exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-//     exInfo._pExContext = &ctx;
-//     exInfo._passNumber = 1;
-//     exInfo._kind = ExKind::Throw;
-//     exInfo._idxCurClause = 0xffffffff;
-//     exInfo._pRD = &rd;
-//     exInfo._stackTraceInfo.Init();
-//     exInfo._stackTraceInfo.AllocateStackTrace();
-//     exInfo._pFrame = GetThread()->GetFrame();
-//     exInfo._sfLowBound.SetMaxVal();
-//     pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
-
-//     PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_INTERNAL_EX);
-//     DECLARE_ARGHOLDER_ARRAY(args, 2);
-//     args[ARGNUM_0] = DWORD_TO_ARGHOLDER(reKind);
-//     args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
-
-//     //Ex.RhThrowInternalEx(oref, &exInfo)
-//     CALL_MANAGED_METHOD_NORET(args)
-// }
-
-// void COMPlusThrowEx(RuntimeExceptionKind reKind, LPCWSTR wszTag)
-// {
-//     // TODO: implement the message version
-//     COMPlusThrowEx(reKind);
-// }
-
-// void COMPlusThrowEx(OBJECTREF throwable, BOOL rethrow = FALSE)
-// {
-//     // TODO: this needs to handle rethrow case - but what to do with throwable then?
-//     CONTEXT ctx;
-//     REGDISPLAY rd;
-//     Thread *pThread = GetThread();
-
-//     ExInfo exInfo = {};
-//     exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-//     exInfo._pExContext = &ctx;
-//     exInfo._passNumber = 1;
-//     exInfo._kind = ExKind::Throw;
-//     exInfo._idxCurClause = 0xffffffff;
-//     exInfo._pRD = &rd;
-//     exInfo._stackTraceInfo.Init();
-//     exInfo._stackTraceInfo.AllocateStackTrace();
-//     exInfo._pFrame = GetThread()->GetFrame();
-//     exInfo._sfLowBound.SetMaxVal();
-//     pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
-
-//     GCPROTECT_BEGIN(throwable);
-//     PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_EX);
-//     DECLARE_ARGHOLDER_ARRAY(args, 2);
-//     args[ARGNUM_0] = OBJECTREF_TO_ARGHOLDER(throwable);
-//     args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
-
-//     //Ex.RhThrowEx(throwable, &exInfo)
-//     CALL_MANAGED_METHOD_NORET(args)
-
-//     GCPROTECT_END();
-// }
-
-// #define COMPlusThrow COMPlusThrowEx
-// #define RealCOMPlusThrow COMPlusThrowEx
 
 //========================================================================
 //
@@ -4176,8 +4072,6 @@ HCIMPLEND
 
 /*************************************************************/
 
-//extern "C" void IL_Throw(Object* obj);
-
 HCIMPL1(void, IL_Throw,  Object* obj)
 {
     FCALL_CONTRACT;
@@ -4223,169 +4117,9 @@ HCIMPL1(void, IL_Throw,  Object* obj)
         }
     }
 
-    CONTEXT ctx = {0};
-    ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-    REGDISPLAY rd;
-    Thread *pThread = GetThread();
-
-    ExInfo exInfo = {};
-    exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-    exInfo._pExContext = &ctx;
-    exInfo._passNumber = 1;
-    exInfo._stackBoundsPassNumber = 1;
-    exInfo._kind = ExKind::Throw;
-    exInfo._idxCurClause = 0xffffffff;
-    exInfo._pRD = &rd;
-    exInfo._stackTraceInfo.Init();
-    exInfo._stackTraceInfo.AllocateStackTrace();
-    exInfo._pFrame = GetThread()->GetFrame();
-    exInfo._sfLowBound.SetMaxVal();
-    exInfo._exception = NULL;
-    exInfo._hThrowable = NULL;
-    pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
-
-    GCPROTECT_BEGIN(exInfo._exception);
-    GCPROTECT_BEGIN(oref);
-    PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_EX);
-    DECLARE_ARGHOLDER_ARRAY(args, 2);
-    args[ARGNUM_0] = OBJECTREF_TO_ARGHOLDER(oref);
-    args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
-
-    //Ex.RhThrowEx(oref, &exInfo)
-    CALL_MANAGED_METHOD_NORET(args)
-
-    GCPROTECT_END();
-    GCPROTECT_END();
+    RealCOMPlusThrowEx(oref);
 
     HELPER_METHOD_FRAME_END();
-}
-HCIMPLEND
-
-extern "C" HCIMPL2(void, RhInternalThrow, int exceptionId, TransitionBlock* pTransitionBlock)
-{
-    FCALL_CONTRACT;
-
-    /* Make no assumptions about the current machine state */
-    ResetCurrentContext();
-
-    FC_GC_POLL_NOT_NEEDED();    // throws always open up for GC
-    INCONTRACT(FCallGCCanTrigger::Enter());
-
-    FrameWithCookie<ThrowMethodFrame> frame(pTransitionBlock);
-    frame.Push();
-
-    CONTEXT ctx = {0};
-    ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-    REGDISPLAY rd;
-    Thread *pThread = GetThread();
-
-    ExInfo exInfo = {};
-    exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-    exInfo._pExContext = &ctx;
-    exInfo._passNumber = 1;
-    exInfo._stackBoundsPassNumber = 1;
-    exInfo._kind = ExKind::Throw;
-    exInfo._idxCurClause = 0xffffffff;
-    exInfo._pRD = &rd;
-    exInfo._stackTraceInfo.Init();
-    exInfo._stackTraceInfo.AllocateStackTrace();
-    exInfo._pFrame = GetThread()->GetFrame();
-    exInfo._sfLowBound.SetMaxVal();
-    exInfo._exception = NULL;
-    exInfo._hThrowable = NULL;
-    pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
-
-    GCPROTECT_BEGIN(exInfo._exception);
-    PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_INTERNAL_EX);
-    DECLARE_ARGHOLDER_ARRAY(args, 2);
-    args[ARGNUM_0] = DWORD_TO_ARGHOLDER(exceptionId);
-    args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
-
-    //Ex.RhThrowInternalEx(oref, &exInfo)
-    CALL_MANAGED_METHOD_NORET(args)
-    GCPROTECT_END();
-
-    INCONTRACT(FCallGCCanTrigger::Leave(__FUNCTION__, __FILE__, __LINE__));
-}
-HCIMPLEND
-
-extern "C" HCIMPL2(void, RhThrowEx, Object* obj, TransitionBlock* pTransitionBlock)
-{
-    FCALL_CONTRACT;
-
-    /* Make no assumptions about the current machine state */
-    ResetCurrentContext();
-
-    FC_GC_POLL_NOT_NEEDED();    // throws always open up for GC
-    INCONTRACT(FCallGCCanTrigger::Enter());
-
-    FrameWithCookie<ThrowMethodFrame> frame(pTransitionBlock);
-    frame.Push();
-
-    OBJECTREF oref = ObjectToOBJECTREF(obj);
-
-    if (oref == 0) // TODO: fixme!
-        COMPlusThrow(kNullReferenceException);
-    else
-    if (!IsException(oref->GetMethodTable()))
-    {
-        GCPROTECT_BEGIN(oref);
-
-        WrapNonCompliantException(&oref);
-
-        GCPROTECT_END();
-    }
-    else
-    {   // We know that the object derives from System.Exception
-
-        // If the flag indicating ForeignExceptionRaise has been set,
-        // then do not clear the "_stackTrace" field of the exception object.
-        if (GetThread()->GetExceptionState()->IsRaisingForeignException())
-        {
-            ((EXCEPTIONREF)oref)->SetStackTraceString(NULL);
-        }
-        else
-        {
-            ((EXCEPTIONREF)oref)->ClearStackTracePreservingRemoteStackTrace();
-        }
-    }
-
-    CONTEXT ctx = {0};
-    ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-    REGDISPLAY rd;
-    Thread *pThread = GetThread();
-
-    ExInfo exInfo = {};
-    exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-    exInfo._pExContext = &ctx;
-    exInfo._passNumber = 1;
-    exInfo._stackBoundsPassNumber = 1;
-    exInfo._kind = ExKind::Throw;
-    exInfo._idxCurClause = 0xffffffff;
-    exInfo._pRD = &rd;
-    exInfo._stackTraceInfo.Init();
-    exInfo._stackTraceInfo.AllocateStackTrace();
-    exInfo._pFrame = GetThread()->GetFrame();
-    exInfo._sfLowBound.SetMaxVal();
-    exInfo._exception = NULL;
-    exInfo._hThrowable = NULL;
-    pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
-
-    GCPROTECT_BEGIN(exInfo._exception);
-    GCPROTECT_BEGIN(oref);
-    PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_EX);
-    DECLARE_ARGHOLDER_ARRAY(args, 2);
-    args[ARGNUM_0] = OBJECTREF_TO_ARGHOLDER(oref);
-    args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
-
-    //Ex.RhThrowEx(oref, &exInfo)
-    CALL_MANAGED_METHOD_NORET(args)
-
-    GCPROTECT_END();
-    GCPROTECT_END();
-
-    INCONTRACT(FCallGCCanTrigger::Leave(__FUNCTION__, __FILE__, __LINE__));
-    //HELPER_METHOD_FRAME_END();
 }
 HCIMPLEND
 
@@ -4416,24 +4150,12 @@ HCIMPL0(void, IL_Rethrow)
     ExInfo *pActiveExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
 
     ExInfo exInfo = {};
-    exInfo._pPrevExInfo = pActiveExInfo;
-    exInfo._pExContext = &ctx;
-    exInfo._passNumber = 1;
-    exInfo._stackBoundsPassNumber = 1;
-    exInfo._kind = ExKind::None;
-    exInfo._idxCurClause = 0xffffffff;
-    exInfo._pRD = &rd;
-    exInfo._stackTraceInfo.Init();
-    exInfo._stackTraceInfo.AllocateStackTrace();
-    exInfo._pFrame = GetThread()->GetFrame();
-    exInfo._sfLowBound.SetMaxVal();
-    exInfo._exception = NULL;
-    exInfo._hThrowable = NULL;
-    pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
+    InitializeExInfo(pThread, &ctx, &rd, /* rethrow */ TRUE, &exInfo);
 
     GCPROTECT_BEGIN(exInfo._exception);
     PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_RETHROW);
     DECLARE_ARGHOLDER_ARRAY(args, 2);
+
     args[ARGNUM_0] = PTR_TO_ARGHOLDER(pActiveExInfo);
     args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
 
@@ -4582,8 +4304,6 @@ HCIMPL3(void, JIT_ThrowAmbiguousResolutionException,
 }
 HCIMPLEND
 
-//extern "C" void JIT_Overflow();
-
 /*********************************************************************/
 HCIMPL0(void, JIT_Overflow)
 {
@@ -4602,8 +4322,6 @@ HCIMPL0(void, JIT_Overflow)
 }
 HCIMPLEND
 
-//extern "C" void JIT_ThrowDivZero();
-
 /*********************************************************************/
 HCIMPL0(void, JIT_ThrowDivZero)
 {
@@ -4621,8 +4339,6 @@ HCIMPL0(void, JIT_ThrowDivZero)
     HELPER_METHOD_FRAME_END();
 }
 HCIMPLEND
-
-//extern "C" void JIT_ThrowNullRef();
 
 /*********************************************************************/
 HCIMPL0(void, JIT_ThrowNullRef)

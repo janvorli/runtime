@@ -42,36 +42,7 @@ NOINLINE LPVOID __FCThrow(LPVOID __me, RuntimeExceptionKind reKind, UINT resID, 
     _ASSERTE((reKind != kExecutionEngineException) ||
              !"Don't throw kExecutionEngineException from here. Go to EEPolicy directly, or throw something better.");
 
-    CONTEXT ctx = {0};
-    ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-    REGDISPLAY rd;
-    Thread *pThread = GetThread();
-
-    ExInfo exInfo = {};
-    exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-    exInfo._pExContext = &ctx;
-    exInfo._passNumber = 1;
-    exInfo._stackBoundsPassNumber = 1;
-    exInfo._kind = ExKind::Throw;
-    exInfo._idxCurClause = 0xffffffff;
-    exInfo._pRD = &rd;
-    exInfo._stackTraceInfo.Init();
-    exInfo._stackTraceInfo.AllocateStackTrace();
-    exInfo._pFrame = GetThread()->GetFrame();
-    exInfo._sfLowBound.SetMaxVal();
-    exInfo._exception = NULL;
-    exInfo._hThrowable = NULL;
-    pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
-
-    GCPROTECT_BEGIN(exInfo._exception);
-    PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_INTERNAL_EX);
-    DECLARE_ARGHOLDER_ARRAY(args, 2);
-    args[ARGNUM_0] = DWORD_TO_ARGHOLDER(reKind);
-    args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
-
-    //Ex.RhThrowInternalEx(oref, &exInfo)
-    CALL_MANAGED_METHOD_NORET(args)
-    GCPROTECT_END();
+    RealCOMPlusThrowEx(reKind);
 /*
     if (resID == 0)
     {

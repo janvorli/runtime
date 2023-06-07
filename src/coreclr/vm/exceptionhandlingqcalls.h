@@ -20,7 +20,7 @@ struct RhEHClause
     unsigned _tryEndOffset;
     BYTE *_filterAddress;
     BYTE *_handlerAddress;
-    TypeHandle _pTargetType;
+    void *_pTargetType;
     BOOL _isSameTry;
 };
 

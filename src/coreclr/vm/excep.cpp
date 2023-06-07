@@ -2834,51 +2834,42 @@ static VOID DECLSPEC_NORETURN RealCOMPlusThrowWorker(OBJECTREF throwable, BOOL r
     UNINSTALL_COMPLUS_EXCEPTION_HANDLER();
 }
 
-VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(OBJECTREF throwable, BOOL rethrow)
+void InitializeExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, BOOL rethrow, ExInfo *pExInfo)
+{
+    pExInfo->_pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+    pExInfo->_pExContext = pCtx;
+    pExInfo->_passNumber = 1;
+    pExInfo->_stackBoundsPassNumber = 1;
+    pExInfo->_kind = rethrow ? ExKind::None : ExKind::Throw;
+    pExInfo->_idxCurClause = 0xffffffff;
+    pExInfo->_pRD = pRD;
+    pExInfo->_stackTraceInfo.Init(); // TODO: how about this vs rethrow arg?
+    pExInfo->_stackTraceInfo.AllocateStackTrace();
+    pExInfo->_pFrame = GetThread()->GetFrame();
+    pExInfo->_sfLowBound.SetMaxVal();
+    pExInfo->_exception = NULL;
+    pExInfo->_hThrowable = NULL;
+    pThread->GetExceptionState()->SetCurrentExInfo(pExInfo);
+}
+
+VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(OBJECTREF throwable)
 {
     STATIC_CONTRACT_THROWS;
     STATIC_CONTRACT_GC_TRIGGERS;
-    STATIC_CONTRACT_MODE_ANY;
+    STATIC_CONTRACT_MODE_COOPERATIVE;
 
     GCPROTECT_BEGIN(throwable);
 
    _ASSERTE(IsException(throwable->GetMethodTable()));
 
-    // This may look a bit odd, but there is an explanation.  The rethrow boolean
-    //  means that an actual RaiseException(EXCEPTION_COMPLUS,...) is being re-thrown,
-    //  and that the exception context saved on the Thread object should replace
-    //  the exception context from the upcoming RaiseException().  There is logic
-    //  in the stack trace code to preserve MOST of the stack trace, but to drop the
-    //  last element of the stack trace (has to do with having the address of the rethrow
-    //  instead of the address of the original call in the stack trace.  That is
-    //  controversial itself, but we won't get into that here.)
-    // However, if this is not re-raising that original exception, but rather a new
-    //  os exception for what may be an existing exception object, it is generally
-    //  a good thing to preserve the stack trace.
-    if (!rethrow)
-    {
-        ExceptionPreserveStackTrace(throwable);
-    }
+    ExceptionPreserveStackTrace(throwable);
 
     CONTEXT ctx = {0};
     ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
     REGDISPLAY rd;
     Thread *pThread = GetThread();
     ExInfo exInfo = {};
-    exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-    exInfo._pExContext = &ctx;
-    exInfo._passNumber = 1;
-    exInfo._stackBoundsPassNumber = 1;
-    exInfo._kind = ExKind::Throw;
-    exInfo._idxCurClause = 0xffffffff;
-    exInfo._pRD = &rd;
-    exInfo._stackTraceInfo.Init(); // TODO: how about this vs rethrow arg?
-    exInfo._stackTraceInfo.AllocateStackTrace();
-    exInfo._pFrame = GetThread()->GetFrame();
-    exInfo._sfLowBound.SetMaxVal();
-    exInfo._exception = NULL;
-    exInfo._hThrowable = NULL;
-    pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
+    InitializeExInfo(pThread, &ctx, &rd, /* rethrow */ FALSE, &exInfo);
 
     if (pThread->IsAbortInitiated () && IsExceptionOfType(kThreadAbortException,&throwable))
     {
@@ -2892,6 +2883,7 @@ VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(OBJECTREF throwable, BOOL rethrow)
     }
 
     GCPROTECT_BEGIN(exInfo._exception);
+
     PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_EX);
     DECLARE_ARGHOLDER_ARRAY(args, 2);
     args[ARGNUM_0] = OBJECTREF_TO_ARGHOLDER(throwable);
@@ -2905,6 +2897,18 @@ VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(OBJECTREF throwable, BOOL rethrow)
     GCPROTECT_END();
 
     UNREACHABLE();
+}
+
+VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(RuntimeExceptionKind reKind)
+{
+    STATIC_CONTRACT_THROWS;
+    STATIC_CONTRACT_GC_TRIGGERS;
+    STATIC_CONTRACT_MODE_COOPERATIVE;
+
+    EEException ex(reKind);
+    OBJECTREF throwable = ex.CreateThrowable();
+
+    RealCOMPlusThrowEx(throwable);
 }
 
 VOID DECLSPEC_NORETURN RealCOMPlusThrow(OBJECTREF throwable, BOOL rethrow)
@@ -7837,7 +7841,7 @@ VOID DECLSPEC_NORETURN UnwindAndContinueRethrowHelperAfterCatch(Frame* pEntryFra
 
     Exception::Delete(pException);
 
-    RealCOMPlusThrowEx(orThrowable, FALSE);
+    RealCOMPlusThrowEx(orThrowable);
     //RaiseTheExceptionInternalOnly(orThrowable, FALSE);
 }
 
