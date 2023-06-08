@@ -5413,6 +5413,7 @@ BOOL HandleHardwareException(PAL_SEHException* ex)
 
 #if 1
     REGDISPLAY rd;
+    rd.pContext = ex->GetContextRecord();
     Thread *pThread = GetThread();
 
     ExInfo exInfo = {};

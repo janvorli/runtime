@@ -60,7 +60,7 @@ struct ExInfo
 
     volatile size_t _notifyDebuggerSP;
 
-    REGDISPLAY *_pRD;
+    REGDISPLAY *__foo;
 
     StackTraceInfo _stackTraceInfo;
 
@@ -93,7 +93,7 @@ extern "C" void QCALLTYPE RhpAppendExceptionStackFrame(QCall::ObjectHandleOnStac
 extern "C" BOOL QCALLTYPE RhpEHEnumInitFromStackFrameIterator(StackFrameIterator *pFrameIter, BYTE** pMethodStartAddress, EH_CLAUSE_ENUMERATOR * pEHEnum);
 extern "C" BOOL QCALLTYPE RhpEHEnumNext(EH_CLAUSE_ENUMERATOR* pEHEnum, RhEHClause* pEHClause);
 extern "C" void QCALLTYPE RhpCaptureCallerContext(CONTEXT* pStackwalkCtx);
-extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalkCtx, REGDISPLAY* pRD, bool instructionFault);
+extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, REGDISPLAY* pRD, bool instructionFault);
 extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, unsigned int* uExCollideClauseIdx, bool* fUnwoundReversePInvoke);
 #endif // DACCESS_COMPILE
 

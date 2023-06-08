@@ -6,8 +6,11 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-
+#if NATIVEAOT
 using Internal.Runtime;
+#else
+using System.Runtime.ExceptionServices;
+#endif
 
 // Disable: Filter expression is a constant. We know. We just can't do an unfiltered catch.
 #pragma warning disable 7095
@@ -490,7 +493,7 @@ namespace System.Runtime
             STATUS_INTEGER_DIVIDE_BY_ZERO = 0xC0000094u,
             STATUS_INTEGER_OVERFLOW = 0xC0000095u,
         }
-
+#if NATIVEAOT
         [StructLayout(LayoutKind.Explicit, Size = AsmOffsets.SIZEOF__PAL_LIMITED_CONTEXT)]
         public struct PAL_LIMITED_CONTEXT
         {
@@ -504,6 +507,7 @@ namespace System.Runtime
 #endif
             // the rest of the struct is left unspecified.
         }
+#endif
 
         // N.B. -- These values are burned into the throw helper assembly code and are also known the the
         //         StackFrameIterator code.
@@ -565,7 +569,11 @@ namespace System.Runtime
             internal void* _pPrevExInfo;
 
             [FieldOffset(AsmOffsets.OFFSETOF__ExInfo__m_pExContext)]
+#if NATIVEAOT
             internal PAL_LIMITED_CONTEXT* _pExContext;
+#else
+            internal REGDISPLAY* _pExContext;
+#endif
 
             [FieldOffset(AsmOffsets.OFFSETOF__ExInfo__m_exception)]
             private object _exception;  // actual object reference, specially reported by GcScanRootsWorker

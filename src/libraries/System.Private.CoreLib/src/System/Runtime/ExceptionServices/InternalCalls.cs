@@ -14,7 +14,7 @@ namespace System.Runtime
     {
         [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RhpSfiInit")]
         [return: MarshalAs(UnmanagedType.Bool)]
-        internal static unsafe partial bool RhpSfiInit(ref StackFrameIterator pThis, void* pStackwalkCtx, void* pRegDisplay, [MarshalAs(UnmanagedType.Bool)] bool instructionFault);
+        internal static unsafe partial bool RhpSfiInit(ref StackFrameIterator pThis, void* pRegDisplay, [MarshalAs(UnmanagedType.Bool)] bool instructionFault);
 
         [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RhpSfiNext")]
         [return: MarshalAs(UnmanagedType.Bool)]

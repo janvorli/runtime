@@ -493,7 +493,7 @@ namespace System.Runtime
             STATUS_INTEGER_DIVIDE_BY_ZERO = 0xC0000094u,
             STATUS_INTEGER_OVERFLOW = 0xC0000095u,
         }
-
+#if NATIVEAOT
         [StructLayout(LayoutKind.Explicit, Size = AsmOffsets.SIZEOF__PAL_LIMITED_CONTEXT)]
         public struct PAL_LIMITED_CONTEXT
         {
@@ -507,6 +507,7 @@ namespace System.Runtime
 #endif
             // the rest of the struct is left unspecified.
         }
+#endif
 
         // N.B. -- These values are burned into the throw helper assembly code and are also known the the
         //         StackFrameIterator code.
@@ -568,7 +569,11 @@ namespace System.Runtime
             internal void* _pPrevExInfo;
 
             [FieldOffset(AsmOffsets.OFFSETOF__ExInfo__m_pExContext)]
+#if NATIVEAOT
             internal PAL_LIMITED_CONTEXT* _pExContext;
+#else
+            internal REGDISPLAY* _pExContext;
+#endif
 
             [FieldOffset(AsmOffsets.OFFSETOF__ExInfo__m_exception)]
             private object _exception;  // actual object reference, specially reported by GcScanRootsWorker
@@ -739,7 +744,7 @@ namespace System.Runtime
             UIntPtr prevFramePtr = UIntPtr.Zero;
             bool unwoundReversePInvoke = false;
 
-            bool isValid = frameIter.Init(exInfo._pExContext, exInfo._pRD, (exInfo._kind & ExKind.InstructionFaultFlag) != 0);
+            bool isValid = frameIter.Init(exInfo._pExContext, (exInfo._kind & ExKind.InstructionFaultFlag) != 0);
             Debug.Assert(isValid, "RhThrowEx called with an unexpected context");
 
             OnFirstChanceExceptionViaClassLib(exceptionObj);
@@ -812,7 +817,7 @@ namespace System.Runtime
             exInfo._idxCurClause = catchingTryRegionIdx;
             startIdx = MaxTryRegionIdx;
             unwoundReversePInvoke = false;
-            isValid = frameIter.Init(exInfo._pExContext, exInfo._pRD, (exInfo._kind & ExKind.InstructionFaultFlag) != 0);
+            isValid = frameIter.Init(exInfo._pExContext, (exInfo._kind & ExKind.InstructionFaultFlag) != 0);
             for (; isValid && ((byte*)frameIter.SP <= (byte*)handlingFrameSP); isValid = frameIter.Next(&startIdx, &unwoundReversePInvoke))
             {
                 Debug.Assert(isValid, "second-pass EH unwind failed unexpectedly");

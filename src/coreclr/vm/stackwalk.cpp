@@ -1166,7 +1166,7 @@ static inline void UpdatePerformanceMetrics(CrawlFrame *pcfThisFrame, BOOL bIsRe
 MethodDesc * GetUserMethodForILStub(Thread * pThread, UINT_PTR uStubSP, MethodDesc * pILStubMD, Frame ** ppFrameOut);
 void MarkInlinedCallFrameAsEHHelperCall(Frame* pFrame);
 
-extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalkCtx, REGDISPLAY* pRD, bool instructionFault)
+extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, REGDISPLAY* pRD, bool instructionFault)
 {
     QCALL_CONTRACT;
 
@@ -1174,6 +1174,7 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
     BEGIN_QCALL;
     // TODO: unhijack?
 
+    CONTEXT* pStackwalkCtx = pRD->pContext;
     Thread* pThread = GET_THREAD();
     Frame* pFrame = pThread->GetFrame();
     MarkInlinedCallFrameAsEHHelperCall(pFrame);
@@ -1241,7 +1242,7 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
                     //  TODO: remove this call and try to report the IL catch handler in the IL stub itself.
                     EXCEPTION_POINTERS ptrs;
                     // TODO: this is probably wrong
-                    ptrs.ContextRecord = (CONTEXT*)pExInfo->_pExContext;
+                    ptrs.ContextRecord = ((REGDISPLAY*)pExInfo->_pExContext)->pContext;
                     EXCEPTION_RECORD exRecord = {0};
                     // TODO: This is fake
                     ptrs.ExceptionRecord = &exRecord;
@@ -1491,7 +1492,7 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
 //                            __debugbreak();
                             _ASSERTE_MSG(FALSE, "did not expect to collide with a 1st-pass ExInfo during a EH stackwalk");
                             ExInfo* pPrevExInfo = pThis->m_pNextExInfo->_pPrevExInfo;
-                            pThis->Init(pThread, pThis->m_pNextExInfo->_pFrame, pThis->m_pNextExInfo->_pRD, pThis->m_flags);
+                            pThis->Init(pThread, pThis->m_pNextExInfo->_pFrame, (REGDISPLAY*)pThis->m_pNextExInfo->_pExContext, pThis->m_flags);
                             pThis->m_pNextExInfo = pThis->m_pNextExInfo->_pPrevExInfo;
                         }
                         else
@@ -1505,7 +1506,7 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                             {
                                 retVal = pThis->Next();
                             }
-                            while ((retVal == SWA_CONTINUE) && pThis->m_crawl.GetRegisterSet()->SP != pPrevExInfo->_pRD->SP);
+                            while ((retVal == SWA_CONTINUE) && pThis->m_crawl.GetRegisterSet()->SP != ((REGDISPLAY*)pPrevExInfo->_pExContext)->SP);
                             _ASSERTE(retVal != SWA_FAILED);
 
                             //_ASSERTE(pThis->m_crawl.GetRegisterSet()->ControlPC == pPrevExInfo->_pRD->ControlPC);
