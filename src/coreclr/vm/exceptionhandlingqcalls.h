@@ -91,7 +91,7 @@ extern "C" void QCALLTYPE  RhpCallFinallyFunclet(BYTE* pHandlerIP, REGDISPLAY* p
 extern "C" BOOL QCALLTYPE  RhpCallFilterFunclet(QCall::ObjectHandleOnStack exceptionObj, BYTE* pFilterP, REGDISPLAY* pvRegDisplay);
 extern "C" void QCALLTYPE RhpAppendExceptionStackFrame(QCall::ObjectHandleOnStack exceptionObj, SIZE_T ip, SIZE_T sp, int flags, ExInfo *pExInfo);
 extern "C" BOOL QCALLTYPE RhpEHEnumInitFromStackFrameIterator(StackFrameIterator *pFrameIter, BYTE** pMethodStartAddress, EH_CLAUSE_ENUMERATOR * pEHEnum);
-extern "C" BOOL QCALLTYPE RhpEHEnumNext(StackFrameIterator *pFrameIter, EH_CLAUSE_ENUMERATOR* pEHEnum, RhEHClause* pEHClause);
+extern "C" BOOL QCALLTYPE RhpEHEnumNext(EH_CLAUSE_ENUMERATOR* pEHEnum, RhEHClause* pEHClause);
 extern "C" void QCALLTYPE RhpCaptureCallerContext(CONTEXT* pStackwalkCtx);
 extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalkCtx, REGDISPLAY* pRD, bool instructionFault);
 extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, unsigned int* uExCollideClauseIdx, bool* fUnwoundReversePInvoke);

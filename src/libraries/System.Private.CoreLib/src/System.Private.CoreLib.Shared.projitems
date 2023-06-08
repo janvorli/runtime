@@ -849,6 +849,9 @@
     <Compile Include="$(MSBuildThisFileDirectory)System\Runtime\ExceptionServices\ExceptionDispatchInfo.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)System\Runtime\ExceptionServices\ExceptionHandling.cs" Condition="'$(FeatureNativeAot)' != 'true' and '$(FeatureMono)' != 'true'"/>
     <Compile Include="$(MSBuildThisFileDirectory)System\Runtime\ExceptionServices\AsmOffsets.cs" Condition="'$(FeatureNativeAot)' != 'true' and '$(FeatureMono)' != 'true'"/>
+    <Compile Include="$(MSBuildThisFileDirectory)System\Runtime\ExceptionServices\InternalCalls.cs" Condition="'$(FeatureNativeAot)' != 'true' and '$(FeatureMono)' != 'true'"/>
+    <Compile Include="$(MSBuildThisFileDirectory)System\Runtime\ExceptionServices\ExceptionIDs.cs" Condition="'$(FeatureNativeAot)' != 'true' and '$(FeatureMono)' != 'true'"/>
+    <Compile Include="$(MSBuildThisFileDirectory)System\Runtime\ExceptionServices\StackFrameIterator.cs" Condition="'$(FeatureNativeAot)' != 'true' and '$(FeatureMono)' != 'true'"/>
     <Compile Include="$(MSBuildThisFileDirectory)System\Runtime\ExceptionServices\FirstChanceExceptionEventArgs.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)System\Runtime\ExceptionServices\HandleProcessCorruptedStateExceptionsAttribute.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)System\Runtime\GCSettings.cs" />

@@ -7904,6 +7904,7 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
 
     struct ExtendedEHClauseEnumerator : EH_CLAUSE_ENUMERATOR
     {
+        StackFrameIterator *pFrameIter;
         unsigned EHCount;
     };
 
@@ -7912,6 +7913,7 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         QCALL_CONTRACT;
 
         ExtendedEHClauseEnumerator *pExtendedEHEnum = (ExtendedEHClauseEnumerator*)pEHEnum;
+        pExtendedEHEnum->pFrameIter = pFrameIter;
 
         BEGIN_QCALL;
         Thread* pThread = GET_THREAD();
@@ -7930,7 +7932,7 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         return pExtendedEHEnum->EHCount != 0;
     }
 
-    extern "C" BOOL QCALLTYPE RhpEHEnumNext(StackFrameIterator *pFrameIter, EH_CLAUSE_ENUMERATOR* pEHEnum, RhEHClause* pEHClause)
+    extern "C" BOOL QCALLTYPE RhpEHEnumNext(EH_CLAUSE_ENUMERATOR* pEHEnum, RhEHClause* pEHClause)
     {
         QCALL_CONTRACT;
         BOOL result = FALSE;
@@ -7941,6 +7943,8 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         MarkInlinedCallFrameAsEHHelperCall(pFrame);
 
         ExtendedEHClauseEnumerator *pExtendedEHEnum = (ExtendedEHClauseEnumerator*)pEHEnum;
+        StackFrameIterator *pFrameIter = pExtendedEHEnum->pFrameIter;
+
         if (pEHEnum->iCurrentPos < pExtendedEHEnum->EHCount)
         {
             IJitManager* pJitMan   = pFrameIter->m_crawl.GetJitManager();

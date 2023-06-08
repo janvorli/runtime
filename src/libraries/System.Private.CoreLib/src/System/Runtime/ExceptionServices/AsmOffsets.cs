@@ -30,7 +30,7 @@ internal static class AsmOffsets
     public const int OFFSETOF__REGDISPLAY__m_pCurrentContext = 0x8;
     public const int SIZEOF__StackFrameIterator = 0x360;
 #endif // DEBUG
-    public const int SIZEOF__EHEnum = 0x18; // TODO: on 32 bit systems, isn't it 8?
+    public const int SIZEOF__EHEnum = 0x20; // TODO: on 32 bit systems, isn't it 8?
 
     public const int OFFSETOF__StackFrameIterator__m_pRegDisplay = 0x228;
 

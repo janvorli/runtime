@@ -1,21 +1,21 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-#if !MONO
-using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+#if NATIVEAOT
+using Internal.Runtime;
+#else
 using System.Runtime.ExceptionServices;
-using System.Threading;
-using System.Threading.Tasks;
+#endif
 
-#pragma warning disable CS7095
-// just temporary
-#pragma warning disable IDE0060
+// Disable: Filter expression is a constant. We know. We just can't do an unfiltered catch.
+#pragma warning disable 7095
 
+#if !NATIVEAOT
 namespace System
 {
     public static partial class AppContext
@@ -30,25 +30,10 @@ namespace System
         }
     }
 }
+#endif
 
 namespace System.Runtime
 {
-    // TODO: move to ExceptionIDs.cs like in AOT
-    internal enum ExceptionIDs
-    {
-        OutOfMemory = 1,
-        Arithmetic = 2,
-        ArrayTypeMismatch = 3,
-        DivideByZero = 4,
-        IndexOutOfRange = 5,
-        InvalidCast = 6,
-        Overflow = 7,
-        NullReference = 8,
-        AccessViolation = 9,
-        DataMisaligned = 10,
-        EntrypointNotFound = 11,
-        AmbiguousImplementation = 12,
-    }
     internal enum RhFailFastReason
     {
         Unknown = 0,
@@ -58,60 +43,6 @@ namespace System.Runtime
         ClassLibDidNotTranslateExceptionID = 4,              // "Unable to translate failure into a classlib-specific exception object."
         UnhandledException = 5,                              // "unhandled exception"
         UnhandledExceptionFromPInvoke = 6,                   // "Unhandled exception: an unmanaged exception was thrown out of a managed-to-native transition."
-    }
-
-    internal static partial class InternalCalls
-    {
-        [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RhpSfiInit")]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        internal static unsafe partial bool RhpSfiInit(ref StackFrameIterator pThis, void* pStackwalkCtx, void* pRegDisplay, [MarshalAs(UnmanagedType.Bool)] bool instructionFault);
-
-        [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RhpSfiNext")]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        internal static unsafe partial bool RhpSfiNext(ref StackFrameIterator pThis, uint* uExCollideClauseIdx, bool* fUnwoundReversePInvoke);
-
-#pragma warning disable CS8500
-        [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RhpCallCatchFunclet")]
-        internal static unsafe partial IntPtr RhpCallCatchFunclet(
-            ObjectHandleOnStack exceptionObj, byte* pHandlerIP, void* pvRegDisplay, EH.ExInfo* exInfo);
-#pragma warning restore CS8500
-
-#pragma warning disable CS8500
-        [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RhpCallFinallyFunclet")]
-        internal static unsafe partial void RhpCallFinallyFunclet(byte* pHandlerIP, void* pvRegDisplay, EH.ExInfo* exInfo);
-#pragma warning restore CS8500
-
-#pragma warning disable CS8500
-        [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RhpCallFilterFunclet")]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        internal static unsafe partial bool RhpCallFilterFunclet(
-            ObjectHandleOnStack exceptionObj, byte* pFilterIP, void* pvRegDisplay);
-#pragma warning restore CS8500
-
-        [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RhpEHEnumInitFromStackFrameIterator")]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        internal static unsafe partial bool RhpEHEnumInitFromStackFrameIterator(ref StackFrameIterator pFrameIter, byte** pMethodStartAddress, void* pEHEnum);
-
-        [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RhpEHEnumNext")]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        internal static unsafe partial bool RhpEHEnumNext(ref StackFrameIterator pFrameIter, void* pEHEnum, void* pEHClause);
-
-        // TODO: rename?
-#pragma warning disable CS8500
-        [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RhpAppendExceptionStackFrame")]
-        internal static unsafe partial void RhpAppendExceptionStackFrame(ObjectHandleOnStack exceptionObj, IntPtr ip, IntPtr sp, int flags, EH.ExInfo* exInfo);
-#pragma warning restore CS8500
-    }
-
-    [StructLayout(LayoutKind.Explicit, Size = AsmOffsets.SIZEOF__REGDISPLAY)]
-    internal unsafe struct REGDISPLAY
-    {
-        [FieldOffset(AsmOffsets.OFFSETOF__REGDISPLAY__SP)]
-        internal UIntPtr SP;
-        [FieldOffset(AsmOffsets.OFFSETOF__REGDISPLAY__ControlPC)]
-        internal UIntPtr ControlPC;
-        [FieldOffset(AsmOffsets.OFFSETOF__REGDISPLAY__m_pCurrentContext)]
-        internal EH.PAL_LIMITED_CONTEXT* m_pCurrentContext;
     }
 
     internal static unsafe partial class EH
@@ -140,7 +71,9 @@ namespace System.Runtime
             internal byte* _filterAddress;
             internal byte* _handlerAddress;
             internal void* _pTargetType;
+#if !NATIVEAOT
             internal bool _isSameTry;
+#endif
 
             ///<summary>
             /// We expect the stackwalker to adjust return addresses to point at 'return address - 1' so that we
@@ -163,20 +96,29 @@ namespace System.Runtime
             private IntPtr _dummy; // For alignment
         }
 
+#pragma warning disable IDE0060
         // This is a fail-fast function used by the runtime as a last resort that will terminate the process with
         // as little effort as possible. No guarantee is made about the semantics of this fail-fast.
+#if !NATIVEAOT
         [DoesNotReturn]
+#endif
         internal static void FallbackFailFast(RhFailFastReason reason, object? unhandledException)
         {
-            //InternalCalls.RhpFallbackFailFast();
+#if NATIVEAOT
+            InternalCalls.RhpFallbackFailFast();
+#else
             System.Diagnostics.Debugger.Break();
             Environment.FailFast(reason.ToString());
+#endif
         }
+#pragma warning restore IDE0060
 
         // Given an address pointing somewhere into a managed module, get the classlib-defined fail-fast
         // function and invoke it.  Any failure to find and invoke the function, or if it returns, results in
         // MRT-defined fail-fast behavior.
+#if !NATIVEAOT
         [DoesNotReturn]
+#endif
         internal static void FailFastViaClasslib(RhFailFastReason reason, object? unhandledException,
             IntPtr classlibAddress)
         {
@@ -345,7 +287,7 @@ namespace System.Runtime
         }
 
         private static void AppendExceptionStackFrameViaClasslib(object exception, IntPtr ip,
-            IntPtr sp, ref ExInfo exInfo,
+            UIntPtr sp, ref ExInfo exInfo,
             ref bool isFirstRethrowFrame, ref bool isFirstFrame)
         {
 #if NATIVEAOT
@@ -688,9 +630,11 @@ namespace System.Runtime
                     exceptionId = ExceptionIDs.NullReference;
                     break;
 
-                // case (uint)HwExceptionCode.STATUS_REDHAWK_THREAD_ABORT:
-                //     exceptionToThrow = InternalCalls.RhpGetThreadAbortException();
-                //     break;
+#if NATIVEAOT
+                case (uint)HwExceptionCode.STATUS_REDHAWK_THREAD_ABORT:
+                    exceptionToThrow = InternalCalls.RhpGetThreadAbortException();
+                    break;
+#endif
 
                 case (uint)HwExceptionCode.STATUS_DATATYPE_MISALIGNMENT:
                     exceptionId = ExceptionIDs.DataMisaligned;
@@ -741,7 +685,6 @@ namespace System.Runtime
 
             InternalCalls.RhpValidateExInfoStack();
 #endif
-
             // Transform attempted throws of null to a throw of NullReferenceException.
             if (exceptionObj == null)
             {
@@ -770,7 +713,7 @@ namespace System.Runtime
             object rethrownException = activeExInfo.ThrownException;
 
             exInfo.Init(rethrownException, ref activeExInfo);
-            DispatchEx(ref exInfo._frameIter, ref exInfo, MaxTryRegionIdx);//activeExInfo._idxCurClause);
+            DispatchEx(ref exInfo._frameIter, ref exInfo, MaxTryRegionIdx);
             FallbackFailFast(RhFailFastReason.InternalError, null);
         }
 
@@ -817,16 +760,13 @@ namespace System.Runtime
 
                 DebugScanCallFrame(exInfo._passNumber, frameIter.ControlPC, frameIter.SP);
 
-                UpdateStackTrace(exceptionObj, exInfo._frameIter.FramePointer, (IntPtr)frameIter.OriginalControlPC, (IntPtr)frameIter.SP, ref isFirstRethrowFrame, ref prevFramePtr, ref isFirstFrame, ref exInfo);
+                UpdateStackTrace(exceptionObj, exInfo._frameIter.FramePointer, (IntPtr)frameIter.OriginalControlPC, frameIter.SP, ref isFirstRethrowFrame, ref prevFramePtr, ref isFirstFrame, ref exInfo);
 
                 byte* pHandler;
                 if (FindFirstPassHandler(exceptionObj, startIdx, ref frameIter,
                                          out catchingTryRegionIdx, out pHandler))
                 {
                     handlingFrameSP = frameIter.SP;
-#if DEBUGEH
-                    System.Diagnostics.Debug.WriteLine($"Found first pass handler at {new IntPtr(pHandler):X}, handlingFrameSP={handlingFrameSP:X}");
-#endif
                     pCatchHandler = pHandler;
 
                     DebugVerifyHandlingFrame(handlingFrameSP);
@@ -867,13 +807,26 @@ namespace System.Runtime
             // TODO: we have a race here. If GC kicks in before we reset the scanned stack range in the exInfo, the stack walked would think that the frames covered
             // by the scanned range were already unwound. This needs to be fixed, as it causes crashes.
             exInfo._passNumber = 2;
+            // TODO: can we get rid of this? The native code uses it to distinguish between the case of found catch handler and
+            // the case of hitting native code.
             exInfo._idxCurClause = catchingTryRegionIdx;
             startIdx = MaxTryRegionIdx;
+            unwoundReversePInvoke = false;
             isValid = frameIter.Init(exInfo._pExContext, exInfo._pRD, (exInfo._kind & ExKind.InstructionFaultFlag) != 0);
-            for (; isValid && ((byte*)frameIter.SP <= (byte*)handlingFrameSP); isValid = frameIter.Next(&startIdx))
+            for (; isValid && ((byte*)frameIter.SP <= (byte*)handlingFrameSP); isValid = frameIter.Next(&startIdx, &unwoundReversePInvoke))
             {
                 Debug.Assert(isValid, "second-pass EH unwind failed unexpectedly");
                 DebugScanCallFrame(exInfo._passNumber, frameIter.ControlPC, frameIter.SP);
+
+                if (unwoundReversePInvoke)
+                {
+                    //Debug.Assert(pReversePInvokePropagationCallback != IntPtr.Zero, "Unwound to a reverse P/Invoke in the second pass. We should have a propagation handler.");
+                    Debug.Assert(frameIter.SP == handlingFrameSP, "Encountered a different reverse P/Invoke frame in the second pass.");
+                    //Debug.Assert(frameIter.PreviousTransitionFrame != IntPtr.Zero, "Should have a transition frame for reverse P/Invoke.");
+                    // Found the native frame that called the reverse P/invoke.
+                    // It is not possible to run managed second pass handlers on a native frame.
+                    break;
+                }
 
                 if ((frameIter.SP == handlingFrameSP)
 #if TARGET_ARM64
@@ -881,11 +834,8 @@ namespace System.Runtime
 #endif
                     )
                 {
-                    if (!unwoundReversePInvoke)
-                    {
-                        // invoke only a partial second-pass here...
-                        InvokeSecondPass(ref exInfo, startIdx, catchingTryRegionIdx);
-                    }
+                    // invoke only a partial second-pass here...
+                    InvokeSecondPass(ref exInfo, startIdx, catchingTryRegionIdx);
                     break;
                 }
 
@@ -898,7 +848,10 @@ namespace System.Runtime
             //
             // ------------------------------------------------
             exInfo._idxCurClause = catchingTryRegionIdx;
-
+#if NATIVEAOT
+            InternalCalls.RhpCallCatchFunclet(
+                exceptionObj, pCatchHandler, frameIter.RegisterSet, ref exInfo);
+#else
 #pragma warning disable CS8500
             fixed (EH.ExInfo* pExInfo = &exInfo)
             {
@@ -906,6 +859,7 @@ namespace System.Runtime
                     ObjectHandleOnStack.Create(ref exceptionObj), pCatchHandler, frameIter.RegisterSet, pExInfo);
             }
 #pragma warning restore CS8500
+#endif
             // currently, RhpCallCatchFunclet will resume after the catch
             Debug.Assert(false, "unreachable");
             FallbackFailFast(RhFailFastReason.InternalError, null);
@@ -925,7 +879,7 @@ namespace System.Runtime
                 "Handling frame must have a valid stack frame pointer");
         }
 
-        private static void UpdateStackTrace(object exceptionObj, UIntPtr curFramePtr, IntPtr ip, IntPtr sp,
+        private static void UpdateStackTrace(object exceptionObj, UIntPtr curFramePtr, IntPtr ip, UIntPtr sp,
             ref bool isFirstRethrowFrame, ref UIntPtr prevFramePtr, ref bool isFirstFrame, ref ExInfo exInfo)
         {
             // We use the fact that all funclet stack frames belonging to the same logical method activation
@@ -963,7 +917,7 @@ namespace System.Runtime
 
             // Search the clauses for one that contains the current offset.
             RhEHClause ehClause;
-            for (uint curIdx = 0; InternalCalls.RhpEHEnumNext(ref frameIter, &ehEnum, &ehClause); curIdx++)
+            for (uint curIdx = 0; InternalCalls.RhpEHEnumNext(&ehEnum, &ehClause); curIdx++)
             {
                 //
                 // Skip to the starting try region.  This is used by collided unwinds and rethrows to pickup where
@@ -979,10 +933,12 @@ namespace System.Runtime
 
                     // Now, we continue skipping while the try region is identical to the one that invoked the
                     // previous dispatch.
-                    if ((ehClause._isSameTry) && (ehClause._tryStartOffset == lastTryStart) && (ehClause._tryEndOffset == lastTryEnd))
-                    {
+                    if ((ehClause._tryStartOffset == lastTryStart) && (ehClause._tryEndOffset == lastTryEnd)
+#if !NATIVEAOT
+                        && (ehClause._isSameTry)
+#endif
+                    )
                         continue;
-                    }
 
                     // We are done skipping. This is required to handle empty finally block markers that are used
                     // to separate runs of different try blocks with same native code offsets.
@@ -1017,7 +973,11 @@ namespace System.Runtime
                     try
                     {
                         shouldInvokeHandler =
+#if NATIVEAOT
+                            InternalCalls.RhpCallFilterFunclet(exception, pFilterFunclet, frameIter.RegisterSet);
+#else
                             InternalCalls.RhpCallFilterFunclet(ObjectHandleOnStack.Create(ref exception), pFilterFunclet, frameIter.RegisterSet);
+#endif
                     }
                     catch when (true)
                     {
@@ -1060,12 +1020,14 @@ namespace System.Runtime
         }
 #endif // DEBUG && !INPLACE_RUNTIME && NATIVEAOT
 
+
         private static bool ShouldTypedClauseCatchThisException(object exception, MethodTable* pClauseType)
         {
 #if NATIVEAOT
 #if DEBUG && !INPLACE_RUNTIME
             AssertNotRuntimeObject(pClauseType);
 #endif
+
             return TypeCast.IsInstanceOfException(pClauseType, exception);
 #else
             bool retry = false;
@@ -1113,7 +1075,7 @@ namespace System.Runtime
 
             // Search the clauses for one that contains the current offset.
             RhEHClause ehClause;
-            for (uint curIdx = 0; InternalCalls.RhpEHEnumNext(ref exInfo._frameIter, &ehEnum, &ehClause) && curIdx < idxLimit; curIdx++)
+            for (uint curIdx = 0; InternalCalls.RhpEHEnumNext(&ehEnum, &ehClause) && curIdx < idxLimit; curIdx++)
             {
                 //
                 // Skip to the starting try region.  This is used by collided unwinds and rethrows to pickup where
@@ -1129,10 +1091,12 @@ namespace System.Runtime
 
                     // Now, we continue skipping while the try region is identical to the one that invoked the
                     // previous dispatch.
-                    if ((ehClause._isSameTry) && (ehClause._tryStartOffset == lastTryStart) && (ehClause._tryEndOffset == lastTryEnd))
-                    {
+if ((ehClause._tryStartOffset == lastTryStart) && (ehClause._tryEndOffset == lastTryEnd)
+#if !NATIVEAOT
+                        && (ehClause._isSameTry)
+#endif
+                    )
                         continue;
-                    }
 
                     // We are done skipping. This is required to handle empty finally block markers that are used
                     // to separate runs of different try blocks with same native code offsets.
@@ -1162,18 +1126,22 @@ namespace System.Runtime
 
                 byte* pFinallyHandler = ehClause._handlerAddress;
                 exInfo._idxCurClause = curIdx;
-
+#if NATIVEAOT
+                InternalCalls.RhpCallFinallyFunclet(pFinallyHandler, exInfo._frameIter.RegisterSet);
+#else
 #pragma warning disable CS8500
                 fixed (EH.ExInfo* pExInfo = &exInfo)
                 {
                     InternalCalls.RhpCallFinallyFunclet(pFinallyHandler, exInfo._frameIter.RegisterSet, pExInfo);
                 }
 #pragma warning restore CS8500
+#endif
                 exInfo._idxCurClause = MaxTryRegionIdx;
             }
         }
 
 #if NATIVEAOT
+#pragma warning disable IDE0060
         [UnmanagedCallersOnly(EntryPoint = "RhpFailFastForPInvokeExceptionPreemp", CallConvs = new Type[] { typeof(CallConvCdecl) })]
         public static void RhpFailFastForPInvokeExceptionPreemp(IntPtr PInvokeCallsiteReturnAddr, void* pExceptionRecord, void* pContextRecord)
         {
@@ -1184,42 +1152,7 @@ namespace System.Runtime
         {
             FailFastViaClasslib(RhFailFastReason.UnhandledExceptionFromPInvoke, null, classlibBreadcrumb);
         }
+#pragma warning restore IDE0060
 #endif
     } // static class EH
-
-#if !NATIVEAOT
-    [StructLayout(LayoutKind.Explicit, Size = AsmOffsets.SIZEOF__StackFrameIterator)]
-    internal unsafe struct StackFrameIterator
-    {
-        [FieldOffset(AsmOffsets.OFFSETOF__StackFrameIterator__m_pRegDisplay)]
-        private REGDISPLAY* _pRegDisplay;
-
-        internal byte* ControlPC { get { return (byte*)_pRegDisplay->ControlPC; } }
-        internal byte* OriginalControlPC { get { return (byte*)_pRegDisplay->ControlPC; } } // TODO: fix this
-        internal void* RegisterSet { get { return _pRegDisplay;  } }
-        internal UIntPtr SP { get { return _pRegDisplay->SP; } }
-        internal UIntPtr FramePointer { get { return _pRegDisplay->m_pCurrentContext->FP; } } // FAKE! TODO: is this always FP register or is it SP or FP?
-
-        internal bool Init(EH.PAL_LIMITED_CONTEXT* pStackwalkCtx, REGDISPLAY *pRD, bool instructionFault = false)
-        {
-            return InternalCalls.RhpSfiInit(ref this, pStackwalkCtx, pRD, instructionFault);
-        }
-
-        internal bool Next()
-        {
-            return Next(null, null);
-        }
-
-        internal bool Next(uint* uExCollideClauseIdx)
-        {
-            return Next(uExCollideClauseIdx, null);
-        }
-
-        internal bool Next(uint* uExCollideClauseIdx, bool* fUnwoundReversePInvoke)
-        {
-            return InternalCalls.RhpSfiNext(ref this, uExCollideClauseIdx, fUnwoundReversePInvoke);
-        }
-    }
-#endif
 }
-#endif

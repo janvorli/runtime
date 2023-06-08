@@ -1204,11 +1204,11 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
             if (pExInfo->_idxCurClause != 0xffffffff) //  the reverse pinvoke case doesn't have the _idxCurClause set
             {
 #ifdef ESTABLISHER_FRAME_ADDRESS_IS_CALLER_SP
-            pExInfo->_sfCallerOfActualHandlerFrame = StackFrame(establisherFrame); 
+                pExInfo->_sfCallerOfActualHandlerFrame = StackFrame(establisherFrame); 
 #else
-            // TODO: or use the pExInfo->pRD?
-            EECodeManager::EnsureCallerContextIsValid(pExInfo->_frameIter.m_crawl.GetRegisterSet(), NULL);
-            pExInfo->_sfCallerOfActualHandlerFrame = CallerStackFrame::FromRegDisplay(pExInfo->_frameIter.m_crawl.GetRegisterSet());//pThis->m_pNextExInfo->_csfEnclosingClause;
+                // TODO: or use the pExInfo->pRD?
+                EECodeManager::EnsureCallerContextIsValid(pExInfo->_frameIter.m_crawl.GetRegisterSet(), NULL);
+                pExInfo->_sfCallerOfActualHandlerFrame = CallerStackFrame::FromRegDisplay(pExInfo->_frameIter.m_crawl.GetRegisterSet());//pThis->m_pNextExInfo->_csfEnclosingClause;
 #endif       
                 // EH_CLAUSE_ENUMERATOR EHEnum;
                 // const METHODTOKEN& MethToken = pThis->m_crawl.GetMethodToken();
