@@ -60,8 +60,6 @@ struct ExInfo
 
     volatile size_t _notifyDebuggerSP;
 
-    REGDISPLAY *__foo;
-
     StackTraceInfo _stackTraceInfo;
 
     Frame* _pFrame;

@@ -2842,7 +2842,6 @@ void InitializeExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, BOOL reth
     pExInfo->_stackBoundsPassNumber = 1;
     pExInfo->_kind = rethrow ? ExKind::None : ExKind::Throw;
     pExInfo->_idxCurClause = 0xffffffff;
-    //pExInfo->_pRD = pRD;
     pExInfo->_stackTraceInfo.Init(); // TODO: how about this vs rethrow arg?
     pExInfo->_stackTraceInfo.AllocateStackTrace();
     pExInfo->_pFrame = GetThread()->GetFrame();
@@ -6654,7 +6653,6 @@ void HandleManagedFault(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext)
     exInfo._stackBoundsPassNumber = 1;
     exInfo._kind = ExKind::HardwareFault;
     exInfo._idxCurClause = 0xffffffff;
-    //exInfo._pRD = &rd;
     exInfo._stackTraceInfo.Init();
     exInfo._stackTraceInfo.AllocateStackTrace();
     exInfo._pFrame = GetThread()->GetFrame();

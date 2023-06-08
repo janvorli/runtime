@@ -595,11 +595,6 @@ namespace System.Runtime
 
             [FieldOffset(AsmOffsets.OFFSETOF__ExInfo__m_notifyDebuggerSP)]
             internal volatile UIntPtr _notifyDebuggerSP;
-
-#if !NATIVEAOT
-            [FieldOffset(AsmOffsets.OFFSETOF__ExInfo__m_pRD)]
-            internal REGDISPLAY *_pRD;
-#endif
         }
 
         //
@@ -919,7 +914,9 @@ namespace System.Runtime
             // want to know about funclets, so we strip them out by only reporting the first frame of a
             // sequence of funclets.  This is correct because the leafmost funclet is first in the sequence
             // and corresponds to the current 'IP state' of the method.
+#if NATIVEAOT
             if ((prevFramePtr == UIntPtr.Zero) || (curFramePtr != prevFramePtr))
+#endif
             {
                 AppendExceptionStackFrameViaClasslib(exceptionObj, ip, sp, ref exInfo,
                     ref isFirstRethrowFrame, ref isFirstFrame);

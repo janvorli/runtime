@@ -595,11 +595,6 @@ namespace System.Runtime
 
             [FieldOffset(AsmOffsets.OFFSETOF__ExInfo__m_notifyDebuggerSP)]
             internal volatile UIntPtr _notifyDebuggerSP;
-
-#if !NATIVEAOT
-            [FieldOffset(AsmOffsets.OFFSETOF__ExInfo__m_pRD)]
-            internal REGDISPLAY *_pRD;
-#endif
         }
 
         //

@@ -68,7 +68,6 @@ VPTR_CLASS(HelperMethodFrame_PROTECTOBJ)
 #ifdef FEATURE_HIJACK
 VPTR_CLASS(HijackFrame)
 #endif
-VPTR_CLASS(ThrowMethodFrame)
 VPTR_CLASS(InlinedCallFrame)
 VPTR_CLASS(MulticastFrame)
 VPTR_CLASS(PInvokeCalliFrame)

@@ -7,14 +7,14 @@ using System.Runtime.InteropServices;
 
 namespace System.Runtime
 {
-    [StructLayout(LayoutKind.Explicit, Size = AsmOffsets.SIZEOF__PAL_LIMITED_CONTEXT)]
+    [StructLayout(LayoutKind.Explicit, Size = AsmOffsets.SIZEOF__CONTEXT)]
     internal unsafe struct CONTEXT
     {
-        [FieldOffset(AsmOffsets.OFFSETOF__PAL_LIMITED_CONTEXT__IP)]
+        [FieldOffset(AsmOffsets.OFFSETOF__CONTEXT__IP)]
         internal IntPtr IP;
-        [FieldOffset(AsmOffsets.OFFSETOF__PAL_LIMITED_CONTEXT__SP)]
+        [FieldOffset(AsmOffsets.OFFSETOF__CONTEXT__SP)]
         internal IntPtr SP;
-        [FieldOffset(AsmOffsets.OFFSETOF__PAL_LIMITED_CONTEXT__FP)]
+        [FieldOffset(AsmOffsets.OFFSETOF__CONTEXT__FP)]
         internal UIntPtr FP;
         // the rest of the struct is left unspecified.
     }

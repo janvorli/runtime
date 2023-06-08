@@ -5412,34 +5412,34 @@ BOOL HandleHardwareException(PAL_SEHException* ex)
         }
 
 #if 1
-    REGDISPLAY rd;
-    rd.pContext = ex->GetContextRecord();
-    Thread *pThread = GetThread();
+        REGDISPLAY rd;
+        rd.pContext = ex->GetContextRecord();
+        Thread *pThread = GetThread();
 
-    ExInfo exInfo = {};
-    InitializeExInfo(pThread, ex->GetContextRecord(), &rd, FALSE, &exInfo);  
-    exInfo._kind = ExKind::HardwareFault;
+        ExInfo exInfo = {};
+        InitializeExInfo(pThread, ex->GetContextRecord(), &rd, FALSE, &exInfo);  
+        exInfo._kind = ExKind::HardwareFault;
 
-    DWORD exceptionCode = ex->GetExceptionRecord()->ExceptionCode;
-    if (exceptionCode == STATUS_ACCESS_VIOLATION)
-    {
-        #define NULL_AREA_SIZE   (64 * 1024)
-        if (ex->GetExceptionRecord()->ExceptionInformation[1] < NULL_AREA_SIZE)
+        DWORD exceptionCode = ex->GetExceptionRecord()->ExceptionCode;
+        if (exceptionCode == STATUS_ACCESS_VIOLATION)
         {
-            exceptionCode = 0; //STATUS_REDHAWK_NULL_REFERENCE;
+            #define NULL_AREA_SIZE   (64 * 1024)
+            if (ex->GetExceptionRecord()->ExceptionInformation[1] < NULL_AREA_SIZE)
+            {
+                exceptionCode = 0; //STATUS_REDHAWK_NULL_REFERENCE;
+            }
         }
-    }
 
-    GCPROTECT_BEGIN(exInfo._exception);
-    PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROWHW_EX);
-    DECLARE_ARGHOLDER_ARRAY(args, 2);
-    args[ARGNUM_0] = DWORD_TO_ARGHOLDER(exceptionCode);
-    args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
+        GCPROTECT_BEGIN(exInfo._exception);
+        PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROWHW_EX);
+        DECLARE_ARGHOLDER_ARRAY(args, 2);
+        args[ARGNUM_0] = DWORD_TO_ARGHOLDER(exceptionCode);
+        args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
 
-    //Ex.RhThrowHwEx(exceptionCode, &exInfo)
-    CALL_MANAGED_METHOD_NORET(args)
+        //Ex.RhThrowHwEx(exceptionCode, &exInfo)
+        CALL_MANAGED_METHOD_NORET(args)
 
-    GCPROTECT_END();
+        GCPROTECT_END();
 #else        
         DispatchManagedException(*ex, true /* isHardwareException */);
 #endif        

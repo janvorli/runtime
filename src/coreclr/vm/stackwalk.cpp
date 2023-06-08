@@ -1172,7 +1172,6 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, REGDISPLAY* pRD,
 
     bool result = false;
     BEGIN_QCALL;
-    // TODO: unhijack?
 
     CONTEXT* pStackwalkCtx = pRD->pContext;
     Thread* pThread = GET_THREAD();
@@ -1188,7 +1187,6 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, REGDISPLAY* pRD,
 
     {
         ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-        //fprintf(stderr, "RhpSfiInit pass %d\n", (int)pExInfo->_passNumber);
 
         if (pExInfo->_passNumber == 1)
         {
@@ -1211,17 +1209,9 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, REGDISPLAY* pRD,
                 EECodeManager::EnsureCallerContextIsValid(pExInfo->_frameIter.m_crawl.GetRegisterSet(), NULL);
                 pExInfo->_sfCallerOfActualHandlerFrame = CallerStackFrame::FromRegDisplay(pExInfo->_frameIter.m_crawl.GetRegisterSet());//pThis->m_pNextExInfo->_csfEnclosingClause;
 #endif       
-                // EH_CLAUSE_ENUMERATOR EHEnum;
-                // const METHODTOKEN& MethToken = pThis->m_crawl.GetMethodToken();
-                // IJitManager* pJitMan = pThis->m_crawl.GetJitManager();
-                // pJitMan->InitializeEHEnumeration(MethToken, &EHEnum);
-                // EHEnum.iCurrentPos = pExInfo->_idxCurClause;
-                // memset(&pExInfo->_ClauseForCatch, 0, sizeof(EE_ILEXCEPTION_CLAUSE));
-                // pJitMan->GetNextEHClause(&EHEnum, &pExInfo->_ClauseForCatch);
-                // _ASSERTE(memcmp(&pExInfo->_ClauseForCatch, &pExInfo->_CurrentClause, sizeof(EE_ILEXCEPTION_CLAUSE)) == 0);
                 // the 1st pass has just ended, so the _CurrentClause is the catch clause
                 pExInfo->_ClauseForCatch = pExInfo->_CurrentClause;
-                // TODO: Experimental
+
                 MethodDesc *pMD = pExInfo->_frameIter.m_crawl.GetFunction();
                 TADDR sp = GetRegdisplaySP(pExInfo->_frameIter.m_crawl.GetRegisterSet());
                 if (pMD->IsILStub())
@@ -1274,20 +1264,11 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, REGDISPLAY* pRD,
         SetFP(pStackwalkCtx, 0);
     }
 #endif
-    // memset(pStackwalkCtx, 0x00, sizeof(T_CONTEXT));
-    // pStackwalkCtx->ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-    // SetIP(pStackwalkCtx, 0);
-    // SetSP(pStackwalkCtx, 0);
-    // SetFP(pStackwalkCtx, 0);
-    //LOG((LF_GCROOTS, LL_INFO100000, "STACKWALK    starting with partial context\n"));
     pThread->FillRegDisplay(pRD, pStackwalkCtx);
 
     //pThread->InitRegDisplay(pRD, pStackwalkCtx, false);
     memset(pThis, 0, sizeof(StackFrameIterator));
     result = pThis->Init(pThread, pFrame, pRD, THREAD_EXECUTING_MANAGED_CODE | HANDLESKIPPEDFRAMES/* | FUNCTIONSONLY*/) != FALSE;
-
-    // Q: I am not sure if this should be set here or in the Next - to be specific - what it should really cover. The problem
-    // is that after this call, the EH will process the current stack frame. It is not clear then how the stack walk with GC should consider this frame.
 
     // TODO: check if this is needed at all
     while (result && pThis->GetFrameState() != StackFrameIterator::SFITER_FRAMELESS_METHOD)
@@ -1360,15 +1341,6 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
         pThis->m_crawl.GetRegisterSet()->ControlPC += 1;
     #endif
 
-    // TODO: unhijack?
-    // TODO: detect collided unwind and set uExCollideClauseIdx
-    // Collided unwind can be detected by passing through the catch handler call. We could do that by processing the explicit frames and checking for pinvoke frames
-    // that refer to RhpCallCatchFunclet or maybe just checking that we've passed through System.Runtime.EH.DispatchEx.
-    // The NativeAOT stack frame iterator also has m_pNextExInfo that it uses for collision detection too. It is set when the stack frame iterator is initialized to the one from the Thread
-    // Maybe we could just skip frames until we cross the Thread::m_pExInfo location?
-
-    //fprintf(stderr, "RhpSfiNext\n");
-
     Thread* pThread = GET_THREAD();
     Frame* pFrame = pThread->GetFrame();
     MarkInlinedCallFrameAsEHHelperCall(pFrame);
@@ -1381,8 +1353,6 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
     bool exCollide = false;
     ExInfo* pExInfo = pThis->m_pNextExInfo;
     ExInfo* pTopExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-
-    //pTopExInfo->_csfEnclosingClause.Clear();
 
     // Check for reverse pinvoke, but eliminate the case when the caller is managed, see TestUnmanagedCallersOnlyViaUnmanagedCalli_ThrowException
     if (!ExecutionManager::IsManagedCode(GetIP(pThis->m_crawl.GetRegisterSet()->pCallerContext)))
@@ -1429,7 +1399,6 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
 
         if (invalidRevPInvoke)
         {
-//          __debugbreak();
             retVal = pThis->Next();
             _ASSERTE(retVal != SWA_FAILED);
             return true;
@@ -1489,7 +1458,6 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                         if ((pThis->m_pNextExInfo->_stackBoundsPassNumber == 1) ||
                             (pThis->m_pNextExInfo->_idxCurClause == 0xFFFFFFFF))
                         {
-//                            __debugbreak();
                             _ASSERTE_MSG(FALSE, "did not expect to collide with a 1st-pass ExInfo during a EH stackwalk");
                             ExInfo* pPrevExInfo = pThis->m_pNextExInfo->_pPrevExInfo;
                             pThis->Init(pThread, pThis->m_pNextExInfo->_pFrame, (REGDISPLAY*)pThis->m_pNextExInfo->_pExContext, pThis->m_flags);
@@ -1520,10 +1488,6 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                         // TODO: Handle Non-exceptionally invoked funclet case. Hmm, is this the right place?
                     }
                 }
-            }
-            else if (ThrowMethodFrame::GetMethodFrameVPtr() == pFrame->GetVTablePtr())
-            {
-                // passing through exception throwing site
             }
             else if (pTopExInfo->_passNumber == 1)
             {

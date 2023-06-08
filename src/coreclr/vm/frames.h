@@ -190,7 +190,6 @@ FRAME_TYPE_NAME(ResumableFrame)
 FRAME_TYPE_NAME(RedirectedThreadFrame)
 #endif // FEATURE_HIJACK
 FRAME_TYPE_NAME(FaultingExceptionFrame)
-FRAME_TYPE_NAME(ThrowMethodFrame)
 #ifdef DEBUGGING_SUPPORTED
 FRAME_TYPE_NAME(FuncEvalFrame)
 #endif // DEBUGGING_SUPPORTED
@@ -1737,37 +1736,6 @@ protected:
     {
         LIMITED_METHOD_CONTRACT;
     }
-};
-
-class ThrowMethodFrame : public FramedMethodFrame
-{
-    VPTR_VTABLE_CLASS(ThrowMethodFrame, FramedMethodFrame)
-
-public:
-#ifndef DACCESS_COMPILE
-    ThrowMethodFrame(TransitionBlock * pTransitionBlock)
-        : FramedMethodFrame(pTransitionBlock, NULL)
-    {
-        LIMITED_METHOD_CONTRACT;
-    }
-#endif // DACCESS_COMPILE
-
-    int GetFrameType()
-    {
-        LIMITED_METHOD_DAC_CONTRACT;
-        return TYPE_CALL; // ???
-    }
-
-    // virtual BOOL IsTransitionToNativeFrame()
-    // {
-    //     LIMITED_METHOD_CONTRACT;
-    //     return TRUE;
-    // }
-
-
-protected:
-
-    DEFINE_VTABLE_GETTER_AND_CTOR_AND_DTOR(ThrowMethodFrame)
 };
 
 //------------------------------------------------------------------------
