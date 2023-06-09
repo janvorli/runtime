@@ -6358,7 +6358,7 @@ bool ExceptionTracker::IsInStackRegionUnwoundBySpecifiedException(CrawlFrame * p
 
     // The tracker must be in the second pass, and its stack range must not be empty.
     if ( (pExInfo == NULL) ||
-         (pExInfo->_stackBoundsPassNumber == 1) ||
+         (pExInfo->_passNumber == 1) ||
          (pExInfo->_sfLowBound.IsMaxVal() &&
          pExInfo->_sfHighBound.IsNull()))
     {

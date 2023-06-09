@@ -49,7 +49,6 @@ struct ExInfo
     ExKind _kind;
 
     uint8_t _passNumber;
-    uint8_t _stackBoundsPassNumber;
 
     // BEWARE: This field is used by the stackwalker to know if the dispatch code has reached the
     //         point at which a handler is called.  In other words, it serves as an "is a handler

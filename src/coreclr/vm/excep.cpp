@@ -2839,7 +2839,6 @@ void InitializeExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, BOOL reth
     pExInfo->_pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
     pExInfo->_pExContext = pRD;
     pExInfo->_passNumber = 1;
-    pExInfo->_stackBoundsPassNumber = 1;
     pExInfo->_kind = rethrow ? ExKind::None : ExKind::Throw;
     pExInfo->_idxCurClause = 0xffffffff;
     pExInfo->_stackTraceInfo.Init(); // TODO: how about this vs rethrow arg?
@@ -6650,7 +6649,6 @@ void HandleManagedFault(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext)
     exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
     exInfo._pExContext = &rd;//ctx; // TODO: or the pContext? The RtlRestoreContext fails if I use this context (with patched Rip) for some reason
     exInfo._passNumber = 1;
-    exInfo._stackBoundsPassNumber = 1;
     exInfo._kind = ExKind::HardwareFault;
     exInfo._idxCurClause = 0xffffffff;
     exInfo._stackTraceInfo.Init();

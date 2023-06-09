@@ -1196,7 +1196,7 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, REGDISPLAY* pRD,
             UpdatePerformanceMetrics(&pThis->m_crawl, false, ((uint8_t)pExInfo->_kind & (uint8_t)ExKind::RethrowFlag) == 0);
         }
 
-        if (pExInfo->_stackBoundsPassNumber == 1 && pExInfo->_passNumber == 2)
+        if (pExInfo->_passNumber == 2)
         {
             // Clear the enclosing clause to indicate we have not processed any 2nd pass funclet yet.
             pExInfo->_csfEnclosingClause.Clear();
@@ -1306,8 +1306,6 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, REGDISPLAY* pRD,
 
     pThis->m_pNextExInfo->_sfLowBound = GetRegdisplaySP(pThis->m_crawl.GetRegisterSet());
 
-    // Prevent race between setting the pass number and the range
-    pThis->m_pNextExInfo->_stackBoundsPassNumber = pThis->m_pNextExInfo->_passNumber;
     ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
 
     _ASSERTE(!result || pThis->GetFrameState() == StackFrameIterator::SFITER_FRAMELESS_METHOD);
@@ -1455,7 +1453,7 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                             _ASSERTE_MSG(FALSE, "StackFrameIterator::Next failed");
                         }
                         exCollide = true;
-                        if ((pThis->m_pNextExInfo->_stackBoundsPassNumber == 1) ||
+                        if ((pThis->m_pNextExInfo->_passNumber == 1) ||
                             (pThis->m_pNextExInfo->_idxCurClause == 0xFFFFFFFF))
                         {
                             _ASSERTE_MSG(FALSE, "did not expect to collide with a 1st-pass ExInfo during a EH stackwalk");
@@ -2085,7 +2083,7 @@ StackWalkAction StackFrameIterator::Filter(void)
             if (!m_movedPastFirstExInfo)
             {
                 // we are in the 2nd pass and we have already called an exceptionally called finally funclet, but we have not seen any funclet on the call stack yet.
-                if (pExInfo->_stackBoundsPassNumber == 2 && !pExInfo->_csfEnclosingClause.IsNull() && m_sfFuncletParent.IsNull())
+                if (pExInfo->_passNumber == 2 && !pExInfo->_csfEnclosingClause.IsNull() && m_sfFuncletParent.IsNull())
                 {
                     m_sfFuncletParent = (StackFrame)pExInfo->_csfEnclosingClause;
                     m_sfParent = m_sfFuncletParent;
