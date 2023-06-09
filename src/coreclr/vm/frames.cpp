@@ -1052,7 +1052,6 @@ void GCFrame::Pop()
     // It also cancels the GC protection provided by the frame.
 
     _ASSERTE(m_pCurThread->GetGCFrame() == this && "Popping a GCFrame out of order ?");
-    
     m_pCurThread->SetGCFrame(m_Next);
     m_Next = NULL;
 

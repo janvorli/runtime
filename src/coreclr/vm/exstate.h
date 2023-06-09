@@ -50,9 +50,6 @@ class ThreadExceptionState
 
 #ifdef FEATURE_EH_FUNCLETS
     friend class ExceptionTracker;
-    // friend struct ExInfo;
-    // friend void HandleManagedFault(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext);
-    // friend extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalkCtx, REGDISPLAY* pRD, bool instructionFault);
 #else
     friend class ExInfo;
 #endif // FEATURE_EH_FUNCLETS

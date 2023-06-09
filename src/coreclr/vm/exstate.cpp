@@ -331,14 +331,7 @@ PTR_CONTEXT ThreadExceptionState::GetContextRecord()
     }
     else if (m_pExInfo)
     {
-        // if (m_pExInfo->_pFrame->GetVTablePtr() == FaultingExceptionFrame::GetMethodFrameVTbl())
-        // {
-        //     return ((FaultingExceptionFrame*)m_pExInfo->_pFrame)->GetExceptionContext();
-        // }
-        // else
-        {
-            return (PTR_CONTEXT)(CONTEXT*)m_pExInfo->_pExContext;
-        }
+        return (PTR_CONTEXT)(CONTEXT*)m_pExInfo->_pExContext;
     }
     else
     {

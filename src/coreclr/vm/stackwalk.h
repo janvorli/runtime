@@ -436,7 +436,6 @@ public:
 
     const EE_ILEXCEPTION_CLAUSE& GetEHClauseForCatch()
     {
-        //__debugbreak();
         return ehClauseForCatch;
     }
 
@@ -579,8 +578,6 @@ public:
     // calling ResetRegDisp() on it.
     StackFrameIterator(Thread * pThread, PTR_Frame pFrame, ULONG32 flags);
 
-    //void Clone(StackFrameIterator *pSource);
-
     //
     // We should consider merging Init() and ResetRegDisp().
     //
@@ -608,7 +605,6 @@ public:
 
     // advance to the next frame according to the stackwalk flags
     StackWalkAction Next(void);
-    StackWalkAction NextSimple(void);
 
     enum FrameState
     {

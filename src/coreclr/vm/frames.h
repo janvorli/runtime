@@ -2870,10 +2870,11 @@ public:
     virtual void UpdateRegDisplay(const PREGDISPLAY);
 
     // m_Datum contains MethodDesc ptr or
-    // - on AMD64: CALLI target address (if lowest bit is set)
-    //             bit 1 set indicates invoking RhpCallCatchFunclet and others, other bits contain info on which one was called
-    //                 bit 2 indicates RhpCallCatchFunclet or RhpCallFinallyFunclet
-    // - on X86: argument stack size (if value is <64k)
+    // - on 64 bit host: CALLI target address (if lowest bit is set)
+    //                   bit 1 set indicates invoking RhpCallCatchFunclet and others, other bits contain info on which one was called
+    //                   bit 2 indicates RhpCallCatchFunclet or RhpCallFinallyFunclet
+    // - on 32 bit host: argument stack size (if value is <64k)
+    // TODO: fix this for ARM!
     // See code:HasFunction.
     PTR_NDirectMethodDesc   m_Datum;
 

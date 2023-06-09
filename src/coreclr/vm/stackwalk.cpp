@@ -776,7 +776,6 @@ void Thread::DebugLogStackWalkInfo(CrawlFrame* pCF, _In_z_ LPCSTR pszTag, UINT32
 {
     LIMITED_METHOD_CONTRACT;
     SUPPORTS_DAC;
-
     if (pCF->isFrameless)
     {
         LPCSTR pszType = "";
@@ -836,19 +835,6 @@ StackWalkAction Thread::MakeStackwalkerCallback(
     VOID* pData
     DEBUG_ARG(UINT32 uFramesProcessed))
 {
-#ifdef _DEBUG
-    // char msg[1024];
-    // if (pCF->IsFrameless())
-    // {
-    //     sprintf(msg, "MakeStackwalkerCallback for SP=%p, PC=%p (%s.%s)\n", (void*)GetRegdisplaySP(pCF->pRD), (void*)GetControlPC(pCF->pRD), pCF->pFunc->m_pszDebugClassName, pCF->pFunc->m_pszDebugMethodName);
-    // }
-    // else
-    // {
-    //     sprintf(msg, "MakeStackwalkerCallback for framed SP=%p, PC=%p\n", (void*)GetRegdisplaySP(pCF->pRD), (void*)GetControlPC(pCF->pRD));
-    // }
-    // OutputDebugStringA(msg);
-#endif    
-
     INDEBUG(DebugLogStackWalkInfo(pCF, "CALLBACK", uFramesProcessed));
 
     // Since we may be asynchronously walking another thread's stack,
@@ -1136,14 +1122,6 @@ void StackFrameIterator::CommonCtor(Thread * pThread, PTR_Frame pFrame, ULONG32 
 } // StackFrameIterator::CommonCtor()
 
 #ifndef DACCESS_COMPILE
-extern "C" void QCALLTYPE RhpCaptureCallerContext(CONTEXT* pStackwalkCtx)
-{
-    Thread* pThread = GetThread();
-    RtlCaptureContext(pStackwalkCtx);
-    Thread::VirtualUnwindToFirstManagedCallFrame(pStackwalkCtx);
-    Thread::VirtualUnwindCallFrame(pStackwalkCtx);
-}
-
 void ResetNextExInfoForSP(StackFrameIterator* pThis, TADDR SP)
 {
     while (pThis->m_pNextExInfo && (pThis->m_crawl.GetRegisterSet()->SP > (TADDR)(pThis->m_pNextExInfo)))
@@ -1378,8 +1356,6 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
             {
                 pTopExInfo->_propagateExceptionCallback = callback;
                 pTopExInfo->_propagateExceptionContext = callbackCxt;
-                // ex.SetPropagateExceptionCallback(callback, callbackCxt);
-                // _ASSERTE(ex.HasPropagateExceptionCallback());
             }
         }
         else
@@ -1415,8 +1391,6 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
         *uExCollideClauseIdx = 0xffffffff;
         bool doingFuncletUnwind = pThis->m_crawl.IsFunclet();
 
-        TADDR prevSP = pThis->m_crawl.GetRegisterSet()->SP;
-        TADDR prevPC = pThis->m_crawl.GetRegisterSet()->ControlPC;
         retVal = pThis->Next();
 
         if (pThis->GetFrameState() == StackFrameIterator::SFITER_DONE)
@@ -1444,8 +1418,6 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                     if (doingFuncletUnwind)
                     {
                         // Unwind the RhpCallCatchFunclet
-                        prevSP = pThis->m_crawl.GetRegisterSet()->SP;
-                        prevPC = pThis->m_crawl.GetRegisterSet()->ControlPC;
                         retVal = pThis->Next();
                         if (retVal == SWA_FAILED)
                         {
@@ -2005,39 +1977,6 @@ StackWalkAction StackFrameIterator::Next(void)
     return retVal;
 }
 
-// StackWalkAction StackFrameIterator::NextSimple(void)
-// {
-//     WRAPPER_NO_CONTRACT;
-//     SUPPORTS_DAC;
-
-//     if (!IsValid())
-//     {
-//         return SWA_FAILED;
-//     }
-
-//     BEGIN_FORBID_TYPELOAD();
-//     Thread::VirtualUnwindCallFrame(m_crawl.pRD->pCurrentContext);//, NULL, &m_crawl.codeInfo);
-//     m_crawl.pRD->SP = m_crawl.pRD->pCurrentContext->Rsp;
-//     m_crawl.pRD->ControlPC = m_crawl.pRD->pCurrentContext->Rip;
-//     // DWORD64 rbp = m_crawl.pRD->pCurrentContext->Rbp;
-//     // m_crawl.pRD->pCurrentContext->Rbp = *(DWORD64*)rbp;
-//     // m_crawl.pRD->pCurrentContext->Rip = *(DWORD64*)(rbp + 8);
-//     // m_crawl.pRD->ControlPC = m_crawl.pRD->pCurrentContext->Rip;
-//     // m_crawl.pRD->pCurrentContext->Rsp = rbp + 16;
-//     // m_crawl.pRD->SP = m_crawl.pRD->pCurrentContext->Rsp;
-//     StackWalkAction retVal = SWA_CONTINUE;
-
-//     ProcessIp(GetControlPC(m_crawl.pRD));
-//     // StackWalkAction retVal = NextRaw();
-//     // if (retVal == SWA_CONTINUE)
-//     // {
-//     //     retVal = Filter();
-//     // }
-
-//     END_FORBID_TYPELOAD();
-//     return retVal;
-// }
-
 //---------------------------------------------------------------------------------------
 //
 // Check whether we should stop at the current frame given the stackwalk flags.
@@ -2093,7 +2032,6 @@ StackWalkAction StackFrameIterator::Filter(void)
                     STRESS_LOG3(LF_GCROOTS, LL_INFO100,
                                         "STACKWALK: Moved over first ExInfo @ %p in second pass, SP: %p, Enclosing clause: %p\n",
                                         pExInfo, (void*)m_crawl.GetRegisterSet()->SP, (void*)m_sfFuncletParent.SP);                
-                    //_ASSERTE_MSG(FALSE, "(##################################)");
                 }
                 m_movedPastFirstExInfo = true;
             }
@@ -2295,16 +2233,12 @@ ProcessFuncletsForGCReporting:
                                         // can use it.
                                         m_sfParent = m_sfIntermediaryFuncletParent;
                                         fSkipFuncletCallback = false;
-                                        // //if (!m_movedPastFirstExInfo)
-                                        // {
-                                        //     _ASSERTE_MSG(FALSE, "Should not find funclet while scanning filter parent and be below first exinfo");
-                                        //     // Only the first managed EH code is force reported
+
                                         if (!ExecutionManager::IsManagedCode(GetIP(m_crawl.GetRegisterSet()->pCallerContext)))
                                         {
                                             m_forceReportingWhileSkipping = 1;
                                             STRESS_LOG0(LF_GCROOTS, LL_INFO100, "STACKWALK: Setting m_forceReportingWhileSkipping = 1\n");
                                         }
-                                        // }
 #ifdef _DEBUG
 //                                        OutputDebugStringA(" Enabling the forced reporting (1)\n");
 #endif                                        
@@ -2346,15 +2280,12 @@ ProcessFuncletsForGCReporting:
                                         // Set the parent frame so that the funclet skipping logic (further below)
                                         // can use it.
                                         m_sfParent = m_sfFuncletParent;
-                                        //if (!m_movedPastFirstExInfo)
+                                        // TODO: this is a hack, we need a better way - maybe detect passing over pinvoke frame to catch / finally
+                                        if (!ExecutionManager::IsManagedCode(GetIP(m_crawl.GetRegisterSet()->pCallerContext)))
                                         {
-                                            // TODO: this is a hack, we need a better way - maybe detect passing over pinvoke frame to catch / finally
-                                            if (!ExecutionManager::IsManagedCode(GetIP(m_crawl.GetRegisterSet()->pCallerContext)))
-                                            {
-                                                // Only the first managed EH code is force reported
-                                                m_forceReportingWhileSkipping = 1;
-                                                STRESS_LOG0(LF_GCROOTS, LL_INFO100, "STACKWALK: Setting m_forceReportingWhileSkipping = 1\n");
-                                            }
+                                            // Only the first managed EH code is force reported
+                                            m_forceReportingWhileSkipping = 1;
+                                            STRESS_LOG0(LF_GCROOTS, LL_INFO100, "STACKWALK: Setting m_forceReportingWhileSkipping = 1\n");
                                         }
 #ifdef _DEBUG
 //                                        OutputDebugStringA(" Enabling the forced reporting (2)\n");
@@ -2529,7 +2460,6 @@ ProcessFuncletsForGCReporting:
                                         if (pExInfo->_sfCallerOfActualHandlerFrame == m_sfFuncletParent)
                                         //if (pTracker->GetCallerOfActualHandlingFrame() == m_sfFuncletParent)
                                         {
-                                            //_ASSERTE_MSG(FALSE, "@#$@#$@#$@#$@#$@#$");
                                             // we should not skip reporting for this parent frame
                                             shouldSkipReporting = false;
 
@@ -2543,10 +2473,7 @@ ProcessFuncletsForGCReporting:
                                             // would report garbage values as live objects. So instead parent can use the IP of the resume
                                             // address of catch funclet to report live GC references.
                                             m_crawl.fShouldParentFrameUseUnwindTargetPCforGCReporting = true;
-                                            // Store catch clause info. Helps retrieve IP of resume address.
-                                            //m_crawl.ehClauseForCatch = pTracker->GetEHClauseForCatch();
                                             
-                                            //TODO: fixme
                                             m_crawl.ehClauseForCatch = pExInfo->_ClauseForCatch;
 
                                             // STRESS_LOG3(LF_GCROOTS, LL_INFO100,
@@ -2572,34 +2499,17 @@ ProcessFuncletsForGCReporting:
                                             STRESS_LOG0(LF_GCROOTS, LL_INFO100,
                                                 "STACKWALK: Reached parent of funclet which didn't report GC roots is not a funclet, resetting m_fDidFuncletReportGCReferences to true\n");
                                         }
-                                        // else if (m_fFuncletNotSeen)
-                                        // {
-                                        //     m_fDidFuncletReportGCReferences = true;
-                                        //     STRESS_LOG0(LF_GCROOTS, LL_INFO100,
-                                        //         "STACKWALK: Reached parent of unseen funclet which didn't report GC roots is a funclet, resetting m_fDidFuncletReportGCReferences to true\n");
 
-                                        // }
-
-                                        // baseservices\exceptions\unittests\ThrowInFinally\ThrowInFinally.cmd
-                                        // * fails if we check for the unwound status
-                                        // * fails if we set the m_fDidFuncletReportGCReferences
-                                        // baseservices\exceptions\unittests\EHPatternTests\EHPatternTests.cmd
-                                        // * needs the unwound check together with the "else if" above
                                         _ASSERTE(!ExceptionTracker::HasFrameBeenUnwoundByAnyActiveException(&m_crawl));
                                         if (m_fFuncletNotSeen && m_crawl.IsFunclet())
                                         {
                                             _ASSERTE(!m_fProcessIntermediaryNonFilterFunclet);
                                             _ASSERTE(m_crawl.fShouldCrawlframeReportGCReferences);
                                             m_fDidFuncletReportGCReferences = true;
-                                            shouldSkipReporting = false;//fShouldCrawlframeReportGCReferences
+                                            shouldSkipReporting = false;
                                             m_crawl.fShouldParentFrameUseUnwindTargetPCforGCReporting = true;
                                             m_crawl.ehClauseForCatch = pExInfo->_ClauseForCatch;
                                         }                                                
-
-                                        // if (m_fFuncletNotSeen)
-                                        // {
-                                        //     shouldSkipReporting = false;
-                                        // }
 
                                         // STRESS_LOG4(LF_GCROOTS, LL_INFO100,
                                         // "Funclet didn't report references: handling frame: %p, m_sfFuncletParent = %p, is funclet: %d, skip reporting %d\n",
@@ -3842,54 +3752,6 @@ void StackFrameIterator::PostProcessingForNoFrameTransition()
     m_crawl.taNoFrameTransitionMarker = NULL;
 #endif // ELIMINATE_FEF
 } // StackFrameIterator::PostProcessingForNoFrameTransition()
-
-// void StackFrameIterator::Clone(StackFrameIterator *pSource)
-// {
-//     // keep the regdisplay
-//     REGDISPLAY *pRD = m_crawl.pRD;
-//     memcpy(this, pSource, sizeof(StackFrameIterator));
-//     // put back the regdisplay
-//     m_crawl.pRD = pRD;
-
-//     REGDISPLAY *pSourceRD = pSource->m_crawl.pRD;
-
-// // When the source context pointer points into the source context, set the context pointer to point to the current context
-// // otherwise copy the source context pointer.
-// #define CALLEE_SAVED_REGISTER(regname) \
-//     pRD->pCurrentContext->regname = pSourceRD->pCurrentContext->regname; \
-//     if (pSourceRD->pCurrentContextPointers->regname == &pSourceRD->pCurrentContext->regname) \
-//     { \
-//         pRD->pCurrentContextPointers->regname = &pRD->pCurrentContext->regname; \
-//     } \
-//     else \
-//     { \
-//         pRD->pCurrentContextPointers->regname = pSourceRD->pCurrentContextPointers->regname; \
-//     }
-
-//     ENUM_CALLEE_SAVED_REGISTERS()
-// #undef CALLEE_SAVED_REGISTER
-
-// #define CALLEE_SAVED_REGISTER(regname) \
-//     pRD->pCallerContext->regname = pSourceRD->pCallerContext->regname; \
-//     if (pSourceRD->pCallerContextPointers->regname == &pSourceRD->pCallerContext->regname) \
-//     { \
-//         pRD->pCallerContextPointers->regname = &pRD->pCallerContext->regname; \
-//     } \
-//     else \
-//     { \
-//         pRD->pCallerContextPointers->regname = pSourceRD->pCallerContextPointers->regname; \
-//     }
-
-//     ENUM_CALLEE_SAVED_REGISTERS()
-// #undef CALLEE_SAVED_REGISTER
-
-//     pRD->SP = pSourceRD->SP;
-//     pRD->ControlPC = pSourceRD->ControlPC;
-//     pRD->pCurrentContext->Rip = pSourceRD->pCurrentContext->Rip;
-//     pRD->pCurrentContext->Rsp = pSourceRD->pCurrentContext->Rsp;
-//     pRD->pCallerContext->Rip = pSourceRD->pCallerContext->Rip;
-//     pRD->pCallerContext->Rsp = pSourceRD->pCallerContext->Rsp;
-// }
 
 #if defined(TARGET_AMD64) && !defined(DACCESS_COMPILE)
 static CrstStatic g_StackwalkCacheLock;                // Global StackwalkCache lock; only used on AMD64

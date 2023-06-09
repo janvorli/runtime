@@ -886,7 +886,6 @@ ProcessCLRException(IN     PEXCEPTION_RECORD   pExceptionRecord,
     }
     else
     {
-//        __debugbreak();
         GCX_COOP();
         // TODO: use something else than faulting exception frame???
         FrameWithCookie<FaultingExceptionFrame> frameWithCookie;
@@ -899,7 +898,6 @@ ProcessCLRException(IN     PEXCEPTION_RECORD   pExceptionRecord,
         OBJECTREF oref = ExceptionTracker::CreateThrowable(pExceptionRecord, FALSE) ;// CreateCOMPlusExceptionObject(pThread, pExceptionRecord, FALSE);
         RealCOMPlusThrowEx(oref);
     }
-    //__debugbreak();
     EEPOLICY_HANDLE_FATAL_ERROR_WITH_MESSAGE(E_FAIL, _T("SEH exception leaked into managed code"));
 #endif // HOST_UNIX
     // We must preserve this so that GCStress=4 eh processing doesnt kill last error.
@@ -7032,9 +7030,6 @@ StackFrame ExceptionTracker::FindParentStackFrameHelper(CrawlFrame* pCF,
         }
     }
 #if 1
-//This is wrong, especially the detection of whether we've unwound any frames in the ExInfo.
-//Idea: we can save the current SP in the RhpCallCatchFunclet similar to what coreclr does. 
-//Q: what is the difference between the pCurrentTracker->m_EHClauseInfo and pCurrentTracker->m_EnclosingClauseInfo?
     for (PTR_ExInfo pCurrentExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
          pCurrentExInfo != NULL;
          pCurrentExInfo = pCurrentExInfo->_pPrevExInfo)
@@ -7049,10 +7044,6 @@ StackFrame ExceptionTracker::FindParentStackFrameHelper(CrawlFrame* pCF,
         CallerStackFrame csfFunclet = pCurrentExInfo->_csfEHClause;
         if (csfCurrent == csfFunclet)
         {
-            //_ASSERTE_MSG(FALSE, "$%$%$%$%$%$%$%");
-#ifndef DACCESS_COMPILE            
-//            __debugbreak();
-#endif            
             sfResult = (StackFrame)pCurrentExInfo->_csfEnclosingClause;
             if (sfResult.IsNull())
             {
@@ -7062,15 +7053,6 @@ StackFrame ExceptionTracker::FindParentStackFrameHelper(CrawlFrame* pCF,
 
             break;
         }          
-/*
-        // We are searching the ExInfo chain from the top of the stack. Once we find one that is above the csfCurrent, we can extract the parent frame from it.
-        if (csfCurrent.SP < (UINT_PTR)pCurrentExInfo)//StackFrame::FromRegDisplay(pCurrentExInfo->_frameIter.m_crawl))
-        {
-            // The coreclr returns the SP of the caller frame instead
-            sfResult = CallerStackFrame::FromRegDisplay(pCurrentExInfo->_frameIter.m_crawl.GetRegisterSet());
-            break;
-        }
-*/        
     }
 #else
     for (pCurrentTracker = pThread->GetExceptionState()->m_pCurrentTracker;
@@ -7460,7 +7442,6 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
             return pvRegDisplay->SP;
         }
 #elif defined(HOST_ARM64)
-        // TODO: fixme
         return pvRegDisplay->SP;
 #elif defined(HOST_ARM)
 #endif        
@@ -7551,33 +7532,12 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         }
     }
 
-    HCIMPL0(void, ThrowThreadAbort)
-    //void ThrowThreadAbort()
-    {
-        FCALL_CONTRACT;
-
-        /* Make no assumptions about the current machine state */
-        ResetCurrentContext();
-
-        FC_GC_POLL_NOT_NEEDED();    // throws always open up for GC
-
-        HELPER_METHOD_FRAME_BEGIN_ATTRIB_NOPOLL(Frame::FRAME_ATTR_EXCEPTION);    // Set up a frame
-
-        Thread* pThread = GET_THREAD();
-        pThread->HandleThreadAbort();
-
-        HELPER_METHOD_FRAME_END();
-    }
-    HCIMPLEND
-
     extern "C" void * QCALLTYPE RhpCallCatchFunclet(QCall::ObjectHandleOnStack exceptionObj, BYTE* pHandlerIP, REGDISPLAY* pvRegDisplay, ExInfo* exInfo)
     {
         QCALL_CONTRACT;
 
         BEGIN_QCALL;
         GCX_COOP_NO_DTOR();
-
-        //fprintf(stderr, "RhpCallCatchFunclet handlerIP=%p\n", pHandlerIP);
 
         Thread* pThread = GET_THREAD();
         Frame* pFrame = pThread->GetFrame();
@@ -7598,7 +7558,6 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
             // TODO: it seems we can evaluate that during GC stack walk 
             exInfo->_csfEnclosingClause = CallerStackFrame::FromRegDisplay(exInfo->_frameIter.m_crawl.GetRegisterSet());
 
-            // TODO: is this the right MethodDesc?
             MethodDesc *pMD = exInfo->_frameIter.m_crawl.GetFunction();
             MakeCallbacksRelatedToHandler(true, pThread, pMD, &exInfo->_ClauseForCatch, (DWORD_PTR)pHandlerIP, GetSP(pvRegDisplay->pCurrentContext));
 
@@ -7612,7 +7571,6 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
                                        CastHandlerFn(pfnHandler),
                                        GetFirstNonVolatileRegisterAddress(pvRegDisplay->pCurrentContext),
                                        pFuncletCallerSP);
-            //fprintf(stderr, "RhpCallCatchFunclet returned with dwResumePC=%p\n", (void*)dwResumePC);
 #else
             dwResumePC = pfnHandler(establisherFrame, OBJECTREFToObject(throwable));
 #endif            
@@ -7622,7 +7580,6 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         }
         else
         {
-            //targetSp = pvRegDisplay->pCallerContext->Rsp;
             targetSp = GetSP(pvRegDisplay->pCurrentContext);
         }
 
@@ -7735,15 +7692,6 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
                 SetIP(pvRegDisplay->pCurrentContext, uAbortAddr);
             }
 
-            // if (pThread->IsAbortRequested())
-            // {
-            //     ULONG64* returnAddress = (ULONG64*)targetSp;
-            //     *returnAddress = pvRegDisplay->pCurrentContext->Rip;
-            //     SetIP(pvRegDisplay->pCurrentContext, (ULONG64)(void (*)())ThrowThreadAbort);
-            //     SetSP(pvRegDisplay->pCurrentContext, targetSp - 8);
-
-            //     RtlRestoreContext(pvRegDisplay->pCurrentContext, NULL);            
-            // }
             ClrRestoreNonvolatileContext(pvRegDisplay->pCurrentContext);
 //            RtlRestoreContext(pvRegDisplay->pCurrentContext, NULL);
         }
@@ -7761,34 +7709,21 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
             }
 #endif // HOST_UNIX
             // Throw exception from the caller context
-            /*
-            Idea:
-            Start with the context of the caller
-            Push the return address
-            Restore the context to a C function that will raise the exception
-            */
 #ifdef HOST_AMD64
             ULONG64* returnAddress = (ULONG64*)targetSp;
-//            *returnAddress = pvRegDisplay->pCallerContext->Rip;
             *returnAddress = pvRegDisplay->pCurrentContext->Rip;
 #elif defined(HOST_ARM64)
             pvRegDisplay->pCurrentContext->Lr = GetIP(pvRegDisplay->pCurrentContext);
 #elif defined(HOST_ARM)
 #endif
-            //oref = exInfo->_exception;
+            // The exception needs to be stored in a place that is not going to be unwound, so
+            // use thread local storage
             thread_local OBJECTREF oref;
-
             oref = exceptionObj.Get();
-            // pvRegDisplay->pCallerContext->Rip = (ULONG64)(void (*)(OBJECTREF))RealCOMPlusThrow;
-            // pvRegDisplay->pCallerContext->Rsp = targetSp - 8;
             SetIP(pvRegDisplay->pCurrentContext, (ULONG64)(void (*)(OBJECTREF))RealCOMPlusThrow);
 #ifdef HOST_AMD64
             SetSP(pvRegDisplay->pCurrentContext, targetSp - 8);
 #endif            
-            // TODO: this doesn't work, the _exception is in a region that's going to be unwound.
-            // And even if that worked, the RaiseTheExceptionInternalOnly that is ultimately called
-            // would still check the throwable on the thread, which would be popped out.
-//            pvRegDisplay->pCallerContext->Rcx = (ULONG64)(size_t)(ULONG64*)&oref;
 #ifdef HOST_AMD64
 #ifdef UNIX_AMD64_ABI
 #define FIRST_ARG_REG Rdi
@@ -7807,8 +7742,7 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
             pvRegDisplay->pCurrentContext->FIRST_ARG_REG = (ULONG64)(size_t)oref;
 #endif            
 #undef FIRST_ARG_REG
-            //ClrRestoreNonvolatileContext(pvRegDisplay->pCallerContext);
-//            RtlRestoreContext(pvRegDisplay->pCallerContext, NULL);
+            //ClrRestoreNonvolatileContext(pvRegDisplay->pCurrentContext);
             RtlRestoreContext(pvRegDisplay->pCurrentContext, NULL);
         }
         END_QCALL;
@@ -7821,7 +7755,6 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
 
         BEGIN_QCALL;
         GCX_COOP();
-//        GCX_COOP_NO_DTOR();
         Thread* pThread = GET_THREAD();
         Frame* pFrame = pThread->GetFrame();
         MarkInlinedCallFrameAsFuncletCall(pFrame);
@@ -7860,8 +7793,6 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         BEGIN_QCALL;
         GCX_COOP();
 
-        //fprintf(stderr, "RhpCallFilterFunclet\n");
-
         Thread* pThread = GET_THREAD();
         Frame* pFrame = pThread->GetFrame();
         MarkInlinedCallFrameAsEHHelperCall(pFrame);
@@ -7894,8 +7825,6 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         dwResult = pfnHandler(establisherFrame, OBJECTREFToObject(throwable));
 #endif        
 
-        //fprintf(stderr, "RhpCallFilterFunclet for object %p returned %p\n", OBJECTREFToObject(throwable), dwResult);
-
         MakeCallbacksRelatedToHandler(false, pThread, pMD, &pExInfo->_CurrentClause, (DWORD_PTR)pFilterIP, GetSP(pvRegDisplay->pCurrentContext));
         END_QCALL;
 
@@ -7925,8 +7854,6 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         const METHODTOKEN& MethToken = pFrameIter->m_crawl.GetMethodToken();
         *pMethodStartAddress = (BYTE*)pJitMan->JitTokenToStartAddress(MethToken);
         pExtendedEHEnum->EHCount = pJitMan->InitializeEHEnumeration(MethToken, pEHEnum);
-
-        //fprintf(stderr, "  RhpEHEnumInitFromStackFrameIterator SP=%p, method start %p, %d clauses\n", (void*)GetRegdisplaySP(pFrameIter->m_crawl.GetRegisterSet()), *pMethodStartAddress, pExtendedEHEnum->EHCount);
 
         END_QCALL;
 
@@ -8000,15 +7927,6 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
             }
         }
         END_QCALL;
-
-        if (result)
-        {
-            //fprintf(stderr, "  RhpEHEnumNext returning clause kind %d, TryStartPC %p, TryEndPC %p, filterAddress %p, handlerAddress %p\n", pEHClause->_clauseKind, (void*)(size_t)pEHClause->_tryStartOffset, (void*)(size_t)pEHClause->_tryEndOffset, pEHClause->_filterAddress, pEHClause->_handlerAddress);
-        }
-        else
-        {
-            //fprintf(stderr, "  RhpEHEnumNext done\n");
-        }
 
         return result;
     }
