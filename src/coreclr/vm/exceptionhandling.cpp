@@ -5411,7 +5411,6 @@ BOOL HandleHardwareException(PAL_SEHException* ex)
 
 #if 1
         REGDISPLAY rd;
-        rd.pContext = ex->GetContextRecord();
         Thread *pThread = GetThread();
 
         ExInfo exInfo = {};
@@ -7546,7 +7545,7 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         exInfo->_sfHighBound = exInfo->_frameIter.m_crawl.GetRegisterSet()->SP;
         DWORD_PTR dwResumePC;
         ULONG64 targetSp;
-        if (pHandlerIP != (BYTE*)1)
+        if (pHandlerIP != NULL)
         {
             _ASSERTE(exInfo->_sfCallerOfActualHandlerFrame == EECodeManager::GetCallerSp(pvRegDisplay)); // This fails for the exception interop - the caller context is wrong - the current context has larger SP! However, this is actually ok, we don't use the caller context for anything
             OBJECTREF throwable = exceptionObj.Get();
@@ -7630,7 +7629,7 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         pThread->SafeSetLastThrownObject(NULL);
 
         ExceptionTracker::UpdateNonvolatileRegisters(pvRegDisplay->pCurrentContext, pvRegDisplay, FALSE);
-        if (pHandlerIP != (BYTE*)1)
+        if (pHandlerIP != NULL)
         {
             CONTEXT *pContextRecord = pvRegDisplay->pCurrentContext;
             UINT_PTR uAbortAddr = 0;

@@ -2837,7 +2837,8 @@ static VOID DECLSPEC_NORETURN RealCOMPlusThrowWorker(OBJECTREF throwable, BOOL r
 void InitializeExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, BOOL rethrow, ExInfo *pExInfo)
 {
     pExInfo->_pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-    pExInfo->_pExContext = pRD;
+    pExInfo->_pExContext = pCtx;
+    pExInfo->_pRD = pRD;
     pExInfo->_passNumber = 1;
     pExInfo->_kind = rethrow ? ExKind::None : ExKind::Throw;
     pExInfo->_idxCurClause = 0xffffffff;
@@ -2865,7 +2866,6 @@ VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(OBJECTREF throwable)
     CONTEXT ctx = {0};
     ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
     REGDISPLAY rd;
-    rd.pContext = &ctx;
     Thread *pThread = GetThread();
     ExInfo exInfo = {};
     InitializeExInfo(pThread, &ctx, &rd, /* rethrow */ FALSE, &exInfo);
@@ -6642,12 +6642,12 @@ void HandleManagedFault(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext)
     CONTEXT ctx = {0};
     ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
     REGDISPLAY rd;
-    rd.pContext = &ctx;
     Thread *pThread = GetThread();
 
     ExInfo exInfo = {};
     exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-    exInfo._pExContext = &rd;//ctx; // TODO: or the pContext? The RtlRestoreContext fails if I use this context (with patched Rip) for some reason
+    exInfo._pExContext = &ctx; // TODO: or the pContext? The RtlRestoreContext fails if I use this context (with patched Rip) for some reason
+    exInfo._pRD = &rd;
     exInfo._passNumber = 1;
     exInfo._kind = ExKind::HardwareFault;
     exInfo._idxCurClause = 0xffffffff;

@@ -14,7 +14,7 @@ namespace System.Runtime
     {
         [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RhpSfiInit")]
         [return: MarshalAs(UnmanagedType.Bool)]
-        internal static unsafe partial bool RhpSfiInit(ref StackFrameIterator pThis, void* pRegDisplay, [MarshalAs(UnmanagedType.Bool)] bool instructionFault);
+        internal static unsafe partial bool RhpSfiInit(ref StackFrameIterator pThis, void* pStackwalkCtx, [MarshalAs(UnmanagedType.Bool)] bool instructionFault);
 
         [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RhpSfiNext")]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -50,6 +50,10 @@ namespace System.Runtime
 #pragma warning disable CS8500
         [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RhpAppendExceptionStackFrame")]
         internal static unsafe partial void RhpAppendExceptionStackFrame(ObjectHandleOnStack exceptionObj, IntPtr ip, UIntPtr sp, int flags, EH.ExInfo* exInfo);
+#pragma warning restore CS8500
+#pragma warning disable CS8500
+        [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "RhpCallPropagateExceptionCallback")]
+        internal static unsafe partial void RhpCallPropagateExceptionCallback(IntPtr callbackContext, IntPtr callback, void* pvRegDisplay, EH.ExInfo* exInfo, IntPtr pPreviousTransitionFrame);
 #pragma warning restore CS8500
     }
 }

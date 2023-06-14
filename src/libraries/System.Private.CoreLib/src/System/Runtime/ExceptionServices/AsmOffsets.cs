@@ -36,21 +36,21 @@ internal static class AsmOffsets
 
 #if TARGET_UNIX
 #if TARGET_AMD64
-    public const int SIZEOF__CONTEXT = 0xc20;
+    public const int SIZEOF__PAL_LIMITED_CONTEXT = 0xc20;
 #elif TARGET_ARM64
-    public const int SIZEOF__CONTEXT = 0x390;
+    public const int SIZEOF__PAL_LIMITED_CONTEXT = 0x390;
 #endif
 #else
-    public const int SIZEOF__CONTEXT = 0x4d0;
+    public const int SIZEOF__PAL_LIMITED_CONTEXT = 0x4d0;
 #endif
 #if TARGET_AMD64
-    public const int OFFSETOF__CONTEXT__IP = 0xf8;
-    public const int OFFSETOF__CONTEXT__SP = 0x98;
-    public const int OFFSETOF__CONTEXT__FP = 0xa0;
+    public const int OFFSETOF__PAL_LIMITED_CONTEXT__IP = 0xf8;
+    public const int OFFSETOF__PAL_LIMITED_CONTEXT__SP = 0x98;
+    public const int OFFSETOF__PAL_LIMITED_CONTEXT__FP = 0xa0;
 #elif TARGET_ARM64
-    public const int OFFSETOF__CONTEXT__IP = 0x108;
-    public const int OFFSETOF__CONTEXT__SP = 0x100;
-    public const int OFFSETOF__CONTEXT__FP = 0xf0;
+    public const int OFFSETOF__PAL_LIMITED_CONTEXT__IP = 0x108;
+    public const int OFFSETOF__PAL_LIMITED_CONTEXT__SP = 0x100;
+    public const int OFFSETOF__PAL_LIMITED_CONTEXT__FP = 0xf0;
 #endif
 
 

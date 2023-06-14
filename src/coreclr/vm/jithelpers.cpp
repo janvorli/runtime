@@ -4298,7 +4298,6 @@ HCIMPL0(void, IL_Rethrow)
     CONTEXT ctx = {0};
     ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
     REGDISPLAY rd;
-    rd.pContext = &ctx;
     Thread *pThread = GetThread();
 
     ExInfo *pActiveExInfo = pThread->GetExceptionState()->GetCurrentExInfo();

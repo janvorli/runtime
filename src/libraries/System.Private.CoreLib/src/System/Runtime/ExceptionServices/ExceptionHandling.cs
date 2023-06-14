@@ -493,7 +493,6 @@ namespace System.Runtime
             STATUS_INTEGER_DIVIDE_BY_ZERO = 0xC0000094u,
             STATUS_INTEGER_OVERFLOW = 0xC0000095u,
         }
-#if NATIVEAOT
         [StructLayout(LayoutKind.Explicit, Size = AsmOffsets.SIZEOF__PAL_LIMITED_CONTEXT)]
         public struct PAL_LIMITED_CONTEXT
         {
@@ -507,7 +506,6 @@ namespace System.Runtime
 #endif
             // the rest of the struct is left unspecified.
         }
-#endif
 
         // N.B. -- These values are burned into the throw helper assembly code and are also known the the
         //         StackFrameIterator code.
@@ -569,11 +567,7 @@ namespace System.Runtime
             internal void* _pPrevExInfo;
 
             [FieldOffset(AsmOffsets.OFFSETOF__ExInfo__m_pExContext)]
-#if NATIVEAOT
             internal PAL_LIMITED_CONTEXT* _pExContext;
-#else
-            internal REGDISPLAY* _pExContext;
-#endif
 
             [FieldOffset(AsmOffsets.OFFSETOF__ExInfo__m_exception)]
             private object _exception;  // actual object reference, specially reported by GcScanRootsWorker
@@ -738,6 +732,8 @@ namespace System.Runtime
             byte* prevOriginalPC = null;
             UIntPtr prevFramePtr = UIntPtr.Zero;
             bool unwoundReversePInvoke = false;
+            IntPtr pReversePInvokePropagationCallback = IntPtr.Zero;
+            IntPtr pReversePInvokePropagationContext = IntPtr.Zero;
 
             bool isValid = frameIter.Init(exInfo._pExContext, (exInfo._kind & ExKind.InstructionFaultFlag) != 0);
             Debug.Assert(isValid, "RhThrowEx called with an unexpected context");
@@ -752,11 +748,7 @@ namespace System.Runtime
                 // For GC stackwalking, we'll happily walk across native code blocks, but for EH dispatch, we
                 // disallow dispatching exceptions across native code.
                 if (unwoundReversePInvoke)
-                {
-                    handlingFrameSP = frameIter.SP;
-                    pCatchHandler = (byte*)1;
                     break;
-                }
 
                 DebugScanCallFrame(exInfo._passNumber, frameIter.ControlPC, frameIter.SP);
 
@@ -774,7 +766,31 @@ namespace System.Runtime
                 }
             }
 
-            if (pCatchHandler == null)
+            if (unwoundReversePInvoke)
+            {
+#if FEATURE_OBJCMARSHAL && NATIVEAOT
+                // We did not find any managed handlers before hitting a reverse P/Invoke boundary.
+                // See if the classlib has a handler to propagate the exception to native code.
+                IntPtr pGetHandlerClasslibFunction = (IntPtr)InternalCalls.RhpGetClasslibFunctionFromCodeAddress((IntPtr)prevControlPC,
+                    ClassLibFunctionId.ObjectiveCMarshalGetUnhandledExceptionPropagationHandler);
+                if (pGetHandlerClasslibFunction != IntPtr.Zero)
+                {
+                    var pGetHandler = (delegate*<object, IntPtr, out IntPtr, IntPtr>)pGetHandlerClasslibFunction;
+                    pReversePInvokePropagationCallback = pGetHandler(
+                        exceptionObj, (IntPtr)prevControlPC, out pReversePInvokePropagationContext);
+                    if (pReversePInvokePropagationCallback != IntPtr.Zero)
+                    {
+                        // Tell the second pass to unwind to this frame.
+                        handlingFrameSP = frameIter.SP;
+                        catchingTryRegionIdx = MaxTryRegionIdx;
+                    }
+                }
+#endif // FEATURE_OBJCMARSHAL && NATIVEAOT
+                handlingFrameSP = frameIter.SP;
+                catchingTryRegionIdx = MaxTryRegionIdx;
+            }
+
+            if (pCatchHandler == null && pReversePInvokePropagationCallback == IntPtr.Zero && !unwoundReversePInvoke)
             {
                 OnUnhandledExceptionViaClassLib(exceptionObj);
 
@@ -786,8 +802,8 @@ namespace System.Runtime
             }
 
             // We FailFast above if the exception goes unhandled.  Therefore, we cannot run the second pass
-            // without a catch handler.
-            Debug.Assert(pCatchHandler != null, "We should have a handler if we're starting the second pass");
+            // without a catch handler or propagation callback.
+            Debug.Assert(pCatchHandler != null || pReversePInvokePropagationCallback != IntPtr.Zero || unwoundReversePInvoke, "We should have a handler if we're starting the second pass");
 
             // ------------------------------------------------
             //
@@ -841,6 +857,27 @@ namespace System.Runtime
 
                 InvokeSecondPass(ref exInfo, startIdx);
             }
+
+#if FEATURE_OBJCMARSHAL
+            if (pReversePInvokePropagationCallback != IntPtr.Zero)
+            {
+#if NATIVEAOT
+                InternalCalls.RhpCallPropagateExceptionCallback(
+                    pReversePInvokePropagationContext, pReversePInvokePropagationCallback, frameIter.RegisterSet, ref exInfo, frameIter.PreviousTransitionFrame);
+                // the helper should jump to propagation handler and not return
+#else
+#pragma warning disable CS8500
+                fixed (EH.ExInfo* pExInfo = &exInfo)
+                {
+                    InternalCalls.RhpCallPropagateExceptionCallback(
+                        pReversePInvokePropagationContext, pReversePInvokePropagationCallback, frameIter.RegisterSet, pExInfo, IntPtr.Zero/*frameIter.PreviousTransitionFrame*/);
+                }
+#pragma warning restore CS8500
+#endif
+                Debug.Assert(false, "unreachable");
+                FallbackFailFast(RhFailFastReason.InternalError, null);
+            }
+#endif // FEATURE_OBJCMARSHAL
 
             // ------------------------------------------------
             //

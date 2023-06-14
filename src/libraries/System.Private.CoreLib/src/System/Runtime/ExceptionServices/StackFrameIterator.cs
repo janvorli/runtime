@@ -7,27 +7,15 @@ using System.Runtime.InteropServices;
 
 namespace System.Runtime
 {
-    [StructLayout(LayoutKind.Explicit, Size = AsmOffsets.SIZEOF__CONTEXT)]
-    internal unsafe struct CONTEXT
-    {
-        [FieldOffset(AsmOffsets.OFFSETOF__CONTEXT__IP)]
-        internal IntPtr IP;
-        [FieldOffset(AsmOffsets.OFFSETOF__CONTEXT__SP)]
-        internal IntPtr SP;
-        [FieldOffset(AsmOffsets.OFFSETOF__CONTEXT__FP)]
-        internal UIntPtr FP;
-        // the rest of the struct is left unspecified.
-    }
-
     [StructLayout(LayoutKind.Explicit, Size = AsmOffsets.SIZEOF__REGDISPLAY)]
     internal unsafe struct REGDISPLAY
     {
         [FieldOffset(AsmOffsets.OFFSETOF__REGDISPLAY__SP)]
         internal UIntPtr SP;
         [FieldOffset(AsmOffsets.OFFSETOF__REGDISPLAY__ControlPC)]
-        internal IntPtr IP;
+        internal IntPtr ControlPC;
         [FieldOffset(AsmOffsets.OFFSETOF__REGDISPLAY__m_pCurrentContext)]
-        internal CONTEXT* m_pCurrentContext;
+        internal EH.PAL_LIMITED_CONTEXT* m_pCurrentContext;
     }
 
     [StructLayout(LayoutKind.Explicit, Size = AsmOffsets.SIZEOF__StackFrameIterator)]
@@ -36,15 +24,15 @@ namespace System.Runtime
         [FieldOffset(AsmOffsets.OFFSETOF__StackFrameIterator__m_pRegDisplay)]
         private REGDISPLAY* _pRegDisplay;
 
-        internal byte* ControlPC { get { return (byte*)_pRegDisplay->IP; } }
-        internal byte* OriginalControlPC { get { return (byte*)_pRegDisplay->IP; } } // TODO: fix this
+        internal byte* ControlPC { get { return (byte*)_pRegDisplay->ControlPC; } }
+        internal byte* OriginalControlPC { get { return (byte*)_pRegDisplay->ControlPC; } } // TODO: fix this
         internal void* RegisterSet { get { return _pRegDisplay;  } }
         internal UIntPtr SP { get { return _pRegDisplay->SP; } }
         internal UIntPtr FramePointer { get { return _pRegDisplay->m_pCurrentContext->FP; } } // FAKE! TODO: is this always FP register or is it SP or FP?
 
-        internal bool Init(REGDISPLAY *pRD, bool instructionFault = false)
+        internal bool Init(EH.PAL_LIMITED_CONTEXT* pStackwalkCtx, bool instructionFault = false)
         {
-            return InternalCalls.RhpSfiInit(ref this, pRD, instructionFault);
+            return InternalCalls.RhpSfiInit(ref this, pStackwalkCtx, instructionFault);
         }
 
         internal bool Next()
