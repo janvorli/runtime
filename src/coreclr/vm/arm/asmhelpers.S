@@ -71,6 +71,7 @@ LOCAL_LABEL(LNoFloatingPoint):
         // Note that remoting expect target in r4.
         ldr     r4, [r5,#CallDescrData__pTarget]
         blx     r4
+PATCH_LABEL CallDescrWorkerInternalReturnAddress
 
         ldr     r3, [r5,#CallDescrData__fpReturnSize]
 

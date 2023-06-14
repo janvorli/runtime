@@ -7443,6 +7443,7 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
 #elif defined(HOST_ARM64)
         return pvRegDisplay->SP;
 #elif defined(HOST_ARM)
+        return pvRegDisplay->SP;
 #endif        
     }
 

@@ -327,7 +327,6 @@ static const Entry s_QCall[] =
     DllImportEntry(RhpEHEnumInitFromStackFrameIterator)
     DllImportEntry(RhpEHEnumNext)
     DllImportEntry(RhpAppendExceptionStackFrame)
-    DllImportEntry(RhpCallPropagateExceptionCallback)
 };
 
 const void* QCallResolveDllImport(const char* name)
