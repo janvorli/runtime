@@ -7403,12 +7403,7 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         MethodDesc *pMD = codeInfo.GetMethodDesc();
 
         pExInfo->_stackTraceInfo.AppendElement(canAllocateMemory, ip, sp, pMD, &pExInfo->_frameIter.m_crawl);
-
-        AppDomain* pDomain = GetAppDomain();
-        // This is just a quick and dirty test. This needs to be longer term member somewhere or the SaveStackTrace should be modified to accept the objectref
-        OBJECTHANDLE hThrowable = pDomain->CreateHandle(exceptionObj.Get());
-        pExInfo->_stackTraceInfo.SaveStackTrace(canAllocateMemory, hThrowable, /*bReplaceStack*/FALSE, /*bSkipLastElement*/FALSE);
-        DestroyHandle(hThrowable);
+        pExInfo->_stackTraceInfo.SaveStackTrace(canAllocateMemory, pExInfo->_hThrowable, /*bReplaceStack*/FALSE, /*bSkipLastElement*/FALSE);
 
         END_QCALL;
     }
@@ -7930,6 +7925,16 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
 
         return result;
     }
+
+    // static_assert_no_msg(sizeof(CONTEXT) == 0x390);
+    // static_assert_no_msg(offsetof(CONTEXT, Pc) == 0x108);
+    // static_assert_no_msg(offsetof(CONTEXT, Sp) == 0x100);
+    // static_assert_no_msg(offsetof(CONTEXT, Fp) == 0xf0);
+    // static_assert_no_msg(sizeof(REGDISPLAY) == 0x940);
+    // static_assert_no_msg(offsetof(REGDISPLAY, ControlPC) == 0x8a0);
+    // static_assert_no_msg(offsetof(REGDISPLAY, SP) == 0x898);
+    // static_assert_no_msg(sizeof(StackFrameIterator) == 0x370);
+    // //static_assert_no_msg(offsetof(StackFrameIterator, m_crawl) + offsetof(CrawlFrame, pRD) == 0x228);
 #endif
 
 

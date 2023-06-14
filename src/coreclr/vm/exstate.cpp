@@ -331,7 +331,7 @@ PTR_CONTEXT ThreadExceptionState::GetContextRecord()
     }
     else if (m_pExInfo)
     {
-        return (PTR_CONTEXT)(CONTEXT*)m_pExInfo->_pExContext;
+        return dac_cast<PTR_CONTEXT>(m_pExInfo->_pExContext);
     }
     else
     {

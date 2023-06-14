@@ -4,6 +4,7 @@
 #include "ksarm64.h"
 
 #include "asmconstants.h"
+#include "asmmacros.h"
 
 
 
@@ -72,6 +73,7 @@ LNoFloatingPoint
         ;; call pTarget
         ldr     x9, [x19,#CallDescrData__pTarget]
         blr     x9
+        PATCH_LABEL CallDescrWorkerInternalReturnAddress
 
         ldr     w3, [x19,#CallDescrData__fpReturnSize]
 
