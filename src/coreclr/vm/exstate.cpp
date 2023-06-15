@@ -521,10 +521,6 @@ EHClauseInfo* ThreadExceptionState::GetCurrentEHClauseInfo()
     {
         return &(m_pCurrentTracker->m_EHClauseInfo);
     }
-    // else if (m_pExInfo)
-    // {
-    //     return &(m_pExInfo->_EHClauseInfo)
-    // }
     else
     {
         _ASSERTE(!"unexpected use of GetCurrentEHClauseInfo() when no exception in flight");

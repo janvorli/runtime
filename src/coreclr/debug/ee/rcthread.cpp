@@ -746,9 +746,9 @@ void DebuggerRCThread::RightSideDetach(void)
 #define CorDB_SYNC_WAIT_TIMEOUT  20   // 20ms
 
 #ifdef _DEBUG
-#define CorDB_MAX_SYNC_SPIN_COUNT (100000 / CorDB_SYNC_WAIT_TIMEOUT)  // (10 seconds)
+#define CorDB_MAX_SYNC_SPIN_COUNT (10000 / CorDB_SYNC_WAIT_TIMEOUT)  // (10 seconds)
 #else
-#define CorDB_MAX_SYNC_SPIN_COUNT (30000 / CorDB_SYNC_WAIT_TIMEOUT)   // (3 seconds)
+#define CorDB_MAX_SYNC_SPIN_COUNT (3000 / CorDB_SYNC_WAIT_TIMEOUT)   // (3 seconds)
 #endif
 
 //

@@ -467,7 +467,6 @@ public:
     DWORD ShouldInjectFault(DWORD faultType) const {LIMITED_METHOD_CONTRACT; return fShouldInjectFault & faultType;}
 
 #endif
-    void SetGCStress(int gcStress) { iGCStress = gcStress; }
 private: //----------------------------------------------------------------
 
     bool fInited;                   // have we synced to the registry at least once?

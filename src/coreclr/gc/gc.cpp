@@ -47962,7 +47962,7 @@ HRESULT GCHeap::Initialize()
 
 #ifndef FEATURE_NATIVEAOT // NativeAOT forces relocation a different way
 #if defined (STRESS_HEAP) && !defined (MULTIPLE_HEAPS)
-    //if (GCStress<cfg_any>::IsEnabled())
+    if (GCStress<cfg_any>::IsEnabled())
     {
         for (int i = 0; i < GCHeap::NUM_HEAP_STRESS_OBJS; i++)
         {
