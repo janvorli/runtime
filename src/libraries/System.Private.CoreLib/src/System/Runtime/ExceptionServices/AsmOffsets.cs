@@ -41,13 +41,13 @@ class AsmOffsets
 
 #endif // TARGET_UNIX
 
-#if HOST_64BIT
+#if TARGET_64BIT
     public const int OFFSETOF__REGDISPLAY__m_pCurrentContext = 0x8;
     public const int SIZEOF__StackFrameIterator = 0x370;
-#else // HOST_64BIT
+#else // TARGET_64BIT
     public const int OFFSETOF__REGDISPLAY__m_pCurrentContext = 0x4;
     public const int SIZEOF__StackFrameIterator = 0x2d0;
-#endif // HOST_64BIT
+#endif // TARGET_64BIT
 
 #else // DEBUG
 
@@ -85,23 +85,23 @@ class AsmOffsets
 
 #endif // TARGET_UNIX
 
-#if HOST_64BIT
+#if TARGET_64BIT
     public const int OFFSETOF__REGDISPLAY__m_pCurrentContext = 0x8;
     public const int SIZEOF__StackFrameIterator = 0x360;
-#else // HOST_64BIT
+#else // TARGET_64BIT
     public const int OFFSETOF__REGDISPLAY__m_pCurrentContext = 0x4;
     public const int SIZEOF__StackFrameIterator = 0x2c8;
-#endif // HOST_64BIT
+#endif // TARGET_64BIT
 
 #endif // DEBUG
 
-#if HOST_64BIT
+#if TARGET_64BIT
     public const int SIZEOF__EHEnum = 0x20;
     public const int OFFSETOF__StackFrameIterator__m_pRegDisplay = 0x228;
-#else // HOST_64BIT
+#else // TARGET_64BIT
     public const int SIZEOF__EHEnum = 0x10;
     public const int OFFSETOF__StackFrameIterator__m_pRegDisplay = 0x218;
-#endif // HOST_64BIT
+#endif // TARGET_64BIT
 
 #if TARGET_UNIX
 
@@ -140,7 +140,7 @@ class AsmOffsets
 #endif
 
 
-#if HOST_64BIT
+#if TARGET_64BIT
     public const int OFFSETOF__ExInfo__m_pPrevExInfo = 0;
     public const int OFFSETOF__ExInfo__m_pExContext = 8;
     public const int OFFSETOF__ExInfo__m_exception = 0x10;
@@ -155,7 +155,7 @@ class AsmOffsets
     public const int OFFSETOF__ExInfo__m_frameIter = 0x20;
 
     public const int OFFSETOF__ExInfo__m_notifyDebuggerSP = OFFSETOF__ExInfo__m_frameIter + SIZEOF__StackFrameIterator;
-#else // HOST_64BIT
+#else // TARGET_64BIT
     public const int OFFSETOF__ExInfo__m_pPrevExInfo = 0;
     public const int OFFSETOF__ExInfo__m_pExContext = 4;
     public const int OFFSETOF__ExInfo__m_exception = 8;
@@ -170,7 +170,7 @@ class AsmOffsets
     public const int OFFSETOF__ExInfo__m_frameIter = 0x18;
 
     public const int OFFSETOF__ExInfo__m_notifyDebuggerSP = OFFSETOF__ExInfo__m_frameIter + SIZEOF__StackFrameIterator;
-#endif // HOST_64BIT
+#endif // TARGET_64BIT
 
 #if __cplusplus
     static_assert_no_msg(sizeof(CONTEXT) == AsmOffsets::SIZEOF__PAL_LIMITED_CONTEXT);
