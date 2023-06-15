@@ -63,11 +63,15 @@ StackWalkAction StackWalkFunctions(Thread * thread, PSTACKWALKFRAMESCALLBACK pCa
 #define StackWalkFunctions(thread, callBack, userdata) thread->StackWalkFrames(METHODSONLY, (callBack),(userData))
 */
 
+namespace AsmOffsetsAsserts
+{
+    class AsmOffsets;
+};
 
 class CrawlFrame
 {
 public:
-
+    friend class AsmOffsetsAsserts::AsmOffsets;
 #ifdef TARGET_X86
     friend StackWalkAction TAStackCrawlCallBack(CrawlFrame* pCf, void* data);
 #endif // TARGET_X86

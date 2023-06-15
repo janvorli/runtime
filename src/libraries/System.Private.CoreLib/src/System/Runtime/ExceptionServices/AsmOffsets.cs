@@ -1,6 +1,9 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-internal static class AsmOffsets
+#if !__cplusplus
+internal static
+#endif
+class AsmOffsets
 {
 #if DEBUG
 
@@ -55,9 +58,9 @@ internal static class AsmOffsets
     public const int OFFSETOF__REGDISPLAY__SP = 0x1a78;
     public const int OFFSETOF__REGDISPLAY__ControlPC = 0x1a80;
 #elif TARGET_ARM64
-    public const int SIZEOF__REGDISPLAY = 0x940;
-    public const int OFFSETOF__REGDISPLAY__SP = 0x898;
-    public const int OFFSETOF__REGDISPLAY__ControlPC = 0x8a0;
+    public const int SIZEOF__REGDISPLAY = 0x930;
+    public const int OFFSETOF__REGDISPLAY__SP = 0x890;
+    public const int OFFSETOF__REGDISPLAY__ControlPC = 0x898;
 #elif TARGET_ARM
     public const int SIZEOF__REGDISPLAY = 0x408;
     public const int OFFSETOF__REGDISPLAY__SP = 0x3e8;
@@ -71,9 +74,9 @@ internal static class AsmOffsets
     public const int OFFSETOF__REGDISPLAY__SP = 0xbd0;
     public const int OFFSETOF__REGDISPLAY__ControlPC = 0xbd8;
 #elif TARGET_ARM64
-    public const int SIZEOF__REGDISPLAY = 0x940;
-    public const int OFFSETOF__REGDISPLAY__SP = 0x898;
-    public const int OFFSETOF__REGDISPLAY__ControlPC = 0x8a0;
+    public const int SIZEOF__REGDISPLAY = 0x930;
+    public const int OFFSETOF__REGDISPLAY__SP = 0x890;
+    public const int OFFSETOF__REGDISPLAY__ControlPC = 0x898;
 #elif TARGET_ARM
     public const int SIZEOF__REGDISPLAY = 0x408;
     public const int OFFSETOF__REGDISPLAY__SP = 0x3e8;
@@ -168,4 +171,24 @@ internal static class AsmOffsets
 
     public const int OFFSETOF__ExInfo__m_notifyDebuggerSP = OFFSETOF__ExInfo__m_frameIter + SIZEOF__StackFrameIterator;
 #endif // HOST_64BIT
+
+#if __cplusplus
+    static_assert_no_msg(sizeof(CONTEXT) == AsmOffsets::SIZEOF__PAL_LIMITED_CONTEXT);
+    static_assert_no_msg(sizeof(REGDISPLAY) == AsmOffsets::SIZEOF__REGDISPLAY);
+    static_assert_no_msg(offsetof(REGDISPLAY, SP) == AsmOffsets::OFFSETOF__REGDISPLAY__SP);
+    static_assert_no_msg(offsetof(REGDISPLAY, ControlPC) == AsmOffsets::OFFSETOF__REGDISPLAY__ControlPC);
+    static_assert_no_msg(offsetof(REGDISPLAY, pCurrentContext) == AsmOffsets::OFFSETOF__REGDISPLAY__m_pCurrentContext);
+    static_assert_no_msg(sizeof(StackFrameIterator) == AsmOffsets::SIZEOF__StackFrameIterator);
+    static_assert_no_msg(offsetof(StackFrameIterator, m_crawl) + offsetof(CrawlFrame, pRD) == OFFSETOF__StackFrameIterator__m_pRegDisplay);
+    static_assert_no_msg(sizeof(ExtendedEHClauseEnumerator) == AsmOffsets::SIZEOF__EHEnum);
+    static_assert_no_msg(offsetof(ExInfo, _pPrevExInfo) == OFFSETOF__ExInfo__m_pPrevExInfo);
+    static_assert_no_msg(offsetof(ExInfo, _pExContext) == OFFSETOF__ExInfo__m_pExContext);
+    static_assert_no_msg(offsetof(ExInfo, _exception) == OFFSETOF__ExInfo__m_exception);
+    static_assert_no_msg(offsetof(ExInfo, _kind) == OFFSETOF__ExInfo__m_kind);
+    static_assert_no_msg(offsetof(ExInfo, _passNumber) == OFFSETOF__ExInfo__m_passNumber);
+    static_assert_no_msg(offsetof(ExInfo, _idxCurClause) == OFFSETOF__ExInfo__m_idxCurClause);
+    static_assert_no_msg(offsetof(ExInfo, _frameIter) == OFFSETOF__ExInfo__m_frameIter);
+    static_assert_no_msg(offsetof(ExInfo, _notifyDebuggerSP) == OFFSETOF__ExInfo__m_notifyDebuggerSP);
+#endif    
+
 }

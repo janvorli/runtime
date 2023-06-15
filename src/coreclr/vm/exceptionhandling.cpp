@@ -7926,18 +7926,55 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         return result;
     }
 
-    // static_assert_no_msg(sizeof(CONTEXT) == 0x390);
-    // static_assert_no_msg(offsetof(CONTEXT, Pc) == 0x108);
-    // static_assert_no_msg(offsetof(CONTEXT, Sp) == 0x100);
-    // static_assert_no_msg(offsetof(CONTEXT, Fp) == 0xf0);
-    // static_assert_no_msg(sizeof(REGDISPLAY) == 0x940);
-    // static_assert_no_msg(offsetof(REGDISPLAY, ControlPC) == 0x8a0);
-    // static_assert_no_msg(offsetof(REGDISPLAY, SP) == 0x898);
-    // static_assert_no_msg(sizeof(StackFrameIterator) == 0x370);
-    // //static_assert_no_msg(offsetof(StackFrameIterator, m_crawl) + offsetof(CrawlFrame, pRD) == 0x228);
+// class Test
+// {
+//     public:
+//      static constexpr int a = 12;
+// };
+
+// static_assert_no_msg(Test::a == 12);
+
+#define public
+#define const static constexpr
+
+namespace AsmOffsetsAsserts
+{
+    #include "F:\git\runtime8\src\libraries\System.Private.CoreLib\src\System\Runtime\ExceptionServices\AsmOffsets.cs"
+    ;
+
+    // class AsmOffsetsAsserts
+    // {
+    // static_assert_no_msg(sizeof(CONTEXT) == AsmOffsets::SIZEOF__PAL_LIMITED_CONTEXT);
+    // };
+};
+
+#undef public
+#undef const
+
+// #ifdef HOST_ARM64
+// #if _DEBUG
+//     static_assert_no_msg(sizeof(CONTEXT) == 0x390);
+//     static_assert_no_msg(offsetof(CONTEXT, Pc) == 0x108);
+//     static_assert_no_msg(offsetof(CONTEXT, Sp) == 0x100);
+//     static_assert_no_msg(offsetof(CONTEXT, Fp) == 0xf0);
+//     static_assert_no_msg(sizeof(REGDISPLAY) == 0x940);
+//     static_assert_no_msg(offsetof(REGDISPLAY, ControlPC) == 0x8a0);
+//     static_assert_no_msg(offsetof(REGDISPLAY, SP) == 0x898);
+//     static_assert_no_msg(sizeof(StackFrameIterator) == 0x370);
+//     //static_assert_no_msg(offsetof(StackFrameIterator, m_crawl) + offsetof(CrawlFrame, pRD) == 0x228);
+// #else
+//     static_assert_no_msg(sizeof(CONTEXT) == 0x390);
+//     static_assert_no_msg(offsetof(CONTEXT, Pc) == 0x108);
+//     static_assert_no_msg(offsetof(CONTEXT, Sp) == 0x100);
+//     static_assert_no_msg(offsetof(CONTEXT, Fp) == 0xf0);
+//     static_assert_no_msg(sizeof(REGDISPLAY) == 0x930);
+//     static_assert_no_msg(offsetof(REGDISPLAY, ControlPC) == 0x898);
+//     static_assert_no_msg(offsetof(REGDISPLAY, SP) == 0x890);
+//     static_assert_no_msg(sizeof(StackFrameIterator) == 0x360);
+//     //static_assert_no_msg(offsetof(StackFrameIterator, m_crawl) + offsetof(CrawlFrame, pRD) == 0x228);
+// #endif    
+// #endif
+
 #endif
 
-
 #endif // FEATURE_EH_FUNCLETS
-
-
