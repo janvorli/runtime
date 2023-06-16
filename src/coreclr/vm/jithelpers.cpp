@@ -740,6 +740,7 @@ HCIMPLEND
 
 #include <optdefault.h>
 
+
 //========================================================================
 //
 //      INSTANCE FIELD HELPERS
@@ -4242,6 +4243,7 @@ HCIMPL1(void, IL_Throw,  Object* obj)
     __helperframe.InsureInit(false, NULL);
     g_ExceptionEIP = (LPVOID)__helperframe.GetReturnAddress();
 #endif // defined(_DEBUG) && defined(TARGET_X86)
+
 
     if (oref == 0)
         COMPlusThrow(kNullReferenceException);

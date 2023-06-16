@@ -313,12 +313,12 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
 #define INSTALL_MANAGED_EXCEPTION_DISPATCHER                                                \
     {                                                                                       \
         OBJECTREF caughtException = NULL;                                                   \
-        EX_TRY                                                                              \
+        EX_TRY_CPP_ONLY                                                                              \
         {
 
 #define UNINSTALL_MANAGED_EXCEPTION_DISPATCHER                                              \
         }                                                                                   \
-        EX_CATCH                                                                            \
+        EX_CATCH_CPP_ONLY                                                                            \
         {                                                                                   \
             if (g_isNewExceptionHandlingEnabled)                                            \
             {                                                                               \

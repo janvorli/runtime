@@ -1421,7 +1421,6 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                         retVal = pThis->Next();
                         if (retVal == SWA_FAILED)
                         {
-                            //__debugbreak();
                             _ASSERTE_MSG(FALSE, "StackFrameIterator::Next failed");
                         }
                         exCollide = true;
@@ -1429,9 +1428,6 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                             (pThis->m_pNextExInfo->_idxCurClause == 0xFFFFFFFF))
                         {
                             _ASSERTE_MSG(FALSE, "did not expect to collide with a 1st-pass ExInfo during a EH stackwalk");
-                            ExInfo* pPrevExInfo = pThis->m_pNextExInfo->_pPrevExInfo;
-                            pThis->Init(pThread, pThis->m_pNextExInfo->_pFrame, pThis->m_pNextExInfo->_pRD, pThis->m_flags);
-                            pThis->m_pNextExInfo = pThis->m_pNextExInfo->_pPrevExInfo;
                         }
                         else
                         {
@@ -2477,20 +2473,28 @@ ProcessFuncletsForGCReporting:
                                             // address of catch funclet to report live GC references.
                                             m_crawl.fShouldParentFrameUseUnwindTargetPCforGCReporting = true;
                                             
-                                            m_crawl.ehClauseForCatch = pExInfo->_ClauseForCatch;
+                                            if (g_isNewExceptionHandlingEnabled)
+                                            {
+                                                m_crawl.ehClauseForCatch = pExInfo->_ClauseForCatch;
+                                                STRESS_LOG2(LF_GCROOTS, LL_INFO100,
+                                                    "STACKWALK: Parent of funclet which didn't report GC roots is handling an exception"
+                                                    "(EH handler range [%x, %x) ), so we need to specially report roots to ensure variables alive"
+                                                    " in its handler stay live.\n",
+                                                    m_crawl.ehClauseForCatch.HandlerStartPC,
+                                                    m_crawl.ehClauseForCatch.HandlerEndPC);
+                                            }
+                                            else
+                                            {
+                                                // Store catch clause info. Helps retrieve IP of resume address.
+                                                m_crawl.ehClauseForCatch = pTracker->GetEHClauseForCatch();
 
-                                            // STRESS_LOG3(LF_GCROOTS, LL_INFO100,
-                                            //     "STACKWALK: Parent of funclet which didn't report GC roots is handling an exception at 0x%p"
-                                            //     "(EH handler range [%x, %x) ), so we need to specially report roots to ensure variables alive"
-                                            //     " in its handler stay live.\n",
-                                            //     pTracker->GetCatchToCallPC(), m_crawl.ehClauseForCatch.HandlerStartPC,
-                                            //     m_crawl.ehClauseForCatch.HandlerEndPC);
-                                            STRESS_LOG2(LF_GCROOTS, LL_INFO100,
-                                                "STACKWALK: Parent of funclet which didn't report GC roots is handling an exception"
-                                                "(EH handler range [%x, %x) ), so we need to specially report roots to ensure variables alive"
-                                                " in its handler stay live.\n",
-                                                m_crawl.ehClauseForCatch.HandlerStartPC,
-                                                m_crawl.ehClauseForCatch.HandlerEndPC);
+                                                STRESS_LOG3(LF_GCROOTS, LL_INFO100,
+                                                    "STACKWALK: Parent of funclet which didn't report GC roots is handling an exception at 0x%p"
+                                                    "(EH handler range [%x, %x) ), so we need to specially report roots to ensure variables alive"
+                                                    " in its handler stay live.\n",
+                                                    pTracker->GetCatchToCallPC(), m_crawl.ehClauseForCatch.HandlerStartPC,
+                                                    m_crawl.ehClauseForCatch.HandlerEndPC);                                                
+                                            }
                                         }
                                         else if (!m_crawl.IsFunclet())
                                         {
@@ -2515,9 +2519,12 @@ ProcessFuncletsForGCReporting:
                                                 m_crawl.fShouldParentFrameUseUnwindTargetPCforGCReporting = true;
                                                 m_crawl.ehClauseForCatch = pExInfo->_ClauseForCatch;
                                             }                                                
-                                            // STRESS_LOG4(LF_GCROOTS, LL_INFO100,
-                                            // "Funclet didn't report references: handling frame: %p, m_sfFuncletParent = %p, is funclet: %d, skip reporting %d\n",
-                                            // pTracker->GetEstablisherOfActualHandlingFrame().SP, m_sfFuncletParent.SP, m_crawl.IsFunclet(), shouldSkipReporting);
+                                        }
+                                        else
+                                        {
+                                            STRESS_LOG4(LF_GCROOTS, LL_INFO100,
+                                            "Funclet didn't report references: handling frame: %p, m_sfFuncletParent = %p, is funclet: %d, skip reporting %d\n",
+                                            pTracker->GetEstablisherOfActualHandlingFrame().SP, m_sfFuncletParent.SP, m_crawl.IsFunclet(), shouldSkipReporting);
                                         }
                                     }
                                     m_crawl.fShouldParentToFuncletSkipReportingGCReferences = shouldSkipReporting;
