@@ -4245,7 +4245,6 @@ HCIMPL1(void, IL_Throw,  Object* obj)
 
     if (oref == 0)
         COMPlusThrow(kNullReferenceException);
-        //RealCOMPlusThrowEx(kNullReferenceException);
     else
     if (!IsException(oref->GetMethodTable()))
     {
@@ -4270,7 +4269,14 @@ HCIMPL1(void, IL_Throw,  Object* obj)
         }
     }
 
-    RealCOMPlusThrowEx(oref);
+    if (g_isNewExceptionHandlingEnabled)
+    {
+        RealCOMPlusThrowEx(oref);
+    }
+    else
+    {
+        RaiseTheExceptionInternalOnly(oref, FALSE);
+    }
 
     HELPER_METHOD_FRAME_END();
 }
@@ -4286,35 +4292,43 @@ HCIMPL0(void, IL_Rethrow)
 
     HELPER_METHOD_FRAME_BEGIN_ATTRIB_NOPOLL(Frame::FRAME_ATTR_EXCEPTION);    // Set up a frame
 
-    // OBJECTREF throwable = GetThread()->GetThrowable();
-    // if (throwable == NULL)
-    // {
-    //     // This can only be the result of bad IL (or some internal EE failure).
-    //     _ASSERTE(!"No throwable on rethrow");
-    //     // TODO: fixme
-    //     RealCOMPlusThrow(kInvalidProgramException, (UINT)IDS_EE_RETHROW_NOT_ALLOWED);
-    // }
+    if (g_isNewExceptionHandlingEnabled)
+    {
+        CONTEXT ctx = {0};
+        ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
+        REGDISPLAY rd;
+        Thread *pThread = GetThread();
 
-    CONTEXT ctx = {0};
-    ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-    REGDISPLAY rd;
-    Thread *pThread = GetThread();
+        ExInfo *pActiveExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
 
-    ExInfo *pActiveExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+        ExInfo exInfo = {};
+        InitializeExInfo(pThread, &ctx, &rd, /* rethrow */ TRUE, &exInfo);
 
-    ExInfo exInfo = {};
-    InitializeExInfo(pThread, &ctx, &rd, /* rethrow */ TRUE, &exInfo);
+        GCPROTECT_BEGIN(exInfo._exception);
+        PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_RETHROW);
+        DECLARE_ARGHOLDER_ARRAY(args, 2);
 
-    GCPROTECT_BEGIN(exInfo._exception);
-    PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_RETHROW);
-    DECLARE_ARGHOLDER_ARRAY(args, 2);
+        args[ARGNUM_0] = PTR_TO_ARGHOLDER(pActiveExInfo);
+        args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
 
-    args[ARGNUM_0] = PTR_TO_ARGHOLDER(pActiveExInfo);
-    args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
-
-    //Ex.RhRethrow(ref ExInfo activeExInfo, ref ExInfo exInfo)
-    CALL_MANAGED_METHOD_NORET(args)
-    GCPROTECT_END();
+        //Ex.RhRethrow(ref ExInfo activeExInfo, ref ExInfo exInfo)
+        CALL_MANAGED_METHOD_NORET(args)
+        GCPROTECT_END();
+    }
+    else
+    {
+        OBJECTREF throwable = GetThread()->GetThrowable();
+        if (throwable != NULL)
+        {
+            RaiseTheExceptionInternalOnly(throwable, TRUE);
+        }
+        else
+        {
+            // This can only be the result of bad IL (or some internal EE failure).
+            _ASSERTE(!"No throwable on rethrow");
+            RealCOMPlusThrow(kInvalidProgramException, (UINT)IDS_EE_RETHROW_NOT_ALLOWED);
+        }
+    }
 
     HELPER_METHOD_FRAME_END();
 }
@@ -4930,7 +4944,8 @@ HCIMPL0(void, JIT_PInvokeEndRarePath)
 
     InlinedCallFrame* frame = (InlinedCallFrame*)thread->m_pFrame;
 
-    if ((((TADDR)frame->m_Datum) & 6) != 2)
+    //if ((((TADDR)frame->m_Datum) & 6) != 2)
+    if (!g_isNewExceptionHandlingEnabled)
     {
         HELPER_METHOD_FRAME_BEGIN_NOPOLL();    // Set up a frame
         thread->HandleThreadAbort();
@@ -4992,9 +5007,12 @@ HCIMPL0(void, JIT_RareDisableHelper)
 
     FC_GC_POLL_NOT_NEEDED();
 
-    HELPER_METHOD_FRAME_BEGIN_NOPOLL();    // Set up a frame
-    //thread->HandleThreadAbort();
-    HELPER_METHOD_FRAME_END();
+    if (!g_isNewExceptionHandlingEnabled)
+    {
+        HELPER_METHOD_FRAME_BEGIN_NOPOLL();    // Set up a frame
+        thread->HandleThreadAbort();
+        HELPER_METHOD_FRAME_END();
+    }
 
     END_PRESERVE_LAST_ERROR;
 }

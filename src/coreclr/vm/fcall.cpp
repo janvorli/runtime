@@ -14,7 +14,6 @@
 #include "gms.h"
 #include "ecall.h"
 #include "eeconfig.h"
-#include "exceptionhandlingqcalls.h"
 
 NOINLINE LPVOID __FCThrow(LPVOID __me, RuntimeExceptionKind reKind, UINT resID, LPCWSTR arg1, LPCWSTR arg2, LPCWSTR arg3)
 {
@@ -42,8 +41,11 @@ NOINLINE LPVOID __FCThrow(LPVOID __me, RuntimeExceptionKind reKind, UINT resID, 
     _ASSERTE((reKind != kExecutionEngineException) ||
              !"Don't throw kExecutionEngineException from here. Go to EEPolicy directly, or throw something better.");
 
-    RealCOMPlusThrowEx(reKind);
-/*
+    if (g_isNewExceptionHandlingEnabled)
+    {
+        RealCOMPlusThrowEx(reKind);
+    }
+
     if (resID == 0)
     {
         // If we have an string to add use NonLocalized otherwise just throw the exception.
@@ -54,7 +56,7 @@ NOINLINE LPVOID __FCThrow(LPVOID __me, RuntimeExceptionKind reKind, UINT resID, 
     }
     else
         COMPlusThrow(reKind, resID, arg1, arg2, arg3);
-*/
+
     HELPER_METHOD_FRAME_END();
     FC_CAN_TRIGGER_GC_END();
     _ASSERTE(!"Throw returned");

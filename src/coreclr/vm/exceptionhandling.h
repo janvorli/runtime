@@ -7,6 +7,8 @@
 #ifndef __EXCEPTION_HANDLING_h__
 #define __EXCEPTION_HANDLING_h__
 
+extern bool g_isNewExceptionHandlingEnabled;
+
 #ifdef FEATURE_EH_FUNCLETS
 
 #include "eexcp.h"

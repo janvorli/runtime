@@ -1052,6 +1052,7 @@ void GCFrame::Pop()
     // It also cancels the GC protection provided by the frame.
 
     _ASSERTE(m_pCurThread->GetGCFrame() == this && "Popping a GCFrame out of order ?");
+
     m_pCurThread->SetGCFrame(m_Next);
     m_Next = NULL;
 
@@ -1741,11 +1742,13 @@ NOINLINE void HelperMethodFrame::PushSlowHelper()
 
     if (!(m_Attribs & FRAME_ATTR_NO_THREAD_ABORT))
     {
-        if (m_pThread->IsAbortRequested())
+        if (!g_isNewExceptionHandlingEnabled)
         {
-            //m_pThread->HandleThreadAbort();
+            if (m_pThread->IsAbortRequested())
+            {
+                m_pThread->HandleThreadAbort();
+            }
         }
-
     }
 }
 
@@ -1757,7 +1760,10 @@ NOINLINE void HelperMethodFrame::PopSlowHelper()
         MODE_COOPERATIVE;
     } CONTRACTL_END;
 
-    //m_pThread->HandleThreadAbort();
+    if (!g_isNewExceptionHandlingEnabled)
+    {
+        m_pThread->HandleThreadAbort();
+    }
     Frame::Pop(m_pThread);
 }
 

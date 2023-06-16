@@ -1603,7 +1603,10 @@ BOOL StackFrameIterator::Init(Thread *    pThread,
     m_exInfoWalk.WalkToPosition(dac_cast<TADDR>(m_pStartFrame), false);
 #endif // ELIMINATE_FEF
 
-    m_pNextExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+    if (g_isNewExceptionHandlingEnabled)
+    {
+        m_pNextExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+    }
 
     //
     // These fields are used in the iteration and will be updated on a per-frame basis:
@@ -2230,10 +2233,13 @@ ProcessFuncletsForGCReporting:
                                         m_sfParent = m_sfIntermediaryFuncletParent;
                                         fSkipFuncletCallback = false;
 
-                                        if (!ExecutionManager::IsManagedCode(GetIP(m_crawl.GetRegisterSet()->pCallerContext)))
+                                        if (g_isNewExceptionHandlingEnabled)
                                         {
-                                            m_forceReportingWhileSkipping = 1;
-                                            STRESS_LOG0(LF_GCROOTS, LL_INFO100, "STACKWALK: Setting m_forceReportingWhileSkipping = 1\n");
+                                            if (!ExecutionManager::IsManagedCode(GetIP(m_crawl.GetRegisterSet()->pCallerContext)))
+                                            {
+                                                m_forceReportingWhileSkipping = 1;
+                                                STRESS_LOG0(LF_GCROOTS, LL_INFO100, "STACKWALK: Setting m_forceReportingWhileSkipping = 1\n");
+                                            }
                                         }
                                     }
                                 }
@@ -2273,12 +2279,16 @@ ProcessFuncletsForGCReporting:
                                         // Set the parent frame so that the funclet skipping logic (further below)
                                         // can use it.
                                         m_sfParent = m_sfFuncletParent;
-                                        // TODO: this is a hack, we need a better way - maybe detect passing over pinvoke frame to catch / finally
-                                        if (!ExecutionManager::IsManagedCode(GetIP(m_crawl.GetRegisterSet()->pCallerContext)))
+
+                                        if (g_isNewExceptionHandlingEnabled)
                                         {
-                                            // Only the first managed EH code is force reported
-                                            m_forceReportingWhileSkipping = 1;
-                                            STRESS_LOG0(LF_GCROOTS, LL_INFO100, "STACKWALK: Setting m_forceReportingWhileSkipping = 1\n");
+                                            // TODO: this is a hack, we need a better way - maybe detect passing over pinvoke frame to catch / finally
+                                            if (!ExecutionManager::IsManagedCode(GetIP(m_crawl.GetRegisterSet()->pCallerContext)))
+                                            {
+                                                // Only the first managed EH code is force reported
+                                                m_forceReportingWhileSkipping = 1;
+                                                STRESS_LOG0(LF_GCROOTS, LL_INFO100, "STACKWALK: Setting m_forceReportingWhileSkipping = 1\n");
+                                            }
                                         }
 
                                         // For non-filter funclets, we will make the callback for the funclet
@@ -2443,12 +2453,15 @@ ProcessFuncletsForGCReporting:
                                         // check if the parent frame of the funclet is also handling an exception. if it is, then we will need to
                                         // report roots for it since the catch handler may use references inside it.
 
-                                        STRESS_LOG2(LF_GCROOTS, LL_INFO100,
-                                            "STACKWALK: Reached parent of funclet which didn't report GC roots, since funclet is already unwound, pExInfo->_sfCallerOfActualHandlerFrame=%p, m_sfFuncletParent=%p\n", (void*)pExInfo->_sfCallerOfActualHandlerFrame.SP, (void*)m_sfFuncletParent.SP);
+                                        if (g_isNewExceptionHandlingEnabled)
+                                        {
+                                            STRESS_LOG2(LF_GCROOTS, LL_INFO100,
+                                                "STACKWALK: Reached parent of funclet which didn't report GC roots, since funclet is already unwound, pExInfo->_sfCallerOfActualHandlerFrame=%p, m_sfFuncletParent=%p\n", (void*)pExInfo->_sfCallerOfActualHandlerFrame.SP, (void*)m_sfFuncletParent.SP);
+                                        }
 
-                                        _ASSERT(pExInfo != NULL);
-                                        if (pExInfo->_sfCallerOfActualHandlerFrame == m_sfFuncletParent)
-                                        //if (pTracker->GetCallerOfActualHandlingFrame() == m_sfFuncletParent)
+                                        _ASSERT(pExInfo != NULL || pTracker != NULL);
+                                        if ((pExInfo && pExInfo->_sfCallerOfActualHandlerFrame == m_sfFuncletParent) ||
+                                            (pTracker && pTracker->GetCallerOfActualHandlingFrame() == m_sfFuncletParent))
                                         {
                                             // we should not skip reporting for this parent frame
                                             shouldSkipReporting = false;
@@ -2490,20 +2503,22 @@ ProcessFuncletsForGCReporting:
                                                 "STACKWALK: Reached parent of funclet which didn't report GC roots is not a funclet, resetting m_fDidFuncletReportGCReferences to true\n");
                                         }
 
-                                        _ASSERTE(!ExceptionTracker::HasFrameBeenUnwoundByAnyActiveException(&m_crawl));
-                                        if (m_fFuncletNotSeen && m_crawl.IsFunclet())
+                                        if (g_isNewExceptionHandlingEnabled)
                                         {
-                                            _ASSERTE(!m_fProcessIntermediaryNonFilterFunclet);
-                                            _ASSERTE(m_crawl.fShouldCrawlframeReportGCReferences);
-                                            m_fDidFuncletReportGCReferences = true;
-                                            shouldSkipReporting = false;
-                                            m_crawl.fShouldParentFrameUseUnwindTargetPCforGCReporting = true;
-                                            m_crawl.ehClauseForCatch = pExInfo->_ClauseForCatch;
-                                        }                                                
-
-                                        // STRESS_LOG4(LF_GCROOTS, LL_INFO100,
-                                        // "Funclet didn't report references: handling frame: %p, m_sfFuncletParent = %p, is funclet: %d, skip reporting %d\n",
-                                        // pTracker->GetEstablisherOfActualHandlingFrame().SP, m_sfFuncletParent.SP, m_crawl.IsFunclet(), shouldSkipReporting);
+                                            _ASSERTE(!ExceptionTracker::HasFrameBeenUnwoundByAnyActiveException(&m_crawl));
+                                            if (m_fFuncletNotSeen && m_crawl.IsFunclet())
+                                            {
+                                                _ASSERTE(!m_fProcessIntermediaryNonFilterFunclet);
+                                                _ASSERTE(m_crawl.fShouldCrawlframeReportGCReferences);
+                                                m_fDidFuncletReportGCReferences = true;
+                                                shouldSkipReporting = false;
+                                                m_crawl.fShouldParentFrameUseUnwindTargetPCforGCReporting = true;
+                                                m_crawl.ehClauseForCatch = pExInfo->_ClauseForCatch;
+                                            }                                                
+                                            // STRESS_LOG4(LF_GCROOTS, LL_INFO100,
+                                            // "Funclet didn't report references: handling frame: %p, m_sfFuncletParent = %p, is funclet: %d, skip reporting %d\n",
+                                            // pTracker->GetEstablisherOfActualHandlingFrame().SP, m_sfFuncletParent.SP, m_crawl.IsFunclet(), shouldSkipReporting);
+                                        }
                                     }
                                     m_crawl.fShouldParentToFuncletSkipReportingGCReferences = shouldSkipReporting;
 

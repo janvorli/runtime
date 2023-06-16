@@ -312,22 +312,29 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
 
 #define INSTALL_MANAGED_EXCEPTION_DISPATCHER                                                \
     {                                                                                       \
-        OBJECTREF caughtException = NULL;                                                        \
-        EX_TRY                                                                                  \
+        OBJECTREF caughtException = NULL;                                                   \
+        EX_TRY                                                                              \
         {
 
 #define UNINSTALL_MANAGED_EXCEPTION_DISPATCHER                                              \
-        }                                                                                       \
-        EX_CATCH                                                                                \
-        {                                                                                       \
-            GCX_COOP_NO_DTOR();                                                                 \
-            caughtException = GET_THROWABLE();                                                          \
-        }                                                                                       \
-        EX_END_CATCH(SwallowAllExceptions);                                                     \
-        if (caughtException != NULL)                                                                 \
-        {                                                                                       \
-            RealCOMPlusThrowEx(caughtException);                                                \
-        }                                                                                       \
+        }                                                                                   \
+        EX_CATCH                                                                            \
+        {                                                                                   \
+            if (g_isNewExceptionHandlingEnabled)                                            \
+            {                                                                               \
+                GCX_COOP_NO_DTOR();                                                         \
+                caughtException = GET_THROWABLE();                                          \
+            }                                                                               \
+            else                                                                            \
+            {                                                                               \
+                EX_RETHROW;                                                                 \
+            }                                                                               \
+        }                                                                                   \
+        EX_END_CATCH(SwallowAllExceptions);                                                 \
+        if (caughtException != NULL)                                                        \
+        {                                                                                   \
+            RealCOMPlusThrowEx(caughtException);                                            \
+        }                                                                                   \
     }
 
 #define INSTALL_UNHANDLED_MANAGED_EXCEPTION_TRAP
@@ -340,18 +347,7 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
         MAKE_CURRENT_THREAD_AVAILABLE();                                                    \
         Exception* __pUnCException  = NULL;                                                 \
         Frame*     __pUnCEntryFrame = CURRENT_THREAD->GetFrame();                           \
-        bool       __fExceptionCaught = false;                                             \
-        SCAN_EHMARKER();                                                                    \
-        if (true) PAL_CPP_TRY {                                                             \
-            SCAN_EHMARKER_TRY();                                                            \
-            DEBUG_ASSURE_NO_RETURN_BEGIN(IUACH)
-
-#define INSTALL_UNWIND_AND_CONTINUE_HANDLER_NO_PROBE2                                       \
-    {                                                                                       \
-        MAKE_CURRENT_THREAD_AVAILABLE();                                                    \
-        Exception* __pUnCException  = NULL;                                                 \
-        Frame*     __pUnCEntryFrame = CURRENT_THREAD->GetFrame();                           \
-        bool       __fExceptionCaught = false;                                             \
+        bool       __fExceptionCaught = false;                                              \
         SCAN_EHMARKER();                                                                    \
         if (true) PAL_CPP_TRY {                                                             \
             SCAN_EHMARKER_TRY();                                                            \
@@ -396,7 +392,7 @@ void InitializeExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, BOOL reth
             SCAN_EHMARKER_CATCH();                                                          \
             UnwindAndContinueRethrowHelperAfterCatch(__pUnCEntryFrame, __pUnCException);    \
         }                                                                                   \
-    }
+    }                                                                                       \
 
 #define UNINSTALL_UNWIND_AND_CONTINUE_HANDLER                                               \
     UNINSTALL_UNWIND_AND_CONTINUE_HANDLER_NO_PROBE;

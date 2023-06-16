@@ -3452,27 +3452,30 @@ BOOL StackTraceInfo::AppendElement(BOOL bAllowAllocMem, UINT_PTR currentIP, UINT
     }
 
 #ifndef TARGET_UNIX // Watson is supported on Windows only
-    // Thread *pThread = GetThread();
+    if (!g_isNewExceptionHandlingEnabled)
+    {
+        Thread *pThread = GetThread();
 
-    // if (pThread && (currentIP != 0))
-    // {
-    //     // Setup the watson bucketing details for the initial throw
-    //     // callback only if we dont already have them.
-    //     ThreadExceptionState *pExState = pThread->GetExceptionState();
-    //     if (!pExState->GetFlags()->GotWatsonBucketDetails())
-    //     {
-    //         // Adjust the IP if necessary.
-    //         UINT_PTR adjustedIp = currentIP;
-    //         // This is a workaround copied from above.
-    //         if (!(pCf->HasFaulted() || pCf->IsIPadjusted()) && adjustedIp != 0)
-    //         {
-    //             adjustedIp -= 1;
-    //         }
+        if (pThread && (currentIP != 0))
+        {
+            // Setup the watson bucketing details for the initial throw
+            // callback only if we dont already have them.
+            ThreadExceptionState *pExState = pThread->GetExceptionState();
+            if (!pExState->GetFlags()->GotWatsonBucketDetails())
+            {
+                // Adjust the IP if necessary.
+                UINT_PTR adjustedIp = currentIP;
+                // This is a workaround copied from above.
+                if (!(pCf->HasFaulted() || pCf->IsIPadjusted()) && adjustedIp != 0)
+                {
+                    adjustedIp -= 1;
+                }
 
-    //         // Setup the bucketing details for the initial throw
-    //         SetupInitialThrowBucketDetails(adjustedIp);
-    //     }
-    // }
+                // Setup the bucketing details for the initial throw
+                SetupInitialThrowBucketDetails(adjustedIp);
+            }
+        }
+    }
 #endif // !TARGET_UNIX
 
     return bRetVal;
@@ -6627,7 +6630,7 @@ static LONG HandleManagedFaultFilter(EXCEPTION_POINTERS* ep, LPVOID pv)
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
-void HandleManagedFault(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext)
+void HandleManagedFaultNew(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext)
 {
     WRAPPER_NO_CONTRACT;
 
@@ -6678,24 +6681,37 @@ void HandleManagedFault(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext)
     CALL_MANAGED_METHOD_NORET(args)
 
     GCPROTECT_END();
+}
 
-    // HandleManagedFaultFilterParam param;
-    // param.fFilterExecuted = FALSE;
-    // param.pOriginalExceptionRecord = pExceptionRecord;
+void HandleManagedFault(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext)
+{
+    WRAPPER_NO_CONTRACT;
 
-    // PAL_TRY(HandleManagedFaultFilterParam *, pParam, &param)
-    // {
-    //     GetThread()->SetThreadStateNC(Thread::TSNC_DebuggerIsManagedException);
+    // Ok.  Now we have a brand new fault in jitted code.
+    FrameWithCookie<FaultingExceptionFrame> frameWithCookie;
+    FaultingExceptionFrame *frame = &frameWithCookie;
+#if defined(FEATURE_EH_FUNCLETS)
+    *frame->GetGSCookiePtr() = GetProcessGSCookie();
+#endif // FEATURE_EH_FUNCLETS
+    frame->InitAndLink(pContext);
 
-    //     EXCEPTION_RECORD *pRecord = pParam->pOriginalExceptionRecord;
+    HandleManagedFaultFilterParam param;
+    param.fFilterExecuted = FALSE;
+    param.pOriginalExceptionRecord = pExceptionRecord;
 
-    //     RaiseException(pRecord->ExceptionCode, 0,
-    //         pRecord->NumberParameters, pRecord->ExceptionInformation);
-    // }
-    // PAL_EXCEPT_FILTER(HandleManagedFaultFilter)
-    // {
-    // }
-    // PAL_ENDTRY
+    PAL_TRY(HandleManagedFaultFilterParam *, pParam, &param)
+    {
+        GetThread()->SetThreadStateNC(Thread::TSNC_DebuggerIsManagedException);
+
+        EXCEPTION_RECORD *pRecord = pParam->pOriginalExceptionRecord;
+
+        RaiseException(pRecord->ExceptionCode, 0,
+            pRecord->NumberParameters, pRecord->ExceptionInformation);
+    }
+    PAL_EXCEPT_FILTER(HandleManagedFaultFilter)
+    {
+    }
+    PAL_ENDTRY
 }
 
 #endif // USE_FEF && !TARGET_UNIX
@@ -6936,8 +6952,10 @@ VEH_ACTION WINAPI CLRVectoredExceptionHandler(PEXCEPTION_POINTERS pExceptionInfo
         //
         // Not an Out-of-memory situation, so no need for a forbid fault region here
         //
-        // TODO: make this conditional for the old / new EH
-        EEPolicy::HandleStackOverflow();
+        if (g_isNewExceptionHandlingEnabled)
+        {
+            EEPolicy::HandleStackOverflow();
+        }
         return VEH_CONTINUE_SEARCH;
     }
 
@@ -7633,7 +7651,14 @@ LONG WINAPI CLRVectoredExceptionHandlerShim(PEXCEPTION_POINTERS pExceptionInfo)
                 //
                 // HandleManagedFault may never return, so we cannot use a forbid fault region around it.
                 //
-                HandleManagedFault(pExceptionInfo->ExceptionRecord, pExceptionInfo->ContextRecord);
+                if (g_isNewExceptionHandlingEnabled)
+                {
+                    HandleManagedFaultNew(pExceptionInfo->ExceptionRecord, pExceptionInfo->ContextRecord);
+                }
+                else
+                {
+                    HandleManagedFault(pExceptionInfo->ExceptionRecord, pExceptionInfo->ContextRecord);
+                }
                 return EXCEPTION_CONTINUE_EXECUTION;
             }
 #endif // FEATURE_EH_FUNCLETS
@@ -7839,8 +7864,14 @@ VOID DECLSPEC_NORETURN UnwindAndContinueRethrowHelperAfterCatch(Frame* pEntryFra
 
     Exception::Delete(pException);
 
-    RealCOMPlusThrowEx(orThrowable);
-    //RaiseTheExceptionInternalOnly(orThrowable, FALSE);
+    if (g_isNewExceptionHandlingEnabled)
+    {
+        RealCOMPlusThrowEx(orThrowable);
+    }
+    else
+    {
+        RaiseTheExceptionInternalOnly(orThrowable, FALSE);
+    }
 }
 
 thread_local DWORD t_dwCurrentExceptionCode;
