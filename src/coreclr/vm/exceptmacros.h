@@ -312,13 +312,45 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
 
 #define INSTALL_MANAGED_EXCEPTION_DISPATCHER                                                \
     {                                                                                       \
-        OBJECTREF caughtException = NULL;                                                   \
-        EX_TRY_CPP_ONLY                                                                              \
+        auto body = [&]()                                                                      \
         {
 
 #define UNINSTALL_MANAGED_EXCEPTION_DISPATCHER                                              \
+        };                                                                                  \
+        if (!g_isNewExceptionHandlingEnabled)                                               \
+        {                                                                                   \
+            body();                                                                         \
         }                                                                                   \
-        EX_CATCH_CPP_ONLY                                                                            \
+        else                                                                                \
+        {                                                                                   \
+            OBJECTREF caughtException = NULL;                                               \
+            EX_TRY                                                                          \
+            {                                                                               \
+                body();                                                                     \
+            }                                                                               \
+            EX_CATCH                                                                        \
+            {                                                                               \
+                GCX_COOP_NO_DTOR();                                                         \
+                caughtException = GET_THROWABLE();                                          \
+            }                                                                               \
+            EX_END_CATCH(SwallowAllExceptions);                                             \
+            if (caughtException != NULL)                                                    \
+            {                                                                               \
+                RealCOMPlusThrowEx(caughtException);                                        \
+            }                                                                               \
+        }                                                                                   \
+    }
+
+
+#define INSTALL_MANAGED_EXCEPTION_DISPATCHER2                                                \
+    {                                                                                       \
+        OBJECTREF caughtException = NULL;                                                   \
+        EX_TRY                                                                              \
+        {
+
+#define UNINSTALL_MANAGED_EXCEPTION_DISPATCHER2                                              \
+        }                                                                                   \
+        EX_CATCH                                                                            \
         {                                                                                   \
             if (g_isNewExceptionHandlingEnabled)                                            \
             {                                                                               \
@@ -327,6 +359,7 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
             }                                                                               \
             else                                                                            \
             {                                                                               \
+                fprintf(stderr, "Rethrowing exception with HR=%08X, type=%08x\n", GET_EXCEPTION()->GetHR(), GET_EXCEPTION()->GetInstanceType()); \
                 EX_RETHROW;                                                                 \
             }                                                                               \
         }                                                                                   \
@@ -336,6 +369,7 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
             RealCOMPlusThrowEx(caughtException);                                            \
         }                                                                                   \
     }
+
 
 #define INSTALL_UNHANDLED_MANAGED_EXCEPTION_TRAP
 #define UNINSTALL_UNHANDLED_MANAGED_EXCEPTION_TRAP
