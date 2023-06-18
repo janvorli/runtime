@@ -4944,15 +4944,9 @@ HCIMPL0(void, JIT_PInvokeEndRarePath)
 
     FC_GC_POLL_NOT_NEEDED();
 
-    InlinedCallFrame* frame = (InlinedCallFrame*)thread->m_pFrame;
-
-    //if ((((TADDR)frame->m_Datum) & 6) != 2)
-    if (!g_isNewExceptionHandlingEnabled)
-    {
-        HELPER_METHOD_FRAME_BEGIN_NOPOLL();    // Set up a frame
-        thread->HandleThreadAbort();
-        HELPER_METHOD_FRAME_END();
-    }
+    HELPER_METHOD_FRAME_BEGIN_NOPOLL();    // Set up a frame
+    thread->HandleThreadAbort();
+    HELPER_METHOD_FRAME_END();
 
     thread->m_pFrame->Pop(thread);
 
@@ -5009,12 +5003,9 @@ HCIMPL0(void, JIT_RareDisableHelper)
 
     FC_GC_POLL_NOT_NEEDED();
 
-    if (!g_isNewExceptionHandlingEnabled)
-    {
-        HELPER_METHOD_FRAME_BEGIN_NOPOLL();    // Set up a frame
-        thread->HandleThreadAbort();
-        HELPER_METHOD_FRAME_END();
-    }
+    HELPER_METHOD_FRAME_BEGIN_NOPOLL();    // Set up a frame
+    thread->HandleThreadAbort();
+    HELPER_METHOD_FRAME_END();
 
     END_PRESERVE_LAST_ERROR;
 }

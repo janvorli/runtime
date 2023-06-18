@@ -963,6 +963,12 @@ BOOL Thread::ReadyForAsyncException()
         return FALSE;
     }
 
+    if (g_isNewExceptionHandlingEnabled)
+    {
+        // TODO: make thread abort work for the new exception handling
+        return FALSE;
+    }
+
     REGDISPLAY rd;
 
     Frame *pStartFrame = NULL;

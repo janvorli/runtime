@@ -7417,26 +7417,6 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
 #endif //!DACCESS_COMPILE
 
 #ifndef DACCESS_COMPILE
-    extern "C" void QCALLTYPE RhpAppendExceptionStackFrame(QCall::ObjectHandleOnStack exceptionObj, SIZE_T ip, SIZE_T sp, int flags, ExInfo *pExInfo)
-    {
-        QCALL_CONTRACT;
-        
-        BEGIN_QCALL;
-        GCX_COOP();
-        bool canAllocateMemory = !(exceptionObj.Get() == CLRException::GetPreallocatedOutOfMemoryException()) &&
-               !(exceptionObj.Get() == CLRException::GetPreallocatedStackOverflowException());
-    
-        // Q: should the pExInfo stack walker replace ip, sp amd pMD?
-        EECodeInfo codeInfo(ip);
-        _ASSERTE(codeInfo.IsValid());
-        MethodDesc *pMD = codeInfo.GetMethodDesc();
-
-        pExInfo->_stackTraceInfo.AppendElement(canAllocateMemory, ip, sp, pMD, &pExInfo->_frameIter.m_crawl);
-        pExInfo->_stackTraceInfo.SaveStackTrace(canAllocateMemory, pExInfo->_hThrowable, /*bReplaceStack*/FALSE, /*bSkipLastElement*/FALSE);
-
-        END_QCALL;
-    }
-
     void MarkInlinedCallFrameAsFuncletCall(Frame* pFrame)
     {
         // TODO: assert that this is an inlined call frame
@@ -7449,6 +7429,31 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         // TODO: assert that this is an inlined call frame
         InlinedCallFrame* pInlinedCallFrame = (InlinedCallFrame*)pFrame;
         pInlinedCallFrame->m_Datum = (PTR_NDirectMethodDesc)((TADDR)pInlinedCallFrame->m_Datum | 2); // Mark the pinvoke frame as invoking any exception handling helper
+    }
+
+    extern "C" void QCALLTYPE RhpAppendExceptionStackFrame(QCall::ObjectHandleOnStack exceptionObj, SIZE_T ip, SIZE_T sp, int flags, ExInfo *pExInfo)
+    {
+        QCALL_CONTRACT;
+        
+        BEGIN_QCALL;
+        GCX_COOP();
+
+        Thread* pThread = GET_THREAD();
+        Frame* pFrame = pThread->GetFrame();
+        MarkInlinedCallFrameAsFuncletCall(pFrame);
+
+        bool canAllocateMemory = !(exceptionObj.Get() == CLRException::GetPreallocatedOutOfMemoryException()) &&
+               !(exceptionObj.Get() == CLRException::GetPreallocatedStackOverflowException());
+    
+        // Q: should the pExInfo stack walker replace ip, sp amd pMD?
+        EECodeInfo codeInfo(ip);
+        _ASSERTE(codeInfo.IsValid());
+        MethodDesc *pMD = codeInfo.GetMethodDesc();
+
+        pExInfo->_stackTraceInfo.AppendElement(canAllocateMemory, ip, sp, pMD, &pExInfo->_frameIter.m_crawl);
+        pExInfo->_stackTraceInfo.SaveStackTrace(canAllocateMemory, pExInfo->_hThrowable, /*bReplaceStack*/FALSE, /*bSkipLastElement*/FALSE);
+
+        END_QCALL;
     }
 
     UINT_PTR GetEstablisherFrame(REGDISPLAY* pvRegDisplay, ExInfo* exInfo)

@@ -1742,12 +1742,9 @@ NOINLINE void HelperMethodFrame::PushSlowHelper()
 
     if (!(m_Attribs & FRAME_ATTR_NO_THREAD_ABORT))
     {
-        if (!g_isNewExceptionHandlingEnabled)
+        if (m_pThread->IsAbortRequested())
         {
-            if (m_pThread->IsAbortRequested())
-            {
-                m_pThread->HandleThreadAbort();
-            }
+            m_pThread->HandleThreadAbort();
         }
     }
 }
@@ -1760,10 +1757,7 @@ NOINLINE void HelperMethodFrame::PopSlowHelper()
         MODE_COOPERATIVE;
     } CONTRACTL_END;
 
-    if (!g_isNewExceptionHandlingEnabled)
-    {
-        m_pThread->HandleThreadAbort();
-    }
+    m_pThread->HandleThreadAbort();
     Frame::Pop(m_pThread);
 }
 
