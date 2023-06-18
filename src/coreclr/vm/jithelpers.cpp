@@ -4271,11 +4271,13 @@ HCIMPL1(void, IL_Throw,  Object* obj)
         }
     }
 
+#ifdef FEATURE_EH_FUNCLETS
     if (g_isNewExceptionHandlingEnabled)
     {
         RealCOMPlusThrowEx(oref);
     }
     else
+#endif // FEATURE_EH_FUNCLETS
     {
         RaiseTheExceptionInternalOnly(oref, FALSE);
     }
@@ -4294,6 +4296,7 @@ HCIMPL0(void, IL_Rethrow)
 
     HELPER_METHOD_FRAME_BEGIN_ATTRIB_NOPOLL(Frame::FRAME_ATTR_EXCEPTION);    // Set up a frame
 
+#ifdef FEATURE_EH_FUNCLETS
     if (g_isNewExceptionHandlingEnabled)
     {
         CONTEXT ctx = {0};
@@ -4318,6 +4321,7 @@ HCIMPL0(void, IL_Rethrow)
         GCPROTECT_END();
     }
     else
+#endif // FEATURE_EH_FUNCLETS
     {
         OBJECTREF throwable = GetThread()->GetThrowable();
         if (throwable != NULL)

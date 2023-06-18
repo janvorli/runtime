@@ -569,7 +569,9 @@ private:
 //    This class works both in-process and out-of-process (e.g. DAC).
 //
 
+#ifdef FEATURE_EH_FUNCLETS
 struct ExInfo;
+#endif // FEATURE_EH_FUNCLETS
 
 class StackFrameIterator
 {
@@ -730,8 +732,10 @@ private:
 #if defined(RECORD_RESUMABLE_FRAME_SP)
     LPVOID m_pvResumableFrameTargetSP;
 #endif // RECORD_RESUMABLE_FRAME_SP
+#ifdef FEATURE_EH_FUNCLETS
 public:
     ExInfo* m_pNextExInfo;
+#endif // FEATURE_EH_FUNCLETS
 };
 
 void SetUpRegdisplayForStackWalk(Thread * pThread, T_CONTEXT * pContext, REGDISPLAY * pRegdisplay);

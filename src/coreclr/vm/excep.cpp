@@ -2834,6 +2834,8 @@ static VOID DECLSPEC_NORETURN RealCOMPlusThrowWorker(OBJECTREF throwable, BOOL r
     UNINSTALL_COMPLUS_EXCEPTION_HANDLER();
 }
 
+#ifdef FEATURE_EH_FUNCLETS
+
 void InitializeExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, BOOL rethrow, ExInfo *pExInfo)
 {
     pExInfo->_pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
@@ -2909,6 +2911,8 @@ VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(RuntimeExceptionKind reKind)
 
     RealCOMPlusThrowEx(throwable);
 }
+
+#endif // FEATURE_EH_FUNCLETS
 
 VOID DECLSPEC_NORETURN RealCOMPlusThrow(OBJECTREF throwable, BOOL rethrow)
 {
@@ -3452,7 +3456,9 @@ BOOL StackTraceInfo::AppendElement(BOOL bAllowAllocMem, UINT_PTR currentIP, UINT
     }
 
 #ifndef TARGET_UNIX // Watson is supported on Windows only
+#ifdef FEATURE_EH_FUNCLETS
     if (!g_isNewExceptionHandlingEnabled)
+#endif // FEATURE_EH_FUNCLETS
     {
         Thread *pThread = GetThread();
 
@@ -6952,10 +6958,12 @@ VEH_ACTION WINAPI CLRVectoredExceptionHandler(PEXCEPTION_POINTERS pExceptionInfo
         //
         // Not an Out-of-memory situation, so no need for a forbid fault region here
         //
+#ifdef FEATURE_EH_FUNCLETS
         if (g_isNewExceptionHandlingEnabled)
         {
             EEPolicy::HandleStackOverflow();
         }
+#endif // FEATURE_EH_FUNCLETS
         return VEH_CONTINUE_SEARCH;
     }
 
@@ -7864,11 +7872,13 @@ VOID DECLSPEC_NORETURN UnwindAndContinueRethrowHelperAfterCatch(Frame* pEntryFra
 
     Exception::Delete(pException);
 
+#ifdef FEATURE_EH_FUNCLETS
     if (g_isNewExceptionHandlingEnabled)
     {
         RealCOMPlusThrowEx(orThrowable);
     }
     else
+#endif // FEATURE_EH_FUNCLETS
     {
         RaiseTheExceptionInternalOnly(orThrowable, FALSE);
     }

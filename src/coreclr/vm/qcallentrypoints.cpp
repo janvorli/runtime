@@ -319,6 +319,7 @@ static const Entry s_QCall[] =
     DllImportEntry(ComWeakRefToObject)
     DllImportEntry(ObjectToComWeakRef)
 #endif
+#ifdef FEATURE_EH_FUNCLETS
     DllImportEntry(RhpSfiInit)
     DllImportEntry(RhpSfiNext)
     DllImportEntry(RhpCallCatchFunclet)
@@ -327,6 +328,7 @@ static const Entry s_QCall[] =
     DllImportEntry(RhpEHEnumInitFromStackFrameIterator)
     DllImportEntry(RhpEHEnumNext)
     DllImportEntry(RhpAppendExceptionStackFrame)
+#endif // FEATURE_EH_FUNCLETS
 };
 
 const void* QCallResolveDllImport(const char* name)

@@ -1122,6 +1122,9 @@ void StackFrameIterator::CommonCtor(Thread * pThread, PTR_Frame pFrame, ULONG32 
 } // StackFrameIterator::CommonCtor()
 
 #ifndef DACCESS_COMPILE
+
+#ifdef FEATURE_EH_FUNCLETS
+
 void ResetNextExInfoForSP(StackFrameIterator* pThis, TADDR SP)
 {
     while (pThis->m_pNextExInfo && (pThis->m_crawl.GetRegisterSet()->SP > (TADDR)(pThis->m_pNextExInfo)))
@@ -1503,7 +1506,9 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
     return false;
 }
 
-#endif
+#endif // FEATURE_EH_FUNCLETS
+
+#endif // DACCESS_COMPILE
 
 //---------------------------------------------------------------------------------------
 //
@@ -1599,10 +1604,12 @@ BOOL StackFrameIterator::Init(Thread *    pThread,
     m_exInfoWalk.WalkToPosition(dac_cast<TADDR>(m_pStartFrame), false);
 #endif // ELIMINATE_FEF
 
+#ifdef FEATURE_EH_FUNCLETS
     if (g_isNewExceptionHandlingEnabled)
     {
         m_pNextExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
     }
+#endif // FEATURE_EH_FUNCLETS
 
     //
     // These fields are used in the iteration and will be updated on a per-frame basis:

@@ -963,11 +963,13 @@ BOOL Thread::ReadyForAsyncException()
         return FALSE;
     }
 
+#ifdef FEATURE_EH_FUNCLETS
     if (g_isNewExceptionHandlingEnabled)
     {
         // TODO: make thread abort work for the new exception handling
         return FALSE;
     }
+#endif // FEATURE_EH_FUNCLETS
 
     REGDISPLAY rd;
 
@@ -2261,11 +2263,13 @@ void Thread::HandleThreadAbort ()
             exceptObj = CLRException::GetThrowableFromException(&eeExcept);
         }
 
+#ifdef FEATURE_EH_FUNCLETS
         if (g_isNewExceptionHandlingEnabled)
         {
             RealCOMPlusThrowEx(exceptObj);
         }
         else
+#endif // FEATURE_EH_FUNCLETS
         {
             RaiseTheExceptionInternalOnly(exceptObj, FALSE);
         }
@@ -3966,6 +3970,7 @@ ThrowControlForThread(
 
     STRESS_LOG0(LF_SYNC, LL_INFO100, "ThrowControlForThread Aborting\n");
 
+#ifdef FEATURE_EH_FUNCLETS
     if (g_isNewExceptionHandlingEnabled)
     {
         GCX_COOP();
@@ -3979,6 +3984,7 @@ ThrowControlForThread(
         RealCOMPlusThrowEx(throwable);
     }
     else
+#endif // FEATURE_EH_FUNCLETS
     {
         // Here we raise an exception.
         RaiseComPlusException();

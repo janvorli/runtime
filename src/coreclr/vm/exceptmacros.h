@@ -117,7 +117,10 @@ class Thread;
 class Frame;
 class Exception;
 struct REGDISPLAY;
+
+#ifndef FEATURE_EH_FUNCLETS
 struct ExInfo;
+#endif
 
 VOID DECLSPEC_NORETURN RealCOMPlusThrowOM();
 
@@ -310,9 +313,10 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
 
 #else // TARGET_UNIX
 
+#ifdef FEATURE_EH_FUNCLETS
 #define INSTALL_MANAGED_EXCEPTION_DISPATCHER                                                \
     {                                                                                       \
-        auto body = [&]()                                                                      \
+        auto body = [&]()                                                                   \
         {
 
 #define UNINSTALL_MANAGED_EXCEPTION_DISPATCHER                                              \
@@ -340,7 +344,10 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
             }                                                                               \
         }                                                                                   \
     }
-
+#else // FEATURE_EH_FUNCLETS
+#define INSTALL_MANAGED_EXCEPTION_DISPATCHER
+#define UNINSTALL_MANAGED_EXCEPTION_DISPATCHER
+#endif //FEATURE_EH_FUNCLETS
 
 #define INSTALL_MANAGED_EXCEPTION_DISPATCHER2                                                \
     {                                                                                       \
@@ -403,9 +410,11 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
             SCAN_EHMARKER_TRY();                                                            \
             DEBUG_ASSURE_NO_RETURN_BEGIN(IUACH);
 
+#ifdef FEATURE_EH_FUNCLETS
 VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(OBJECTREF throwable);
 VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(RuntimeExceptionKind reKind);
 void InitializeExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, BOOL rethrow, ExInfo *pExInfo);
+#endif // FEATURE_EH_FUNCLETS
 
 #define UNINSTALL_UNWIND_AND_CONTINUE_HANDLER_NO_PROBE                                      \
             DEBUG_ASSURE_NO_RETURN_END(IUACH)                                               \

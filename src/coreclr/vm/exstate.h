@@ -24,8 +24,10 @@ class EHClauseInfo;
 
 extern StackWalkAction COMPlusUnwindCallback(CrawlFrame *pCf, ThrowCallbackType *pData);
 
+#ifdef FEATURE_EH_FUNCLETS
 struct ExInfo;
 typedef DPTR(ExInfo) PTR_ExInfo;
+#endif // !FEATURE_EH_FUNCLETS
 
 //
 // This class serves as a forwarding and abstraction layer for the EH subsystem.
