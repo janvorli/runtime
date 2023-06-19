@@ -290,15 +290,14 @@ namespace System.Runtime
             UIntPtr sp, ref ExInfo exInfo,
             ref bool isFirstRethrowFrame, ref bool isFirstFrame)
         {
+            int flags = (isFirstFrame ? (int)RhEHFrameType.RH_EH_FIRST_FRAME : 0) |
+                        (isFirstRethrowFrame ? (int)RhEHFrameType.RH_EH_FIRST_RETHROW_FRAME : 0);
 #if NATIVEAOT
             IntPtr pAppendStackFrame = (IntPtr)InternalCalls.RhpGetClasslibFunctionFromCodeAddress(ip,
                 ClassLibFunctionId.AppendExceptionStackFrame);
 
             if (pAppendStackFrame != IntPtr.Zero)
             {
-                int flags = (isFirstFrame ? (int)RhEHFrameType.RH_EH_FIRST_FRAME : 0) |
-                            (isFirstRethrowFrame ? (int)RhEHFrameType.RH_EH_FIRST_RETHROW_FRAME : 0);
-
                 try
                 {
                     ((delegate*<object, IntPtr, int, void>)pAppendStackFrame)(exception, ip, flags);
@@ -313,14 +312,10 @@ namespace System.Runtime
                 isFirstFrame = false;
             }
 #else
-            int flags = (isFirstFrame ? (int)RhEHFrameType.RH_EH_FIRST_FRAME : 0) |
-                                        (isFirstRethrowFrame ? (int)RhEHFrameType.RH_EH_FIRST_RETHROW_FRAME : 0);
-#pragma warning disable CS8500
-            fixed (EH.ExInfo* pExInfo = &exInfo)
-            {
-                InternalCalls.RhpAppendExceptionStackFrame(ObjectHandleOnStack.Create(ref exception), ip, sp, flags, pExInfo);
-            }
-#pragma warning restore CS8500
+            InternalCalls.RhpAppendExceptionStackFrame(exception, ip, sp, flags, ref exInfo);
+            // Clear flags only if we called the function
+            isFirstRethrowFrame = false;
+            isFirstFrame = false;
 #endif
         }
 
@@ -862,14 +857,6 @@ namespace System.Runtime
                 InternalCalls.RhpCallPropagateExceptionCallback(
                     pReversePInvokePropagationContext, pReversePInvokePropagationCallback, frameIter.RegisterSet, ref exInfo, frameIter.PreviousTransitionFrame);
                 // the helper should jump to propagation handler and not return
-#else
-#pragma warning disable CS8500
-                fixed (EH.ExInfo* pExInfo = &exInfo)
-                {
-                    InternalCalls.RhpCallPropagateExceptionCallback(
-                        pReversePInvokePropagationContext, pReversePInvokePropagationCallback, frameIter.RegisterSet, pExInfo, IntPtr.Zero/*frameIter.PreviousTransitionFrame*/);
-                }
-#pragma warning restore CS8500
 #endif
                 Debug.Assert(false, "unreachable");
                 FallbackFailFast(RhFailFastReason.InternalError, null);
@@ -883,18 +870,8 @@ namespace System.Runtime
             //
             // ------------------------------------------------
             exInfo._idxCurClause = catchingTryRegionIdx;
-#if NATIVEAOT
             InternalCalls.RhpCallCatchFunclet(
                 exceptionObj, pCatchHandler, frameIter.RegisterSet, ref exInfo);
-#else
-#pragma warning disable CS8500
-            fixed (EH.ExInfo* pExInfo = &exInfo)
-            {
-                InternalCalls.RhpCallCatchFunclet(
-                    ObjectHandleOnStack.Create(ref exceptionObj), pCatchHandler, frameIter.RegisterSet, pExInfo);
-            }
-#pragma warning restore CS8500
-#endif
             // currently, RhpCallCatchFunclet will resume after the catch
             Debug.Assert(false, "unreachable");
             FallbackFailFast(RhFailFastReason.InternalError, null);
@@ -1008,11 +985,7 @@ namespace System.Runtime
                     try
                     {
                         shouldInvokeHandler =
-#if NATIVEAOT
                             InternalCalls.RhpCallFilterFunclet(exception, pFilterFunclet, frameIter.RegisterSet);
-#else
-                            InternalCalls.RhpCallFilterFunclet(ObjectHandleOnStack.Create(ref exception), pFilterFunclet, frameIter.RegisterSet);
-#endif
                     }
                     catch when (true)
                     {
@@ -1164,12 +1137,7 @@ if ((ehClause._tryStartOffset == lastTryStart) && (ehClause._tryEndOffset == las
 #if NATIVEAOT
                 InternalCalls.RhpCallFinallyFunclet(pFinallyHandler, exInfo._frameIter.RegisterSet);
 #else
-#pragma warning disable CS8500
-                fixed (EH.ExInfo* pExInfo = &exInfo)
-                {
-                    InternalCalls.RhpCallFinallyFunclet(pFinallyHandler, exInfo._frameIter.RegisterSet, pExInfo);
-                }
-#pragma warning restore CS8500
+                InternalCalls.RhpCallFinallyFunclet(pFinallyHandler, exInfo._frameIter.RegisterSet, ref exInfo);
 #endif
                 exInfo._idxCurClause = MaxTryRegionIdx;
             }
