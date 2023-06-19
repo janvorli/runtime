@@ -7473,6 +7473,8 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         return pvRegDisplay->SP;
 #elif defined(HOST_ARM)
         return pvRegDisplay->SP;
+#elif defined(HOST_X86)
+        return pvRegDisplay->SP;
 #endif        
     }
 
@@ -7707,8 +7709,10 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
 
                 STRESS_LOG1(LF_EH, LL_INFO10, "resume under control: ip: %p\n", uResumePC);
 
-#ifdef TARGET_AMD64
+#if defined(TARGET_AMD64)
                 pContextRecord->Rcx = uResumePC;
+#elif defined(TARGET_X86)
+                pContextRecord->Ecx = uResumePC;
 #elif defined(TARGET_ARM) || defined(TARGET_ARM64)
                 // On ARM & ARM64, we save off the original PC in Lr. This is the same as done
                 // in HandleManagedFault for H/W generated exceptions.
@@ -7738,20 +7742,26 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
             }
 #endif // HOST_UNIX
             // Throw exception from the caller context
-#ifdef HOST_AMD64
+#if defined(HOST_AMD64)
             ULONG64* returnAddress = (ULONG64*)targetSp;
             *returnAddress = pvRegDisplay->pCurrentContext->Rip;
+#elif defined(HOST_X86)
+            ULONG32* returnAddress = (ULONG32*)targetSp;
+            *returnAddress = pvRegDisplay->pCurrentContext->Eip;
 #elif defined(HOST_ARM64)
             pvRegDisplay->pCurrentContext->Lr = GetIP(pvRegDisplay->pCurrentContext);
 #elif defined(HOST_ARM)
+            pvRegDisplay->pCurrentContext->Lr = GetIP(pvRegDisplay->pCurrentContext);
 #endif
             // The exception needs to be stored in a place that is not going to be unwound, so
             // use thread local storage
             thread_local OBJECTREF oref;
             oref = exceptionObj.Get();
             SetIP(pvRegDisplay->pCurrentContext, (ULONG64)(void (*)(OBJECTREF))RealCOMPlusThrow);
-#ifdef HOST_AMD64
+#if defined(HOST_AMD64)
             SetSP(pvRegDisplay->pCurrentContext, targetSp - 8);
+#elif defined(HOST_X86)
+            SetSP(pvRegDisplay->pCurrentContext, targetSp - 4);
 #endif            
 #ifdef HOST_AMD64
 #ifdef UNIX_AMD64_ABI
@@ -7759,6 +7769,8 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
 #else
 #define FIRST_ARG_REG Rcx
 #endif
+#elif defined(HOST_X86)
+#define FIRST_ARG_REG Ecx
 #elif defined(HOST_ARM64)
 #define FIRST_ARG_REG X0
 #elif defined(HOST_ARM)

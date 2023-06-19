@@ -118,7 +118,7 @@ class Frame;
 class Exception;
 struct REGDISPLAY;
 
-#ifndef FEATURE_EH_FUNCLETS
+#ifdef FEATURE_EH_FUNCLETS
 struct ExInfo;
 #endif
 

@@ -5,7 +5,7 @@
 #ifndef EXCEPTION_HANDLING_QCALLS_H
 #define EXCEPTION_HANDLING_QCALLS_H
 
-#ifndef FEATURE_EH_FUNCLETS
+#ifdef FEATURE_EH_FUNCLETS
 
 enum RhEHClauseKind
 {
@@ -94,6 +94,6 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
 extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, unsigned int* uExCollideClauseIdx, bool* fUnwoundReversePInvoke);
 #endif // DACCESS_COMPILE
 
-#endif // !FEATURE_EH_FUNCLETS
+#endif // FEATURE_EH_FUNCLETS
 
 #endif // EXCEPTION_HANDLING_QCALLS_H

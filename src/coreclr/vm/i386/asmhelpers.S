@@ -214,6 +214,8 @@ LOCAL_LABEL(donestack):
 
     CHECK_STACK_ALIGNMENT
     call    [ebx + CallDescrData__pTarget]
+PATCH_LABEL CallDescrWorkerInternalReturnAddress
+
 #ifdef _DEBUG
     nop     // This is a tag that we use in an assert.  Fcalls expect to
             // be called from Jitted code or from certain blessed call sites like
