@@ -4274,7 +4274,7 @@ HCIMPL1(void, IL_Throw,  Object* obj)
 #ifdef FEATURE_EH_FUNCLETS
     if (g_isNewExceptionHandlingEnabled)
     {
-        RealCOMPlusThrowEx(oref);
+        DispatchManagedException(oref);
     }
     else
 #endif // FEATURE_EH_FUNCLETS

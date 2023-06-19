@@ -902,7 +902,7 @@ ProcessCLRException(IN     PEXCEPTION_RECORD   pExceptionRecord,
             frame->InitAndLink(pContextRecord);
 
             OBJECTREF oref = ExceptionTracker::CreateThrowable(pExceptionRecord, FALSE) ;// CreateCOMPlusExceptionObject(pThread, pExceptionRecord, FALSE);
-            RealCOMPlusThrowEx(oref);
+            DispatchManagedException(oref);
         }
 #endif // HOST_UNIX
         EEPOLICY_HANDLE_FATAL_ERROR_WITH_MESSAGE(E_FAIL, _T("SEH exception leaked into managed code"));
@@ -4892,7 +4892,7 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
         GCX_COOP();
         Thread *pThread = GetThread();
         OBJECTREF throwable = ExceptionTracker::CreateThrowable(ex.GetExceptionRecord(), FALSE);
-        RealCOMPlusThrowEx(throwable);
+        DispatchManagedException(throwable);
     }
 
     do

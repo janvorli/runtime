@@ -2266,7 +2266,7 @@ void Thread::HandleThreadAbort ()
 #ifdef FEATURE_EH_FUNCLETS
         if (g_isNewExceptionHandlingEnabled)
         {
-            RealCOMPlusThrowEx(exceptObj);
+            DispatchManagedException(exceptObj);
         }
         else
 #endif // FEATURE_EH_FUNCLETS
@@ -3981,7 +3981,7 @@ ThrowControlForThread(
         exceptionRecord.ExceptionFlags = 0;
 
         OBJECTREF throwable = ExceptionTracker::CreateThrowable(&exceptionRecord, TRUE);
-        RealCOMPlusThrowEx(throwable);
+        DispatchManagedException(throwable);
     }
     else
 #endif // FEATURE_EH_FUNCLETS

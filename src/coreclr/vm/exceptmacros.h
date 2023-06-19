@@ -340,7 +340,7 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
             EX_END_CATCH(SwallowAllExceptions);                                             \
             if (caughtException != NULL)                                                    \
             {                                                                               \
-                RealCOMPlusThrowEx(caughtException);                                        \
+                DispatchManagedException(caughtException);                                        \
             }                                                                               \
         }                                                                                   \
     }
@@ -373,7 +373,7 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
         EX_END_CATCH(SwallowAllExceptions);                                                 \
         if (caughtException != NULL)                                                        \
         {                                                                                   \
-            RealCOMPlusThrowEx(caughtException);                                            \
+            DispatchManagedException(caughtException);                                            \
         }                                                                                   \
     }
 
@@ -411,8 +411,8 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
             DEBUG_ASSURE_NO_RETURN_BEGIN(IUACH);
 
 #ifdef FEATURE_EH_FUNCLETS
-VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(OBJECTREF throwable);
-VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(RuntimeExceptionKind reKind);
+VOID DECLSPEC_NORETURN DispatchManagedException(OBJECTREF throwable);
+VOID DECLSPEC_NORETURN DispatchManagedException(RuntimeExceptionKind reKind);
 void InitializeExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, BOOL rethrow, ExInfo *pExInfo);
 #endif // FEATURE_EH_FUNCLETS
 

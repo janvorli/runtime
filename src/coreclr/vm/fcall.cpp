@@ -44,7 +44,7 @@ NOINLINE LPVOID __FCThrow(LPVOID __me, RuntimeExceptionKind reKind, UINT resID, 
 #ifdef FEATURE_EH_FUNCLETS
     if (g_isNewExceptionHandlingEnabled)
     {
-        RealCOMPlusThrowEx(reKind);
+        DispatchManagedException(reKind);
     }
 #endif // FEATURE_EH_FUNCLETS
 

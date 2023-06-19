@@ -2853,7 +2853,7 @@ void InitializeExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, BOOL reth
     pThread->GetExceptionState()->SetCurrentExInfo(pExInfo);
 }
 
-VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(OBJECTREF throwable)
+VOID DECLSPEC_NORETURN DispatchManagedException(OBJECTREF throwable)
 {
     STATIC_CONTRACT_THROWS;
     STATIC_CONTRACT_GC_TRIGGERS;
@@ -2900,7 +2900,7 @@ VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(OBJECTREF throwable)
     UNREACHABLE();
 }
 
-VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(RuntimeExceptionKind reKind)
+VOID DECLSPEC_NORETURN DispatchManagedException(RuntimeExceptionKind reKind)
 {
     STATIC_CONTRACT_THROWS;
     STATIC_CONTRACT_GC_TRIGGERS;
@@ -2909,7 +2909,7 @@ VOID DECLSPEC_NORETURN RealCOMPlusThrowEx(RuntimeExceptionKind reKind)
     EEException ex(reKind);
     OBJECTREF throwable = ex.CreateThrowable();
 
-    RealCOMPlusThrowEx(throwable);
+    DispatchManagedException(throwable);
 }
 
 #endif // FEATURE_EH_FUNCLETS
@@ -7875,7 +7875,7 @@ VOID DECLSPEC_NORETURN UnwindAndContinueRethrowHelperAfterCatch(Frame* pEntryFra
 #ifdef FEATURE_EH_FUNCLETS
     if (g_isNewExceptionHandlingEnabled)
     {
-        RealCOMPlusThrowEx(orThrowable);
+        DispatchManagedException(orThrowable);
     }
     else
 #endif // FEATURE_EH_FUNCLETS
