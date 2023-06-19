@@ -493,7 +493,6 @@ namespace System.Runtime
             STATUS_INTEGER_DIVIDE_BY_ZERO = 0xC0000094u,
             STATUS_INTEGER_OVERFLOW = 0xC0000095u,
         }
-#if NATIVEAOT
         [StructLayout(LayoutKind.Explicit, Size = AsmOffsets.SIZEOF__PAL_LIMITED_CONTEXT)]
         public struct PAL_LIMITED_CONTEXT
         {
@@ -507,7 +506,6 @@ namespace System.Runtime
 #endif
             // the rest of the struct is left unspecified.
         }
-#endif
 
         // N.B. -- These values are burned into the throw helper assembly code and are also known the the
         //         StackFrameIterator code.
@@ -569,11 +567,7 @@ namespace System.Runtime
             internal void* _pPrevExInfo;
 
             [FieldOffset(AsmOffsets.OFFSETOF__ExInfo__m_pExContext)]
-#if NATIVEAOT
             internal PAL_LIMITED_CONTEXT* _pExContext;
-#else
-            internal REGDISPLAY* _pExContext;
-#endif
 
             [FieldOffset(AsmOffsets.OFFSETOF__ExInfo__m_exception)]
             private object _exception;  // actual object reference, specially reported by GcScanRootsWorker
@@ -772,9 +766,9 @@ namespace System.Runtime
                 }
             }
 
-#if FEATURE_OBJCMARSHAL
             if (unwoundReversePInvoke)
             {
+#if FEATURE_OBJCMARSHAL && NATIVEAOT
                 // We did not find any managed handlers before hitting a reverse P/Invoke boundary.
                 // See if the classlib has a handler to propagate the exception to native code.
                 IntPtr pGetHandlerClasslibFunction = (IntPtr)InternalCalls.RhpGetClasslibFunctionFromCodeAddress((IntPtr)prevControlPC,
@@ -791,10 +785,12 @@ namespace System.Runtime
                         catchingTryRegionIdx = MaxTryRegionIdx;
                     }
                 }
+#endif // FEATURE_OBJCMARSHAL && NATIVEAOT
+                handlingFrameSP = frameIter.SP;
+                catchingTryRegionIdx = MaxTryRegionIdx;
             }
-#endif // FEATURE_OBJCMARSHAL
 
-            if (pCatchHandler == null && pReversePInvokePropagationCallback == IntPtr.Zero)
+            if (pCatchHandler == null && pReversePInvokePropagationCallback == IntPtr.Zero && !unwoundReversePInvoke)
             {
                 OnUnhandledExceptionViaClassLib(exceptionObj);
 
@@ -807,7 +803,7 @@ namespace System.Runtime
 
             // We FailFast above if the exception goes unhandled.  Therefore, we cannot run the second pass
             // without a catch handler or propagation callback.
-            Debug.Assert(pCatchHandler != null || pReversePInvokePropagationCallback != IntPtr.Zero, "We should have a handler if we're starting the second pass");
+            Debug.Assert(pCatchHandler != null || pReversePInvokePropagationCallback != IntPtr.Zero || unwoundReversePInvoke, "We should have a handler if we're starting the second pass");
 
             // ------------------------------------------------
             //
@@ -824,6 +820,9 @@ namespace System.Runtime
             InternalCalls.RhpSetThreadDoNotTriggerGC();
 #endif
             exInfo._passNumber = 2;
+            // TODO: can we get rid of this? The native code uses it to distinguish between the case of found catch handler and
+            // the case of hitting native code.
+            exInfo._idxCurClause = catchingTryRegionIdx;
             startIdx = MaxTryRegionIdx;
             unwoundReversePInvoke = false;
             isValid = frameIter.Init(exInfo._pExContext, (exInfo._kind & ExKind.InstructionFaultFlag) != 0);
@@ -834,9 +833,9 @@ namespace System.Runtime
 
                 if (unwoundReversePInvoke)
                 {
-                    Debug.Assert(pReversePInvokePropagationCallback != IntPtr.Zero, "Unwound to a reverse P/Invoke in the second pass. We should have a propagation handler.");
+                    //Debug.Assert(pReversePInvokePropagationCallback != IntPtr.Zero, "Unwound to a reverse P/Invoke in the second pass. We should have a propagation handler.");
                     Debug.Assert(frameIter.SP == handlingFrameSP, "Encountered a different reverse P/Invoke frame in the second pass.");
-                    Debug.Assert(frameIter.PreviousTransitionFrame != IntPtr.Zero, "Should have a transition frame for reverse P/Invoke.");
+                    //Debug.Assert(frameIter.PreviousTransitionFrame != IntPtr.Zero, "Should have a transition frame for reverse P/Invoke.");
                     // Found the native frame that called the reverse P/invoke.
                     // It is not possible to run managed second pass handlers on a native frame.
                     break;
@@ -859,9 +858,19 @@ namespace System.Runtime
 #if FEATURE_OBJCMARSHAL
             if (pReversePInvokePropagationCallback != IntPtr.Zero)
             {
+#if NATIVEAOT
                 InternalCalls.RhpCallPropagateExceptionCallback(
                     pReversePInvokePropagationContext, pReversePInvokePropagationCallback, frameIter.RegisterSet, ref exInfo, frameIter.PreviousTransitionFrame);
                 // the helper should jump to propagation handler and not return
+#else
+#pragma warning disable CS8500
+                fixed (EH.ExInfo* pExInfo = &exInfo)
+                {
+                    InternalCalls.RhpCallPropagateExceptionCallback(
+                        pReversePInvokePropagationContext, pReversePInvokePropagationCallback, frameIter.RegisterSet, pExInfo, IntPtr.Zero/*frameIter.PreviousTransitionFrame*/);
+                }
+#pragma warning restore CS8500
+#endif
                 Debug.Assert(false, "unreachable");
                 FallbackFailFast(RhFailFastReason.InternalError, null);
             }

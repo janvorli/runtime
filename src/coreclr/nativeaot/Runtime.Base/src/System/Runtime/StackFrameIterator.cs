@@ -10,11 +10,27 @@ namespace System.Runtime
     {
         [FieldOffset(AsmOffsets.OFFSETOF__REGDISPLAY__SP)]
         internal UIntPtr SP;
+#if !NATIVEAOT
+        [FieldOffset(AsmOffsets.OFFSETOF__REGDISPLAY__ControlPC)]
+        internal IntPtr ControlPC;
+        [FieldOffset(AsmOffsets.OFFSETOF__REGDISPLAY__m_pCurrentContext)]
+        internal EH.PAL_LIMITED_CONTEXT* m_pCurrentContext;
+#endif
     }
 
     [StructLayout(LayoutKind.Explicit, Size = AsmOffsets.SIZEOF__StackFrameIterator)]
     internal unsafe struct StackFrameIterator
     {
+#if !NATIVEAOT
+        [FieldOffset(AsmOffsets.OFFSETOF__StackFrameIterator__m_pRegDisplay)]
+        private REGDISPLAY* _pRegDisplay;
+
+        internal byte* ControlPC { get { return (byte*)_pRegDisplay->ControlPC; } }
+        internal byte* OriginalControlPC { get { return (byte*)_pRegDisplay->ControlPC; } } // TODO: fix this
+        internal void* RegisterSet { get { return _pRegDisplay;  } }
+        internal UIntPtr SP { get { return _pRegDisplay->SP; } }
+        internal UIntPtr FramePointer { get { return _pRegDisplay->m_pCurrentContext->FP; } } // FAKE! TODO: is this always FP register or is it SP or FP?
+#else // NATIVEAOT
         [FieldOffset(AsmOffsets.OFFSETOF__StackFrameIterator__m_FramePointer)]
         private UIntPtr _framePointer;
         [FieldOffset(AsmOffsets.OFFSETOF__StackFrameIterator__m_ControlPC)]
@@ -32,6 +48,7 @@ namespace System.Runtime
         internal UIntPtr SP { get { return _regDisplay.SP; } }
         internal UIntPtr FramePointer { get { return _framePointer; } }
         internal IntPtr PreviousTransitionFrame { get { return _pPreviousTransitionFrame; } }
+#endif // NATIVEAOT
 
         internal bool Init(EH.PAL_LIMITED_CONTEXT* pStackwalkCtx, bool instructionFault = false)
         {
