@@ -223,3 +223,6 @@ class AsmOffsets
 #endif    
 
 }
+#if __cplusplus
+;
+#endif

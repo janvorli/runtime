@@ -55,7 +55,7 @@
 #include "gccover.h"
 #endif // HAVE_GCCOVER
 
-#include "exceptionhandlingqcalls.h"
+#include "exinfo.h"
 
 #ifndef TARGET_UNIX
 // Windows uses 64kB as the null-reference area

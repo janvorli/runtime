@@ -18,6 +18,7 @@
 #include "interoplibinterface.h"
 #include "corinfo.h"
 #include "exceptionhandlingqcalls.h"
+#include "exinfo.h"
 
 #if defined(TARGET_X86)
 #define USE_CURRENT_CONTEXT_IN_FILTER
@@ -7972,13 +7973,14 @@ void ExceptionTracker::ResetThreadAbortStatus(PTR_Thread pThread, CrawlFrame *pC
         return result;
     }
 
+// Verify that the offsets into CONTEXT, REGDISPLAY, ExInfo and StackFrameIterator that the new managed exception handling
+// use match between the managed code and the native ones.
 #define public
 #define const static constexpr
 
 namespace AsmOffsetsAsserts
 {
     #include "../../libraries/System.Private.CoreLib/src/System/Runtime/ExceptionServices/AsmOffsets.cs"
-    ;
 };
 
 #undef public

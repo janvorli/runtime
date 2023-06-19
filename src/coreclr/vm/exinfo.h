@@ -159,5 +159,82 @@ private:
 PTR_ExInfo GetEHTrackerForPreallocatedException(OBJECTREF oPreAllocThrowable, PTR_ExInfo pStartingEHTracker);
 #endif // TARGET_X86
 
+#else // !FEATURE_EH_FUNCLETS
+
+enum RhEHClauseKind
+{
+    RH_EH_CLAUSE_TYPED = 0,
+    RH_EH_CLAUSE_FAULT = 1,
+    RH_EH_CLAUSE_FILTER = 2,
+    RH_EH_CLAUSE_UNUSED = 3,
+};
+
+struct RhEHClause
+{
+    RhEHClauseKind _clauseKind;
+    unsigned _tryStartOffset;
+    unsigned _tryEndOffset;
+    BYTE *_filterAddress;
+    BYTE *_handlerAddress;
+    void *_pTargetType;
+    BOOL _isSameTry;
+};
+
+enum class ExKind : uint8_t
+{
+    None = 0,
+    Throw = 1,
+    HardwareFault = 2,
+    KindMask = 3,
+
+    RethrowFlag = 4,
+
+    SupersededFlag = 8,
+
+    InstructionFaultFlag = 0x10
+};
+
+struct ExInfo
+{
+    PTR_ExInfo _pPrevExInfo;
+
+    void* _pExContext;
+
+    OBJECTREF _exception;  // actual object reference, specially reported by GcScanRootsWorker
+
+    ExKind _kind;
+
+    uint8_t _passNumber;
+
+    // BEWARE: This field is used by the stackwalker to know if the dispatch code has reached the
+    //         point at which a handler is called.  In other words, it serves as an "is a handler
+    //         active" state where '_idxCurClause == MaxTryRegionIdx' means 'no'.
+    uint32_t _idxCurClause;
+
+    StackFrameIterator _frameIter;
+
+    volatile size_t _notifyDebuggerSP;
+    REGDISPLAY *_pRD;
+
+    StackTraceInfo _stackTraceInfo;
+
+    Frame* _pFrame;
+
+    StackFrame          _sfLowBound;
+    StackFrame          _sfHighBound;
+    CallerStackFrame    _csfEHClause;
+    CallerStackFrame    _csfEnclosingClause;
+    StackFrame          _sfCallerOfActualHandlerFrame;
+    EE_ILEXCEPTION_CLAUSE _ClauseForCatch;
+
+    void(*_propagateExceptionCallback)(void* context);
+    void *_propagateExceptionContext;
+    // These are for profiler / debugger use only
+    OBJECTHANDLE    _hThrowable;       // thrown exception handle
+    EE_ILEXCEPTION_CLAUSE _CurrentClause;
+    DebuggerExState _DebuggerExState;
+    ExceptionFlags _ExceptionFlags;
+};
+
 #endif // !FEATURE_EH_FUNCLETS
 #endif // __ExInfo_h__

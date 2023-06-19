@@ -8,7 +8,6 @@
 #include "common.h"
 #include "exstate.h"
 #include "exinfo.h"
-#include "exceptionhandlingqcalls.h"
 
 #ifdef _DEBUG
 #include "comutilnative.h"      // for assertions only

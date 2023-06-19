@@ -27,6 +27,7 @@
 #endif
 
 #include "interoplibinterface.h"
+#include "exinfo.h"
 
 CrawlFrame::CrawlFrame()
 {

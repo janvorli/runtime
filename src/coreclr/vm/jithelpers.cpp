@@ -56,7 +56,7 @@
 #include "excep.h"
 #endif
 
-#include "exceptionhandlingqcalls.h"
+#include "exinfo.h"
 
 //========================================================================
 //
