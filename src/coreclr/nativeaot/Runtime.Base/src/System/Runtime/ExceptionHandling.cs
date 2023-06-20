@@ -828,9 +828,11 @@ namespace System.Runtime
 
                 if (unwoundReversePInvoke)
                 {
-                    //Debug.Assert(pReversePInvokePropagationCallback != IntPtr.Zero, "Unwound to a reverse P/Invoke in the second pass. We should have a propagation handler.");
+#if NATIVEAOT
+                    Debug.Assert(pReversePInvokePropagationCallback != IntPtr.Zero, "Unwound to a reverse P/Invoke in the second pass. We should have a propagation handler.");
+                    Debug.Assert(frameIter.PreviousTransitionFrame != IntPtr.Zero, "Should have a transition frame for reverse P/Invoke.");
+#endif
                     Debug.Assert(frameIter.SP == handlingFrameSP, "Encountered a different reverse P/Invoke frame in the second pass.");
-                    //Debug.Assert(frameIter.PreviousTransitionFrame != IntPtr.Zero, "Should have a transition frame for reverse P/Invoke.");
                     // Found the native frame that called the reverse P/invoke.
                     // It is not possible to run managed second pass handlers on a native frame.
                     break;

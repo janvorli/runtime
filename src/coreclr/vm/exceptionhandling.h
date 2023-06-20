@@ -44,6 +44,13 @@ enum EHFuncletType
 struct ExInfo;
 typedef DPTR(ExInfo) PTR_ExInfo;
 
+enum class InlinedCallFrameMarker
+{
+    ExceptionHandlingHelper = 2,
+    SecondPassFuncletCaller = 4,
+    Mask = ExceptionHandlingHelper | SecondPassFuncletCaller
+};
+
 typedef DPTR(class ExceptionTracker) PTR_ExceptionTracker;
 class ExceptionTracker
 {

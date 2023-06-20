@@ -263,6 +263,7 @@ BOOL DacDbiInterfaceImpl::UnwindStackWalkFrame(StackWalkHandle pSFIHandle)
             }
             else if (pIter->GetFrameState() == StackFrameIterator::SFITER_FRAMELESS_METHOD)
             {
+                // Skip the new exception handling managed code, the debugger clients are not supposed to see them
                 MethodDesc *pMD = pIter->m_crawl.GetFunction();
                 PTR_MethodDesc ptrMD = dac_cast<PTR_MethodDesc>(pMD);
                 LPCUTF8 name = ptrMD->GetName();
@@ -447,6 +448,7 @@ ULONG32 DacDbiInterfaceImpl::GetCountOfInternalFrames(VMPTR_Thread vmThread)
     {
         if (InlinedCallFrame::FrameHasActiveCall(pFrame))
         {
+            // Skip new exception handling helpers
             InlinedCallFrame *pInlinedCallFrame = (InlinedCallFrame *)pFrame;
             PTR_NDirectMethodDesc pMD = pInlinedCallFrame->m_Datum;
             TADDR datum = dac_cast<TADDR>(pMD);
@@ -497,6 +499,7 @@ void DacDbiInterfaceImpl::EnumerateInternalFrames(VMPTR_Thread                  
     {
         if (InlinedCallFrame::FrameHasActiveCall(pFrame))
         {
+            // Skip new exception handling helpers
             InlinedCallFrame *pInlinedCallFrame = (InlinedCallFrame *)pFrame;
             PTR_NDirectMethodDesc pMD = pInlinedCallFrame->m_Datum;
             TADDR datum = dac_cast<TADDR>(pMD);

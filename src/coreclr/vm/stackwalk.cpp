@@ -1114,7 +1114,7 @@ void StackFrameIterator::CommonCtor(Thread * pThread, PTR_Frame pFrame, ULONG32 
     ResetGCRefReportingState();
     m_fDidFuncletReportGCReferences = true;
 #endif // FEATURE_EH_FUNCLETS
-    m_forceReportingWhileSkipping = 0;
+    m_forceReportingWhileSkipping = ForceGCReportingStage::Off;
     m_movedPastFirstExInfo = false;
     m_fFuncletNotSeen = false;
 #if defined(RECORD_RESUMABLE_FRAME_SP)
@@ -1163,78 +1163,74 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
     // just clear the thread state.
     pThread->ResetThrowControlForThread();
 
-    // Skip the pinvoke frame
+    // Skip the RhpSfiInit pinvoke frame
     pFrame = pThread->GetFrame()->PtrNextFrame();
 
     ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
     REGDISPLAY* pRD = pExInfo->_pRD;
+
+    if (pExInfo->_passNumber == 1)
     {
-
-        if (pExInfo->_passNumber == 1)
+        GCX_COOP();
+        pThread->SafeSetThrowables(pExInfo->_exception);
+        EEToProfilerExceptionInterfaceWrapper::ExceptionThrown(pThread);
+        UpdatePerformanceMetrics(&pThis->m_crawl, false, ((uint8_t)pExInfo->_kind & (uint8_t)ExKind::RethrowFlag) == 0);
+    }
+    else // pExInfo->_passNumber == 2
+    {
+        // Clear the enclosing clause to indicate we have not processed any 2nd pass funclet yet.
+        pExInfo->_csfEnclosingClause.Clear();
+        if (pExInfo->_idxCurClause != 0xffffffff) //  the reverse pinvoke case doesn't have the _idxCurClause set
         {
-            GCX_COOP();
-            pThread->SafeSetThrowables(pExInfo->_exception);
-            EEToProfilerExceptionInterfaceWrapper::ExceptionThrown(pThread);
-            UpdatePerformanceMetrics(&pThis->m_crawl, false, ((uint8_t)pExInfo->_kind & (uint8_t)ExKind::RethrowFlag) == 0);
-        }
-
-        if (pExInfo->_passNumber == 2)
-        {
-            // Clear the enclosing clause to indicate we have not processed any 2nd pass funclet yet.
-            pExInfo->_csfEnclosingClause.Clear();
-            if (pExInfo->_idxCurClause != 0xffffffff) //  the reverse pinvoke case doesn't have the _idxCurClause set
-            {
 #ifdef ESTABLISHER_FRAME_ADDRESS_IS_CALLER_SP
-                pExInfo->_sfCallerOfActualHandlerFrame = StackFrame(establisherFrame); 
+            pExInfo->_sfCallerOfActualHandlerFrame = StackFrame(establisherFrame); 
 #else
-                // TODO: or use the pExInfo->pRD?
-                EECodeManager::EnsureCallerContextIsValid(pExInfo->_frameIter.m_crawl.GetRegisterSet(), NULL);
-                pExInfo->_sfCallerOfActualHandlerFrame = CallerStackFrame::FromRegDisplay(pExInfo->_frameIter.m_crawl.GetRegisterSet());//pThis->m_pNextExInfo->_csfEnclosingClause;
+            EECodeManager::EnsureCallerContextIsValid(pRD, NULL);
+            pExInfo->_sfCallerOfActualHandlerFrame = CallerStackFrame::FromRegDisplay(pRD);
 #endif       
-                // the 1st pass has just ended, so the _CurrentClause is the catch clause
-                pExInfo->_ClauseForCatch = pExInfo->_CurrentClause;
+            // the 1st pass has just ended, so the _CurrentClause is the catch clause
+            pExInfo->_ClauseForCatch = pExInfo->_CurrentClause;
 
-                MethodDesc *pMD = pExInfo->_frameIter.m_crawl.GetFunction();
-                TADDR sp = GetRegdisplaySP(pExInfo->_frameIter.m_crawl.GetRegisterSet());
-                if (pMD->IsILStub())
+            MethodDesc *pMD = pExInfo->_frameIter.m_crawl.GetFunction();
+            TADDR sp = GetRegdisplaySP(pRD);
+            if (pMD->IsILStub())
+            {
+                MethodDesc * pUserMDForILStub = NULL;
+                Frame * pILStubFrame = NULL;
+                if (!pExInfo->_frameIter.m_crawl.IsFunclet())    // only make this callback on the main method body of IL stubs
                 {
-                    MethodDesc * pUserMDForILStub = NULL;
-                    Frame * pILStubFrame = NULL;
-                    if (!pExInfo->_frameIter.m_crawl.IsFunclet())    // only make this callback on the main method body of IL stubs
-                    {
-                        pUserMDForILStub = GetUserMethodForILStub(pThread, sp, pMD, &pILStubFrame);
-                    }
-                    //
-                    // NotifyOfCHFFilter has two behaviors
-                    //  * Notifify debugger, get interception info and unwind (function will not return)
-                    //          In this case, m_sfResumeStackFrame is expected to be NULL or the frame of interception.
-                    //          We NULL it out because we get the interception event after this point.
-                    //  * Notifify debugger and return.
-                    //      In this case the normal EH proceeds and we need to reset m_sfResumeStackFrame to the sf catch handler.
-                    //  TODO: remove this call and try to report the IL catch handler in the IL stub itself.
-                    EXCEPTION_POINTERS ptrs;
-                    // TODO: this is probably wrong
-                    ptrs.ContextRecord = (CONTEXT*)pExInfo->_pExContext;
-                    EXCEPTION_RECORD exRecord = {0};
-                    // TODO: This is fake
-                    ptrs.ExceptionRecord = &exRecord;
-                    //m_sfResumeStackFrame.Clear();
-                    EEToDebuggerExceptionInterfaceWrapper::NotifyOfCHFFilter(&ptrs, pILStubFrame);
-                    //m_sfResumeStackFrame    = sf;
+                    pUserMDForILStub = GetUserMethodForILStub(pThread, sp, pMD, &pILStubFrame);
                 }
-                else
-                {
-                    // We don't need to do anything special for continuable exceptions after calling
-                    // this callback.  We are going to start unwinding anyway.
-                    PCODE uMethodStartPC = pExInfo->_frameIter.m_crawl.GetCodeInfo()->GetStartAddress();
-                    EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedExceptionCatcherFound(pThread, pMD, (TADDR) uMethodStartPC, sp,
-                                                                                                    &pExInfo->_ClauseForCatch);
-                    EEToProfilerExceptionInterfaceWrapper::ExceptionSearchCatcherFound(pMD);
-                }
+                //
+                // NotifyOfCHFFilter has two behaviors
+                //  * Notifify debugger, get interception info and unwind (function will not return)
+                //          In this case, m_sfResumeStackFrame is expected to be NULL or the frame of interception.
+                //          We NULL it out because we get the interception event after this point.
+                //  * Notifify debugger and return.
+                //      In this case the normal EH proceeds and we need to reset m_sfResumeStackFrame to the sf catch handler.
+                //  TODO: remove this call and try to report the IL catch handler in the IL stub itself.
+                EXCEPTION_POINTERS ptrs;
+                // TODO: this is probably wrong
+                ptrs.ContextRecord = (CONTEXT*)pExInfo->_pExContext;
+                EXCEPTION_RECORD exRecord = {0};
+                // TODO: This is fake
+                ptrs.ExceptionRecord = &exRecord;
+                //m_sfResumeStackFrame.Clear();
+                EEToDebuggerExceptionInterfaceWrapper::NotifyOfCHFFilter(&ptrs, pILStubFrame);
+                //m_sfResumeStackFrame    = sf;
             }
-            pExInfo->_ExceptionFlags.SetUnwindHasStarted();
-            EEToDebuggerExceptionInterfaceWrapper::ManagedExceptionUnwindBegin(pThread);
+            else
+            {
+                // We don't need to do anything special for continuable exceptions after calling
+                // this callback.  We are going to start unwinding anyway.
+                PCODE uMethodStartPC = pExInfo->_frameIter.m_crawl.GetCodeInfo()->GetStartAddress();
+                EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedExceptionCatcherFound(pThread, pMD, (TADDR) uMethodStartPC, sp,
+                                                                                               &pExInfo->_ClauseForCatch);
+                EEToProfilerExceptionInterfaceWrapper::ExceptionSearchCatcherFound(pMD);
+            }
         }
+        pExInfo->_ExceptionFlags.SetUnwindHasStarted();
+        EEToDebuggerExceptionInterfaceWrapper::ManagedExceptionUnwindBegin(pThread);
     }
 #if defined(HOST_UNIX) && defined(HOST_AMD64)
     if (GetIP(pStackwalkCtx) == 0)
@@ -1248,14 +1244,12 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
 #endif
     pThread->FillRegDisplay(pRD, pStackwalkCtx);
 
-    //pThread->InitRegDisplay(pRD, pStackwalkCtx, false);
     memset(pThis, 0, sizeof(StackFrameIterator));
     result = pThis->Init(pThread, pFrame, pRD, THREAD_EXECUTING_MANAGED_CODE | HANDLESKIPPEDFRAMES/* | FUNCTIONSONLY*/) != FALSE;
 
-    // TODO: check if this is needed at all
     while (result && pThis->GetFrameState() != StackFrameIterator::SFITER_FRAMELESS_METHOD)
     {
-        if (pThis->m_pNextExInfo->_passNumber == 1)
+        if (pExInfo->_passNumber == 1)
         {
             Frame *pFrame = pThis->m_crawl.GetFrame();
             if (pFrame != FRAME_TOP)
@@ -1264,11 +1258,10 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
                 if (pMD != NULL)
                 {
                     GCX_COOP();
-                    bool canAllocateMemory = !(pThis->m_pNextExInfo->_exception == CLRException::GetPreallocatedOutOfMemoryException()) &&
-                        !(pThis->m_pNextExInfo->_exception == CLRException::GetPreallocatedStackOverflowException());
+                    bool canAllocateMemory = !(pExInfo->_exception == CLRException::GetPreallocatedOutOfMemoryException()) &&
+                        !(pExInfo->_exception == CLRException::GetPreallocatedStackOverflowException());
 
-                    // TODO: is the sp correct?                    
-                    pThis->m_pNextExInfo->_stackTraceInfo.AppendElement(canAllocateMemory, NULL, GetRegdisplaySP(pThis->m_pNextExInfo->_frameIter.m_crawl.GetRegisterSet()), pMD, &pThis->m_pNextExInfo->_frameIter.m_crawl);
+                    pExInfo->_stackTraceInfo.AppendElement(canAllocateMemory, NULL, GetRegdisplaySP(pExInfo->_frameIter.m_crawl.GetRegisterSet()), pMD, &pExInfo->_frameIter.m_crawl);
                 }
             }
         }
@@ -1276,7 +1269,7 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
         result = (retVal != SWA_FAILED);
     }
 
-    if (pThis->m_pNextExInfo->_passNumber == 1)
+    if (pExInfo->_passNumber == 1)
     {
         MethodDesc *pMD = pThis->m_crawl.GetFunction();
         EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionEnter(pMD);
@@ -1286,23 +1279,24 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
         EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedException(pThread, GetControlPC(pThis->m_crawl.GetRegisterSet()), GetRegdisplaySP(pThis->m_crawl.GetRegisterSet()));
     }
 
-    pThis->m_pNextExInfo->_sfLowBound = GetRegdisplaySP(pThis->m_crawl.GetRegisterSet());
+    pExInfo->_sfLowBound = GetRegdisplaySP(pThis->m_crawl.GetRegisterSet());
 
     ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
 
     _ASSERTE(!result || pThis->GetFrameState() == StackFrameIterator::SFITER_FRAMELESS_METHOD);
-    END_QCALL;
 
     if (result)
     {
-    #ifdef TARGET_ARM
+#ifdef TARGET_ARM
         pThis->m_crawl.GetRegisterSet()->ControlPC -= 2;
-    #elif defined(TARGET_ARM64)
+#elif defined(TARGET_ARM64)
         pThis->m_crawl.GetRegisterSet()->ControlPC -= 4;
-    #else
+#else
         pThis->m_crawl.GetRegisterSet()->ControlPC -= 1;
-    #endif
+#endif
     }
+
+    END_QCALL;
 
     return result;
 }
@@ -1313,13 +1307,17 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
 {
     QCALL_CONTRACT;
 
-    #ifdef TARGET_ARM
-        pThis->m_crawl.GetRegisterSet()->ControlPC += 2;
-    #elif defined(TARGET_ARM64)
-        pThis->m_crawl.GetRegisterSet()->ControlPC += 4;
-    #else
-        pThis->m_crawl.GetRegisterSet()->ControlPC += 1;
-    #endif
+    StackWalkAction retVal = SWA_FAILED;
+
+    BEGIN_QCALL;
+
+#ifdef TARGET_ARM
+    pThis->m_crawl.GetRegisterSet()->ControlPC += 2;
+#elif defined(TARGET_ARM64)
+    pThis->m_crawl.GetRegisterSet()->ControlPC += 4;
+#else
+    pThis->m_crawl.GetRegisterSet()->ControlPC += 1;
+#endif
 
     Thread* pThread = GET_THREAD();
     Frame* pFrame = pThread->GetFrame();
@@ -1329,12 +1327,11 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
     // just clear the thread state.
     pThread->ResetThrowControlForThread();
 
-    StackWalkAction retVal = SWA_FAILED;
     bool exCollide = false;
     ExInfo* pExInfo = pThis->m_pNextExInfo;
     ExInfo* pTopExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
 
-    // Check for reverse pinvoke, but eliminate the case when the caller is managed, see TestUnmanagedCallersOnlyViaUnmanagedCalli_ThrowException
+    // Check for reverse pinvoke (but eliminate the case when the caller is managed) or CallDescrWorkerInternal.
     if (!ExecutionManager::IsManagedCode(GetIP(pThis->m_crawl.GetRegisterSet()->pCallerContext)))
     {
         bool invalidRevPInvoke;
@@ -1355,7 +1352,6 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                 pTopExInfo->_hThrowable,
                 &callbackCxt);
 
-            // If a callback doesn't exist we immediately crash.
             if (callback != NULL)
             {
                 pTopExInfo->_propagateExceptionCallback = callback;
@@ -1377,9 +1373,10 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
 
         if (invalidRevPInvoke)
         {
+            // Unwind to the caller of the managed code
             retVal = pThis->Next();
             _ASSERTE(retVal != SWA_FAILED);
-            return true;
+            goto Exit;
         }
     }
     else
@@ -1389,22 +1386,21 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
             *fUnwoundReversePInvoke = false;
         }
     }
-    BEGIN_QCALL;
+
     do
     {
         *uExCollideClauseIdx = 0xffffffff;
         bool doingFuncletUnwind = pThis->m_crawl.IsFunclet();
 
         retVal = pThis->Next();
+        if (retVal == SWA_FAILED)
+        {
+            break;
+        }
 
         if (pThis->GetFrameState() == StackFrameIterator::SFITER_DONE)
         {
-            // TODO: make this cleaner
             retVal = SWA_FAILED;
-        }
-
-        if (retVal == SWA_FAILED)
-        {
             break;
         }
 
@@ -1447,15 +1443,8 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                             while ((retVal == SWA_CONTINUE) && pThis->m_crawl.GetRegisterSet()->SP != pPrevExInfo->_pRD->SP);
                             _ASSERTE(retVal != SWA_FAILED);
 
-                            //_ASSERTE(pThis->m_crawl.GetRegisterSet()->ControlPC == pPrevExInfo->_pRD->ControlPC);
-
                             ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
-                            // pThis->m_dwFlags |= ExCollide; ????
                         }
-                    }
-                    else
-                    {
-                        // TODO: Handle Non-exceptionally invoked funclet case. Hmm, is this the right place?
                     }
                 }
             }
@@ -1466,9 +1455,8 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                 {
                     GCX_COOP();
                     bool canAllocateMemory = !(pTopExInfo->_exception == CLRException::GetPreallocatedOutOfMemoryException()) &&
-                        !(pTopExInfo->_exception == CLRException::GetPreallocatedStackOverflowException());
+                                             !(pTopExInfo->_exception == CLRException::GetPreallocatedStackOverflowException());
 
-                    // TODO: is the sp correct?                    
                     pTopExInfo->_stackTraceInfo.AppendElement(canAllocateMemory, NULL, GetRegdisplaySP(pTopExInfo->_frameIter.m_crawl.GetRegisterSet()), pMD, &pTopExInfo->_frameIter.m_crawl);
 
                 }
@@ -1489,17 +1477,18 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
         EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedException(pThread, GetControlPC(pThis->m_crawl.GetRegisterSet()), GetRegdisplaySP(pThis->m_crawl.GetRegisterSet()));
     }
 
+Exit:;
     END_QCALL;
 
     if (retVal != SWA_FAILED)
     {      
-    #ifdef TARGET_ARM
+#ifdef TARGET_ARM
         pThis->m_crawl.GetRegisterSet()->ControlPC -= 2;
-    #elif defined(TARGET_ARM64)
+#elif defined(TARGET_ARM64)
         pThis->m_crawl.GetRegisterSet()->ControlPC -= 4;
-    #else
+#else
         pThis->m_crawl.GetRegisterSet()->ControlPC -= 1;
-    #endif
+#endif
 
         return true;
     }
@@ -2024,12 +2013,16 @@ StackWalkAction StackFrameIterator::Filter(void)
         {
             if (!m_movedPastFirstExInfo)
             {
-                // we are in the 2nd pass and we have already called an exceptionally called finally funclet, but we have not seen any funclet on the call stack yet.
-                if (pExInfo->_passNumber == 2 && !pExInfo->_csfEnclosingClause.IsNull() && m_sfFuncletParent.IsNull())
+                if ((pExInfo->_passNumber == 2) && !pExInfo->_csfEnclosingClause.IsNull() && m_sfFuncletParent.IsNull())
                 {
+                    // We are in the 2nd pass and we have already called an exceptionally called
+                    // a finally funclet, but we have not seen any funclet on the call stack yet.
+                    // Simulate that we have actualy seen a finally funclet during this pass and
+                    // that it didn't report GC references to ensure that the references will be
+                    // reported by the parent correctly.
                     m_sfFuncletParent = (StackFrame)pExInfo->_csfEnclosingClause;
                     m_sfParent = m_sfFuncletParent;
-                    m_fProcessNonFilterFunclet = 1; // We are in 2nd pass, so the EH code will only call finally or 
+                    m_fProcessNonFilterFunclet = true;
                     m_fDidFuncletReportGCReferences = false;
                     m_fFuncletNotSeen = true;
                     STRESS_LOG3(LF_GCROOTS, LL_INFO100,
@@ -2241,8 +2234,10 @@ ProcessFuncletsForGCReporting:
                                         {
                                             if (!ExecutionManager::IsManagedCode(GetIP(m_crawl.GetRegisterSet()->pCallerContext)))
                                             {
-                                                m_forceReportingWhileSkipping = 1;
-                                                STRESS_LOG0(LF_GCROOTS, LL_INFO100, "STACKWALK: Setting m_forceReportingWhileSkipping = 1\n");
+                                                // Initiate force reporting of references in the new managed exception handling code frames. 
+                                                // These frames are still alive when we are in a finally funclet.
+                                                m_forceReportingWhileSkipping = ForceGCReportingStage::LookForManagedFrame;
+                                                STRESS_LOG0(LF_GCROOTS, LL_INFO100, "STACKWALK: Setting m_forceReportingWhileSkipping = ForceGCReportingStage::LookForManagedFrame\n");
                                             }
                                         }
                                     }
@@ -2286,12 +2281,12 @@ ProcessFuncletsForGCReporting:
 
                                         if (g_isNewExceptionHandlingEnabled)
                                         {
-                                            // TODO: this is a hack, we need a better way - maybe detect passing over pinvoke frame to catch / finally
                                             if (!ExecutionManager::IsManagedCode(GetIP(m_crawl.GetRegisterSet()->pCallerContext)))
                                             {
-                                                // Only the first managed EH code is force reported
-                                                m_forceReportingWhileSkipping = 1;
-                                                STRESS_LOG0(LF_GCROOTS, LL_INFO100, "STACKWALK: Setting m_forceReportingWhileSkipping = 1\n");
+                                                // Initiate force reporting of references in the new managed exception handling code frames. 
+                                                // These frames are still alive when we are in a finally funclet.
+                                                m_forceReportingWhileSkipping = ForceGCReportingStage::LookForManagedFrame;
+                                                STRESS_LOG0(LF_GCROOTS, LL_INFO100, "STACKWALK: Setting m_forceReportingWhileSkipping = ForceGCReportingStage::LookForManagedFrame\n");
                                             }
                                         }
 
@@ -2591,7 +2586,7 @@ ProcessFuncletsForGCReporting:
                         }
                         else if (fSkipFuncletCallback && (m_flags & GC_FUNCLET_REFERENCE_REPORTING))
                         {
-                            if (!m_sfParent.IsNull() && m_forceReportingWhileSkipping == 0)// && !m_fFuncletNotSeen)
+                            if (!m_sfParent.IsNull() && (m_forceReportingWhileSkipping == ForceGCReportingStage::Off))
                             {
                                 STRESS_LOG4(LF_GCROOTS, LL_INFO100,
                                      "STACKWALK: %s: not making callback for this frame, SPOfParent = %p, \
@@ -2605,17 +2600,15 @@ ProcessFuncletsForGCReporting:
                                 break;
                             }
 
-                            if (m_forceReportingWhileSkipping == 1)
+                            if (m_forceReportingWhileSkipping == ForceGCReportingStage::LookForManagedFrame)
                             {
                                 // State indicating that the next marker frame should turn off the reporting again. That would be the caller of the managed RhThrowEx
-                                // TODO: it seems the bug is that when we meet another funclet, we should NOT go again into this business of reporting the EH code.
-                                // At least I think so
-                                m_forceReportingWhileSkipping = 2;
-                                STRESS_LOG0(LF_GCROOTS, LL_INFO100, "STACKWALK: Setting m_forceReportingWhileSkipping = 2\n");
+                                m_forceReportingWhileSkipping = ForceGCReportingStage::LookForMarkerFrame;
+                                STRESS_LOG0(LF_GCROOTS, LL_INFO100, "STACKWALK: Setting m_forceReportingWhileSkipping = ForceGCReportingStage::LookForMarkerFrame\n");
                             }
 
 #ifdef _DEBUG                                
-                            if (m_forceReportingWhileSkipping != 0)
+                            if (m_forceReportingWhileSkipping != ForceGCReportingStage::Off)
                             {
                                 STRESS_LOG3(LF_GCROOTS, LL_INFO100,
                                     "STACKWALK: Force callback for skipped function m_crawl.pFunc = %pM (%s.%s)\n", m_crawl.pFunc, m_crawl.pFunc->m_pszDebugClassName, m_crawl.pFunc->m_pszDebugMethodName);
@@ -2715,10 +2708,10 @@ ProcessFuncletsForGCReporting:
                         fStop = true;
                     }
                 }
-                if (m_forceReportingWhileSkipping == 2)
+                if (m_forceReportingWhileSkipping == ForceGCReportingStage::LookForMarkerFrame)
                 {
-                    m_forceReportingWhileSkipping = 0;
-                    STRESS_LOG0(LF_GCROOTS, LL_INFO100, "STACKWALK: Setting m_forceReportingWhileSkipping = 0\n");
+                    m_forceReportingWhileSkipping = ForceGCReportingStage::Off;
+                    STRESS_LOG0(LF_GCROOTS, LL_INFO100, "STACKWALK: Setting m_forceReportingWhileSkipping = ForceGCReportingStage::Off\n");
                 }
                 break;
 
@@ -3739,6 +3732,7 @@ void StackFrameIterator::PostProcessingForNoFrameTransition()
     m_crawl.taNoFrameTransitionMarker = NULL;
 #endif // ELIMINATE_FEF
 } // StackFrameIterator::PostProcessingForNoFrameTransition()
+
 
 #if defined(TARGET_AMD64) && !defined(DACCESS_COMPILE)
 static CrstStatic g_StackwalkCacheLock;                // Global StackwalkCache lock; only used on AMD64

@@ -2871,10 +2871,12 @@ public:
 
     // m_Datum contains MethodDesc ptr or
     // - on 64 bit host: CALLI target address (if lowest bit is set)
-    //                   bit 1 set indicates invoking RhpCallCatchFunclet and others, other bits contain info on which one was called
+    //                   bit 1 set indicates invoking new exception handling helpers
     //                   bit 2 indicates RhpCallCatchFunclet or RhpCallFinallyFunclet
-    // - on 32 bit host: argument stack size (if value is <64k)
-    // TODO: fix this for ARM!
+    // - on windows x86 host: argument stack size (if value is <64k)
+    // - on other 32 bit hosts: 
+    //                   bit 1 set indicates invoking new exception handling helpers
+    //                   bit 2 indicates RhpCallCatchFunclet or RhpCallFinallyFunclet
     // See code:HasFunction.
     PTR_NDirectMethodDesc   m_Datum;
 
