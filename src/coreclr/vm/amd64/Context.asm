@@ -29,6 +29,10 @@ NESTED_ENTRY ClrRestoreNonvolatileContextWorker, _TEXT
         test    byte ptr [rcx + OFFSETOF__CONTEXT__ContextFlags], CONTEXT_INTEGER
         je      Done_Restore_CONTEXT_INTEGER
         mov     rbx, [rcx + OFFSETOF__CONTEXT__Rbx]
+        mov     r10, [rcx + OFFSETOF__CONTEXT__Rcx]
+        mov     r11, [rcx + OFFSETOF__CONTEXT__Rdx]
+        mov     r8, [rcx + OFFSETOF__CONTEXT__R8]
+        mov     r9, [rcx + OFFSETOF__CONTEXT__R9]
         mov     rbp, [rcx + OFFSETOF__CONTEXT__Rbp]
         mov     rsi, [rcx + OFFSETOF__CONTEXT__Rsi]
         mov     rdi, [rcx + OFFSETOF__CONTEXT__Rdi]
@@ -49,6 +53,8 @@ NESTED_ENTRY ClrRestoreNonvolatileContextWorker, _TEXT
         incsspq rdx
     No_Ssp_Update:
 
+        mov     rcx, r10
+        mov     rdx, r11
         ; When user-mode shadow stacks are enabled, and for example the intent is to continue execution in managed code after
         ; exception handling, iret and ret can't be used because their shadow stack enforcement would not allow that transition,
         ; and using them would require writing to the shadow stack, which is not preferable. Instead, iret is partially
@@ -61,6 +67,8 @@ NESTED_ENTRY ClrRestoreNonvolatileContextWorker, _TEXT
     Done_Restore_CONTEXT_CONTROL:
     
         ; The function was not asked to restore the control registers so we return back to the caller
+        mov     rcx, r10
+        mov     rdx, r11
         pop     rbp
         ret
 NESTED_END ClrRestoreNonvolatileContextWorker, _TEXT
