@@ -196,6 +196,8 @@ enum class ExKind : uint8_t
 
 struct ExInfo
 {
+    ExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, ExKind exceptionKind);
+    
     PTR_ExInfo _pPrevExInfo;
 
     void* _pExContext;

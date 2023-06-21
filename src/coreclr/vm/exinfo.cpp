@@ -300,4 +300,23 @@ void ExInfo::SetExceptionCode(const EXCEPTION_RECORD *pCER)
     DacError(E_UNEXPECTED);
 #endif // !DACCESS_COMPILE
 }
+#else // !FEATURE_EH_FUNCLETS
+
+ExInfo::ExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, ExKind exceptionKind)
+{
+    _pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+    _pExContext = pCtx;
+    _pRD = pRD;
+    _passNumber = 1;
+    _kind = exceptionKind;
+    _idxCurClause = 0xffffffff;
+    _stackTraceInfo.Init(); // TODO: how about this vs rethrow arg?
+    _stackTraceInfo.AllocateStackTrace();
+    _pFrame = GetThread()->GetFrame();
+    _sfLowBound.SetMaxVal();
+    _exception = NULL;
+    _hThrowable = NULL;
+    pThread->GetExceptionState()->SetCurrentExInfo(this);
+}
+
 #endif // !FEATURE_EH_FUNCLETS

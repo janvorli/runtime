@@ -2834,86 +2834,6 @@ static VOID DECLSPEC_NORETURN RealCOMPlusThrowWorker(OBJECTREF throwable, BOOL r
     UNINSTALL_COMPLUS_EXCEPTION_HANDLER();
 }
 
-#ifdef FEATURE_EH_FUNCLETS
-
-void InitializeExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, BOOL rethrow, ExInfo *pExInfo)
-{
-    pExInfo->_pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-    pExInfo->_pExContext = pCtx;
-    pExInfo->_pRD = pRD;
-    pExInfo->_passNumber = 1;
-    pExInfo->_kind = rethrow ? ExKind::None : ExKind::Throw;
-    pExInfo->_idxCurClause = 0xffffffff;
-    pExInfo->_stackTraceInfo.Init(); // TODO: how about this vs rethrow arg?
-    pExInfo->_stackTraceInfo.AllocateStackTrace();
-    pExInfo->_pFrame = GetThread()->GetFrame();
-    pExInfo->_sfLowBound.SetMaxVal();
-    pExInfo->_exception = NULL;
-    pExInfo->_hThrowable = NULL;
-    pThread->GetExceptionState()->SetCurrentExInfo(pExInfo);
-}
-
-VOID DECLSPEC_NORETURN DispatchManagedException(OBJECTREF throwable)
-{
-    STATIC_CONTRACT_THROWS;
-    STATIC_CONTRACT_GC_TRIGGERS;
-    STATIC_CONTRACT_MODE_COOPERATIVE;
-
-    GCPROTECT_BEGIN(throwable);
-
-   _ASSERTE(IsException(throwable->GetMethodTable()));
-
-    ExceptionPreserveStackTrace(throwable);
-
-    CONTEXT ctx = {0};
-    ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-    REGDISPLAY rd;
-    Thread *pThread = GetThread();
-    ExInfo exInfo = {};
-    InitializeExInfo(pThread, &ctx, &rd, /* rethrow */ FALSE, &exInfo);
-
-    if (pThread->IsAbortInitiated () && IsExceptionOfType(kThreadAbortException,&throwable))
-    {
-        pThread->ResetPreparingAbort();
-
-        if (pThread->GetFrame() == FRAME_TOP)
-        {
-            // There is no more managed code on stack.
-            pThread->ResetAbort();
-        }
-    }
-
-    GCPROTECT_BEGIN(exInfo._exception);
-
-    PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROW_EX);
-    DECLARE_ARGHOLDER_ARRAY(args, 2);
-    args[ARGNUM_0] = OBJECTREF_TO_ARGHOLDER(throwable);
-    args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
-
-    //Ex.RhThrowEx(throwable, &exInfo)
-    CRITICAL_CALLSITE;
-    CALL_MANAGED_METHOD_NORET(args)
-
-    GCPROTECT_END();
-    GCPROTECT_END();
-
-    UNREACHABLE();
-}
-
-VOID DECLSPEC_NORETURN DispatchManagedException(RuntimeExceptionKind reKind)
-{
-    STATIC_CONTRACT_THROWS;
-    STATIC_CONTRACT_GC_TRIGGERS;
-    STATIC_CONTRACT_MODE_COOPERATIVE;
-
-    EEException ex(reKind);
-    OBJECTREF throwable = ex.CreateThrowable();
-
-    DispatchManagedException(throwable);
-}
-
-#endif // FEATURE_EH_FUNCLETS
-
 VOID DECLSPEC_NORETURN RealCOMPlusThrow(OBJECTREF throwable, BOOL rethrow)
 {
     STATIC_CONTRACT_THROWS;
@@ -6653,20 +6573,7 @@ void HandleManagedFaultNew(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext
     REGDISPLAY rd;
     Thread *pThread = GetThread();
 
-    ExInfo exInfo = {};
-    exInfo._pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-    exInfo._pExContext = &ctx; // TODO: or the pContext? The RtlRestoreContext fails if I use this context (with patched Rip) for some reason
-    exInfo._pRD = &rd;
-    exInfo._passNumber = 1;
-    exInfo._kind = ExKind::HardwareFault;
-    exInfo._idxCurClause = 0xffffffff;
-    exInfo._stackTraceInfo.Init();
-    exInfo._stackTraceInfo.AllocateStackTrace();
-    exInfo._pFrame = GetThread()->GetFrame();
-    exInfo._sfLowBound.SetMaxVal();
-    exInfo._exception = NULL;
-    exInfo._hThrowable = NULL;
-    pThread->GetExceptionState()->SetCurrentExInfo(&exInfo);
+    ExInfo exInfo(pThread, &ctx, &rd, ExKind::HardwareFault);
 
     DWORD exceptionCode = pExceptionRecord->ExceptionCode;
     if (exceptionCode == STATUS_ACCESS_VIOLATION)

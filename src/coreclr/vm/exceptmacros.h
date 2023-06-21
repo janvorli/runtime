@@ -349,35 +349,6 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
 #define UNINSTALL_MANAGED_EXCEPTION_DISPATCHER
 #endif //FEATURE_EH_FUNCLETS
 
-#define INSTALL_MANAGED_EXCEPTION_DISPATCHER2                                                \
-    {                                                                                       \
-        OBJECTREF caughtException = NULL;                                                   \
-        EX_TRY                                                                              \
-        {
-
-#define UNINSTALL_MANAGED_EXCEPTION_DISPATCHER2                                              \
-        }                                                                                   \
-        EX_CATCH                                                                            \
-        {                                                                                   \
-            if (g_isNewExceptionHandlingEnabled)                                            \
-            {                                                                               \
-                GCX_COOP_NO_DTOR();                                                         \
-                caughtException = GET_THROWABLE();                                          \
-            }                                                                               \
-            else                                                                            \
-            {                                                                               \
-                fprintf(stderr, "Rethrowing exception with HR=%08X, type=%08x\n", GET_EXCEPTION()->GetHR(), GET_EXCEPTION()->GetInstanceType()); \
-                EX_RETHROW;                                                                 \
-            }                                                                               \
-        }                                                                                   \
-        EX_END_CATCH(SwallowAllExceptions);                                                 \
-        if (caughtException != NULL)                                                        \
-        {                                                                                   \
-            DispatchManagedException(caughtException);                                            \
-        }                                                                                   \
-    }
-
-
 #define INSTALL_UNHANDLED_MANAGED_EXCEPTION_TRAP
 #define UNINSTALL_UNHANDLED_MANAGED_EXCEPTION_TRAP
 
@@ -413,7 +384,6 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
 #ifdef FEATURE_EH_FUNCLETS
 VOID DECLSPEC_NORETURN DispatchManagedException(OBJECTREF throwable);
 VOID DECLSPEC_NORETURN DispatchManagedException(RuntimeExceptionKind reKind);
-void InitializeExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, BOOL rethrow, ExInfo *pExInfo);
 #endif // FEATURE_EH_FUNCLETS
 
 #define UNINSTALL_UNWIND_AND_CONTINUE_HANDLER_NO_PROBE                                      \

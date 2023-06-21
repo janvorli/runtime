@@ -4306,8 +4306,7 @@ HCIMPL0(void, IL_Rethrow)
 
         ExInfo *pActiveExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
 
-        ExInfo exInfo = {};
-        InitializeExInfo(pThread, &ctx, &rd, /* rethrow */ TRUE, &exInfo);
+        ExInfo exInfo(pThread, &ctx, &rd, ExKind::None);
 
         GCPROTECT_BEGIN(exInfo._exception);
         PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_RETHROW);

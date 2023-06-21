@@ -317,6 +317,7 @@ set(VM_SOURCES_WKS
     eetoprofinterfaceimpl.cpp
     eventpipeinternal.cpp
     eventstore.cpp
+    exinfo.cpp
     fcall.cpp
     fieldmarshaler.cpp
     finalizerthread.cpp
@@ -422,6 +423,7 @@ set(VM_HEADERS_WKS
     eventpipeadaptertypes.h
     eventpipeinternal.h
     eventstore.hpp
+    exinfo.h
     fcall.h
     fieldmarshaler.h
     finalizerthread.h
@@ -785,7 +787,6 @@ if(CLR_CMAKE_TARGET_ARCH_AMD64)
     )
 elseif(CLR_CMAKE_TARGET_ARCH_I386)
     set(VM_SOURCES_DAC_AND_WKS_ARCH
-        exinfo.cpp
         ${ARCH_SOURCES_DIR}/cgenx86.cpp
         ${ARCH_SOURCES_DIR}/excepx86.cpp
         ${ARCH_SOURCES_DIR}/gmsx86.cpp
