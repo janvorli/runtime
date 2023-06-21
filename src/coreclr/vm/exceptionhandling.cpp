@@ -7795,12 +7795,11 @@ extern "C" void * QCALLTYPE RhpCallCatchFunclet(QCall::ObjectHandleOnStack excep
 #define FIRST_ARG_REG A0
 #endif
 
-        pvRegDisplay->pCurrentContext->FIRST_ARG_REG = (size_t)OBJECTREFToObject(oref);
-// #ifdef _DEBUG
-//         pvRegDisplay->pCurrentContext->FIRST_ARG_REG = (ULONG64)(size_t)(ULONG64*)&oref;
-// #else
-//         pvRegDisplay->pCurrentContext->FIRST_ARG_REG = (ULONG64)(size_t)oref;
-// #endif            
+#ifdef USE_CHECKED_OBJECTREFS
+        pvRegDisplay->pCurrentContext->FIRST_ARG_REG = (size_t)&oref;
+#else
+        pvRegDisplay->pCurrentContext->FIRST_ARG_REG = (size_t)oref;
+#endif
 #undef FIRST_ARG_REG
         ClrRestoreNonvolatileContext(pvRegDisplay->pCurrentContext);
     }

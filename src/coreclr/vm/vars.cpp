@@ -106,6 +106,10 @@ GVAL_IMPL_INIT(DWORD, g_debuggerWordTLSIndex, TLS_OUT_OF_INDEXES);
 #endif
 GVAL_IMPL_INIT(DWORD, g_TlsIndex, TLS_OUT_OF_INDEXES);
 
+#ifdef FEATURE_EH_FUNCLETS
+GPTR_IMPL(MethodTable,      g_pEHClass);
+#endif
+
 #ifndef DACCESS_COMPILE
 
 // <TODO> @TODO - PROMOTE. </TODO>

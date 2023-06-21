@@ -266,8 +266,9 @@ BOOL DacDbiInterfaceImpl::UnwindStackWalkFrame(StackWalkHandle pSFIHandle)
                 // Skip the new exception handling managed code, the debugger clients are not supposed to see them
                 MethodDesc *pMD = pIter->m_crawl.GetFunction();
                 PTR_MethodDesc ptrMD = dac_cast<PTR_MethodDesc>(pMD);
-                LPCUTF8 name = ptrMD->GetName();
-                if (strcmp(name, "DispatchEx") == 0 || strcmp(name, "RhThrowEx") == 0 || strcmp(name, "RhThrowHwEx") == 0)
+
+                // EH.DispatchEx, EH.RhThrowEx, EH.RhThrowHwEx
+                if (ptrMD->GetMethodTable() == g_pEHClass)
                 {
                     continue;
                 }
