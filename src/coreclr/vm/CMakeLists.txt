@@ -794,7 +794,6 @@ elseif(CLR_CMAKE_TARGET_ARCH_I386)
     )
 
     set(VM_HEADERS_DAC_AND_WKS_ARCH
-        exinfo.h
         ${ARCH_SOURCES_DIR}/cgencpu.h
         ${ARCH_SOURCES_DIR}/excepcpu.h
         ${ARCH_SOURCES_DIR}/gmscpu.h

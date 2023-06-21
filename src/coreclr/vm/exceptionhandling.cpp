@@ -4387,55 +4387,10 @@ static void DoEHLog(
 // Function to update the current context for exception propagation.
 //
 // Arguments:
-//      exception       - the PAL_SEHException representing the propagating exception.
+//      callback        - the exception propagation callback
+//      callbackCtx     - the exception propagation callback context
 //      currentContext  - the current context to update.
 //
-static VOID UpdateContextForPropagationCallback(
-    PAL_SEHException& ex,
-    CONTEXT* startContext)
-{
-    _ASSERTE(ex.ManagedToNativeExceptionCallback != NULL);
-
-#ifdef TARGET_AMD64
-
-    // Don't restore the stack pointer to exact same context. Leave the
-    // return IP on the stack to let the unwinder work if the callback throws
-    // an exception as opposed to failing fast.
-    startContext->Rsp -= sizeof(void*);
-
-    // Pass the context for the callback as the first argument.
-    startContext->Rdi = (DWORD64)ex.ManagedToNativeExceptionCallbackContext;
-
-#elif defined(TARGET_ARM64)
-
-    // Reset the linked return register to the current function to let the
-    // unwinder work if the callback throws an exception as opposed to failing fast.
-    startContext->Lr = GetIP(startContext);
-
-    // Pass the context for the callback as the first argument.
-    startContext->X0 = (DWORD64)ex.ManagedToNativeExceptionCallbackContext;
-
-#elif defined(TARGET_ARM)
-
-    // Reset the linked return register to the current function to let the
-    // unwinder work if the callback throws an exception as opposed to failing fast.
-    startContext->Lr = GetIP(startContext);
-
-    // Pass the context for the callback as the first argument.
-    startContext->R0 = (DWORD)ex.ManagedToNativeExceptionCallbackContext;
-
-#else
-
-    EEPOLICY_HANDLE_FATAL_ERROR_WITH_MESSAGE(
-        COR_E_FAILFAST,
-        W("Managed exception propagation not supported for platform."));
-
-#endif
-
-    // The last thing to do is set the supplied callback function.
-    SetIP(startContext, (PCODE)ex.ManagedToNativeExceptionCallback);
-}
-
 static VOID UpdateContextForPropagationCallback(
     Interop::ManagedToNativeExceptionCallback callback,
     void *callbackCtx,
@@ -4481,6 +4436,21 @@ static VOID UpdateContextForPropagationCallback(
 
     // The last thing to do is set the supplied callback function.
     SetIP(startContext, (PCODE)callback);
+}
+
+//---------------------------------------------------------------------------------------
+//
+// Function to update the current context for exception propagation.
+//
+// Arguments:
+//      exception       - the PAL_SEHException representing the propagating exception.
+//      currentContext  - the current context to update.
+//
+static VOID UpdateContextForPropagationCallback(
+    PAL_SEHException& ex,
+    CONTEXT* startContext)
+{
+    UpdateContextForPropagationCallback(ex.ManagedToNativeExceptionCallback, ex.ManagedToNativeExceptionCallbackContext, startContext);
 }
 
 //---------------------------------------------------------------------------------------
@@ -7128,12 +7098,6 @@ StackFrame ExceptionTracker::FindParentStackFrameHelper(CrawlFrame* pCF,
             if (csfCurrent == csfFunclet)
             {
                 sfResult = (StackFrame)pCurrentExInfo->_csfEnclosingClause;
-                if (sfResult.IsNull())
-                {
-                    _ASSERTE_MSG(FALSE, "$%$%$%$%$%$%$%$");
-                    continue;
-                }
-
                 break;
             }          
         }

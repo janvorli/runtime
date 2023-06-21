@@ -19,14 +19,10 @@
 #endif // FEATURE_INTERPRETER
 
 #include "gcinfodecoder.h"
-#include "exceptionhandlingqcalls.h"
 #ifdef FEATURE_EH_FUNCLETS
-#include "eetoprofinterfacewrapper.inl"
-#include "eedbginterfaceimpl.inl"
 #define PROCESS_EXPLICIT_FRAME_BEFORE_MANAGED_FRAME
 #endif
 
-#include "interoplibinterface.h"
 #include "exinfo.h"
 
 CrawlFrame::CrawlFrame()

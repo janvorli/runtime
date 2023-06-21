@@ -569,10 +569,6 @@ private:
 //    This class works both in-process and out-of-process (e.g. DAC).
 //
 
-#ifdef FEATURE_EH_FUNCLETS
-struct ExInfo;
-#endif // FEATURE_EH_FUNCLETS
-
 class StackFrameIterator
 {
 public:

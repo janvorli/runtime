@@ -310,7 +310,7 @@ ExInfo::ExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, ExKind exception
     _passNumber = 1;
     _kind = exceptionKind;
     _idxCurClause = 0xffffffff;
-    _stackTraceInfo.Init(); // TODO: how about this vs rethrow arg?
+    _stackTraceInfo.Init();
     _stackTraceInfo.AllocateStackTrace();
     _pFrame = GetThread()->GetFrame();
     _sfLowBound.SetMaxVal();

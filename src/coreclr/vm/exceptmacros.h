@@ -381,11 +381,6 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
             SCAN_EHMARKER_TRY();                                                            \
             DEBUG_ASSURE_NO_RETURN_BEGIN(IUACH);
 
-#ifdef FEATURE_EH_FUNCLETS
-VOID DECLSPEC_NORETURN DispatchManagedException(OBJECTREF throwable);
-VOID DECLSPEC_NORETURN DispatchManagedException(RuntimeExceptionKind reKind);
-#endif // FEATURE_EH_FUNCLETS
-
 #define UNINSTALL_UNWIND_AND_CONTINUE_HANDLER_NO_PROBE                                      \
             DEBUG_ASSURE_NO_RETURN_END(IUACH)                                               \
             SCAN_EHMARKER_END_TRY();                                                        \
