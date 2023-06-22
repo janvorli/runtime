@@ -8033,12 +8033,13 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
         pExInfo->_csfEnclosingClause.Clear();
         if (pExInfo->_idxCurClause != 0xffffffff) //  the reverse pinvoke case doesn't have the _idxCurClause set
         {
-#ifdef ESTABLISHER_FRAME_ADDRESS_IS_CALLER_SP
-            pExInfo->_sfCallerOfActualHandlerFrame = StackFrame(establisherFrame); 
-#else
+// #ifdef ESTABLISHER_FRAME_ADDRESS_IS_CALLER_SP
+//             UINT_PTR establisherFrame = GetEstablisherFrame(pvRegDisplay, exInfo);
+//             pExInfo->_sfCallerOfActualHandlerFrame = StackFrame(establisherFrame); 
+// #else
             EECodeManager::EnsureCallerContextIsValid(pRD, NULL);
             pExInfo->_sfCallerOfActualHandlerFrame = CallerStackFrame::FromRegDisplay(pRD);
-#endif       
+//#endif       
             // the 1st pass has just ended, so the _CurrentClause is the catch clause
             pExInfo->_ClauseForCatch = pExInfo->_CurrentClause;
 

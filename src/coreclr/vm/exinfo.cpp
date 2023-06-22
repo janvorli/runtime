@@ -312,10 +312,15 @@ ExInfo::ExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, ExKind exception
     _idxCurClause = 0xffffffff;
     _stackTraceInfo.Init();
     _stackTraceInfo.AllocateStackTrace();
-    _pFrame = GetThread()->GetFrame();
+    _pFrame = pThread->GetFrame();
     _sfLowBound.SetMaxVal();
+    memset(&_ClauseForCatch, 0, sizeof(_ClauseForCatch));
+    memset(&_CurrentClause, 0, sizeof(_CurrentClause));
     _exception = NULL;
     _hThrowable = NULL;
+    _notifyDebuggerSP = NULL;
+    _propagateExceptionCallback = NULL;
+    _propagateExceptionContext = NULL;
     pThread->GetExceptionState()->SetCurrentExInfo(this);
 }
 
