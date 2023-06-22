@@ -6560,12 +6560,12 @@ void HandleManagedFaultNew(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext
 {
     WRAPPER_NO_CONTRACT;
 
-    // Ok.  Now we have a brand new fault in jitted code.
     FrameWithCookie<FaultingExceptionFrame> frameWithCookie;
     FaultingExceptionFrame *frame = &frameWithCookie;
 #if defined(FEATURE_EH_FUNCLETS)
     *frame->GetGSCookiePtr() = GetProcessGSCookie();
 #endif // FEATURE_EH_FUNCLETS
+    pContext->ContextFlags |= CONTEXT_EXCEPTION_ACTIVE;
     frame->InitAndLink(pContext);
 
     CONTEXT ctx = {0};
