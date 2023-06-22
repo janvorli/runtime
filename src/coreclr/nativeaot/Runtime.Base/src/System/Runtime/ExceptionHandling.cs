@@ -494,6 +494,8 @@ namespace System.Runtime
             [FieldOffset(AsmOffsets.OFFSETOF__PAL_LIMITED_CONTEXT__IP)]
             internal IntPtr IP;
 #if !NATIVEAOT
+            [FieldOffset(AsmOffsets.OFFSETOF__PAL_LIMITED_CONTEXT__ContextFlags)]
+            internal uint ContextFlags;
             [FieldOffset(AsmOffsets.OFFSETOF__PAL_LIMITED_CONTEXT__SP)]
             internal IntPtr SP;
             [FieldOffset(AsmOffsets.OFFSETOF__PAL_LIMITED_CONTEXT__FP)]

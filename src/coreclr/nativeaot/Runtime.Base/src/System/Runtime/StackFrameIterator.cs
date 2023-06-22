@@ -25,11 +25,29 @@ namespace System.Runtime
         [FieldOffset(AsmOffsets.OFFSETOF__StackFrameIterator__m_pRegDisplay)]
         private REGDISPLAY* _pRegDisplay;
 
-        internal byte* ControlPC { get { return (byte*)_pRegDisplay->ControlPC; } }
-        internal byte* OriginalControlPC { get { return (byte*)_pRegDisplay->ControlPC; } } // TODO: fix this
+        internal byte* ControlPC
+        {
+            get
+            {
+                const uint CONTEXT_EXCEPTION_ACTIVE = 0x8000000;
+                byte* pc = OriginalControlPC;
+                if ((_pRegDisplay->m_pCurrentContext->ContextFlags & CONTEXT_EXCEPTION_ACTIVE) == 0)
+                {
+#if TARGET_ARM
+                    pc -= 2;
+#elif TARGET_ARM64
+                    pc -= 4;
+#else
+                    pc -= 1;
+#endif
+                }
+                return pc;
+            }
+        }
+        internal byte* OriginalControlPC { get { return (byte*)_pRegDisplay->ControlPC; } }
         internal void* RegisterSet { get { return _pRegDisplay;  } }
         internal UIntPtr SP { get { return _pRegDisplay->SP; } }
-        internal UIntPtr FramePointer { get { return _pRegDisplay->m_pCurrentContext->FP; } } // FAKE! TODO: is this always FP register or is it SP or FP?
+        internal UIntPtr FramePointer { get { return _pRegDisplay->m_pCurrentContext->FP; } }
 #else // NATIVEAOT
         [FieldOffset(AsmOffsets.OFFSETOF__StackFrameIterator__m_FramePointer)]
         private UIntPtr _framePointer;

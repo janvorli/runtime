@@ -139,18 +139,22 @@ class AsmOffsets
     public const int OFFSETOF__PAL_LIMITED_CONTEXT__IP = 0xf8;
     public const int OFFSETOF__PAL_LIMITED_CONTEXT__SP = 0x98;
     public const int OFFSETOF__PAL_LIMITED_CONTEXT__FP = 0xa0;
+    public const int OFFSETOF__PAL_LIMITED_CONTEXT__ContextFlags = 0x30;
 #elif TARGET_ARM64
     public const int OFFSETOF__PAL_LIMITED_CONTEXT__IP = 0x108;
     public const int OFFSETOF__PAL_LIMITED_CONTEXT__SP = 0x100;
     public const int OFFSETOF__PAL_LIMITED_CONTEXT__FP = 0xf0;
+    public const int OFFSETOF__PAL_LIMITED_CONTEXT__ContextFlags = 0x0;
 #elif TARGET_ARM
     public const int OFFSETOF__PAL_LIMITED_CONTEXT__IP = 0x40;
     public const int OFFSETOF__PAL_LIMITED_CONTEXT__SP = 0x56;
     public const int OFFSETOF__PAL_LIMITED_CONTEXT__FP = 0x30;
+    public const int OFFSETOF__PAL_LIMITED_CONTEXT__ContextFlags = 0x0;
 #elif TARGET_X86
     public const int OFFSETOF__PAL_LIMITED_CONTEXT__IP = 0xb8;
     public const int OFFSETOF__PAL_LIMITED_CONTEXT__SP = 0xc4;
     public const int OFFSETOF__PAL_LIMITED_CONTEXT__FP = 0xb4;
+    public const int OFFSETOF__PAL_LIMITED_CONTEXT__ContextFlags = 0x0;
 #endif
 
 
@@ -205,6 +209,7 @@ class AsmOffsets
     static_assert_no_msg(offsetof(CONTEXT, Esp) == AsmOffsets::OFFSETOF__PAL_LIMITED_CONTEXT__SP);
     static_assert_no_msg(offsetof(CONTEXT, Ebp) == AsmOffsets::OFFSETOF__PAL_LIMITED_CONTEXT__FP);
 #endif
+    static_assert_no_msg(offsetof(CONTEXT, ContextFlags) == AsmOffsets::OFFSETOF__PAL_LIMITED_CONTEXT__ContextFlags);
     static_assert_no_msg(sizeof(REGDISPLAY) == AsmOffsets::SIZEOF__REGDISPLAY);
     static_assert_no_msg(offsetof(REGDISPLAY, SP) == AsmOffsets::OFFSETOF__REGDISPLAY__SP);
     static_assert_no_msg(offsetof(REGDISPLAY, ControlPC) == AsmOffsets::OFFSETOF__REGDISPLAY__ControlPC);

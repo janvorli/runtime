@@ -749,6 +749,7 @@ private:
 #ifdef FEATURE_EH_FUNCLETS
 public:
     ExInfo* m_pNextExInfo;
+//    TADDR m_AdjustedControlPC;
 #endif // FEATURE_EH_FUNCLETS
 };
 
