@@ -29,10 +29,10 @@ namespace System.Runtime
         {
             get
             {
-                //const uint CONTEXT_EXCEPTION_ACTIVE = 0x8000000;
-                const uint CONTEXT_UNWOUND_TO_CALL = 0x20000000;
+                const uint CONTEXT_EXCEPTION_ACTIVE = 0x8000000;
+                //const uint CONTEXT_UNWOUND_TO_CALL = 0x20000000;
                 byte* pc = OriginalControlPC;
-                if ((_pRegDisplay->m_pCurrentContext->ContextFlags & CONTEXT_UNWOUND_TO_CALL) != 0)
+                if ((_pRegDisplay->m_pCurrentContext->ContextFlags & CONTEXT_EXCEPTION_ACTIVE) == 0)
                 {
 #if TARGET_ARM
                     pc -= 2;

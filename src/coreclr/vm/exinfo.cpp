@@ -319,8 +319,10 @@ ExInfo::ExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, ExKind exception
     _exception = NULL;
     _hThrowable = NULL;
     _notifyDebuggerSP = NULL;
+#ifdef HOST_UNIX
     _propagateExceptionCallback = NULL;
     _propagateExceptionContext = NULL;
+#endif // HOST_UNIX
     pThread->GetExceptionState()->SetCurrentExInfo(this);
 }
 

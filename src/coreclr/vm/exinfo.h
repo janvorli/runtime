@@ -198,41 +198,48 @@ struct ExInfo
 {
     ExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, ExKind exceptionKind);
     
+    // Previous ExInfo in the chain of exceptions rethrown from their catch / finally handlers
     PTR_ExInfo _pPrevExInfo;
-
     void* _pExContext;
-
-    OBJECTREF _exception;  // actual object reference, specially reported by GcScanRootsWorker
-
+    // actual exception object reference
+    OBJECTREF _exception;
+    // Kind of the exception (software, hardware, rethrown)
     ExKind _kind;
-
+    // Exception handling pass (1 or 2)
     uint8_t _passNumber;
-
-    // BEWARE: This field is used by the stackwalker to know if the dispatch code has reached the
-    //         point at which a handler is called.  In other words, it serves as an "is a handler
-    //         active" state where '_idxCurClause == MaxTryRegionIdx' means 'no'.
+    // Index of the current exception handling clause
     uint32_t _idxCurClause;
-
+    // Stack frame iterator used to walk stack frames while handling the exception
     StackFrameIterator _frameIter;
-
     volatile size_t _notifyDebuggerSP;
     REGDISPLAY *_pRD;
-
+    // Stack trace of the current exception
     StackTraceInfo _stackTraceInfo;
-
+    // Initial explicit frame
     Frame* _pFrame;
 
+    // Low and high bounds of the stack unwound by the exception. They are updated during 2nd pass only.
     StackFrame          _sfLowBound;
     StackFrame          _sfHighBound;
+    // Stack frame of the caller of the currently running exception handling clause (catch, finally, filter)
     CallerStackFrame    _csfEHClause;
+    // Stack frame of the caller of the code that encloses the currently running exception handling clause
     CallerStackFrame    _csfEnclosingClause;
+    // Stack frame of the caller of the catch handler
     StackFrame          _sfCallerOfActualHandlerFrame;
+    // The exception handling clause for the catch handler that was identified during pass 1
     EE_ILEXCEPTION_CLAUSE _ClauseForCatch;
 
+#ifdef TARGET_UNIX
+    // Exception propagation callback and context for ObjectiveC exception propagation support
     void(*_propagateExceptionCallback)(void* context);
     void *_propagateExceptionContext;
-    // These are for profiler / debugger use only
-    OBJECTHANDLE    _hThrowable;       // thrown exception handle
+#endif // TARGET_UNIX
+
+    // thrown exception object handle
+    OBJECTHANDLE    _hThrowable;
+
+    // The following fields are for profiler / debugger use only
     EE_ILEXCEPTION_CLAUSE _CurrentClause;
     DebuggerExState _DebuggerExState;
     ExceptionFlags _ExceptionFlags;

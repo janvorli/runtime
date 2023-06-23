@@ -8033,13 +8033,9 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
         pExInfo->_csfEnclosingClause.Clear();
         if (pExInfo->_idxCurClause != 0xffffffff) //  the reverse pinvoke case doesn't have the _idxCurClause set
         {
-// #ifdef ESTABLISHER_FRAME_ADDRESS_IS_CALLER_SP
-//             UINT_PTR establisherFrame = GetEstablisherFrame(pvRegDisplay, exInfo);
-//             pExInfo->_sfCallerOfActualHandlerFrame = StackFrame(establisherFrame); 
-// #else
             EECodeManager::EnsureCallerContextIsValid(pRD, NULL);
             pExInfo->_sfCallerOfActualHandlerFrame = CallerStackFrame::FromRegDisplay(pRD);
-//#endif       
+
             // the 1st pass has just ended, so the _CurrentClause is the catch clause
             pExInfo->_ClauseForCatch = pExInfo->_CurrentClause;
 
@@ -8137,17 +8133,6 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
 
     _ASSERTE(!result || pThis->GetFrameState() == StackFrameIterator::SFITER_FRAMELESS_METHOD);
 
-    if (result)
-    {       
-// #ifdef TARGET_ARM
-//         pThis->m_AdjustedControlPC = pThis->m_crawl.GetRegisterSet()->ControlPC - 2;
-// #elif defined(TARGET_ARM64)
-//         pThis->m_AdjustedControlPC = pThis->m_crawl.GetRegisterSet()->ControlPC - 4;
-// #else
-//         pThis->m_AdjustedControlPC = pThis->m_crawl.GetRegisterSet()->ControlPC - 1;
-// #endif
-    }
-
     END_QCALL;
 
     return result;
@@ -8162,14 +8147,6 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
     StackWalkAction retVal = SWA_FAILED;
 
     BEGIN_QCALL;
-
-// #ifdef TARGET_ARM
-//     pThis->m_crawl.GetRegisterSet()->ControlPC += 2;
-// #elif defined(TARGET_ARM64)
-//     pThis->m_crawl.GetRegisterSet()->ControlPC += 4;
-// #else
-//     pThis->m_crawl.GetRegisterSet()->ControlPC += 1;
-// #endif
 
     Thread* pThread = GET_THREAD();
     Frame* pFrame = pThread->GetFrame();
@@ -8198,6 +8175,7 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
 
         if (invalidRevPInvoke)
         {
+#ifdef HOST_UNIX
             void* callbackCxt = NULL;
             Interop::ManagedToNativeExceptionCallback callback = Interop::GetPropagatingExceptionCallback(
                 pThis->m_crawl.GetCodeInfo(),
@@ -8209,6 +8187,7 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                 pTopExInfo->_propagateExceptionCallback = callback;
                 pTopExInfo->_propagateExceptionContext = callbackCxt;
             }
+#endif // HOST_UNIX
         }
         else
         {
@@ -8333,15 +8312,8 @@ Exit:;
     END_QCALL;
 
     if (retVal != SWA_FAILED)
-    {      
-// #ifdef TARGET_ARM
-//         pThis->m_AdjustedControlPC = pThis->m_crawl.GetRegisterSet()->ControlPC - 2;
-// #elif defined(TARGET_ARM64)
-//         pThis->m_AdjustedControlPC = pThis->m_crawl.GetRegisterSet()->ControlPC - 4;
-// #else
-//         pThis->m_AdjustedControlPC = pThis->m_crawl.GetRegisterSet()->ControlPC - 1;
-// #endif
-
+    {
+        pThis->m_crawl.GetRegisterSet()->pCurrentContext->ContextFlags &= ~CONTEXT_EXCEPTION_ACTIVE;
         return true;
     }
 

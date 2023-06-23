@@ -1,18 +1,29 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
+
+// NOTE: This file is included also during native runtime compilation by the C++ compiler for verification purposes.
+// The static asserts at the end are compiled only when this file is included in native build by c++ compiler. They
+// provide compile time verification that all the sizes and offsets match between the managed and native code.
+
 #if !__cplusplus
 internal static
 #endif
 class AsmOffsets
 {
+
+    // Offsets / sizes that are different in Release / Debug builds
 #if DEBUG
-
-#if TARGET_UNIX
-
+    // Debug build offsets
 #if TARGET_AMD64
+#if TARGET_UNIX
     public const int SIZEOF__REGDISPLAY = 0x1a90;
     public const int OFFSETOF__REGDISPLAY__SP = 0x1a78;
     public const int OFFSETOF__REGDISPLAY__ControlPC = 0x1a80;
+#else // TARGET_UNIX
+    public const int SIZEOF__REGDISPLAY = 0xbf0;
+    public const int OFFSETOF__REGDISPLAY__SP = 0xbd8;
+    public const int OFFSETOF__REGDISPLAY__ControlPC = 0xbe0;
+#endif // TARGET_UNIX
 #elif TARGET_ARM64
     public const int SIZEOF__REGDISPLAY = 0x940;
     public const int OFFSETOF__REGDISPLAY__SP = 0x898;
@@ -27,24 +38,6 @@ class AsmOffsets
     public const int OFFSETOF__REGDISPLAY__ControlPC = 0x5f4;
 #endif
 
-#else // TARGET_UNIX
-
-#if TARGET_AMD64
-    public const int SIZEOF__REGDISPLAY = 0xbf0;
-    public const int OFFSETOF__REGDISPLAY__SP = 0xbd8;
-    public const int OFFSETOF__REGDISPLAY__ControlPC = 0xbe0;
-#elif TARGET_ARM64
-    public const int SIZEOF__REGDISPLAY = 0x940;
-    public const int OFFSETOF__REGDISPLAY__SP = 0x898;
-    public const int OFFSETOF__REGDISPLAY__ControlPC = 0x8a0;
-#elif TARGET_ARM
-    public const int SIZEOF__REGDISPLAY = 0x410;
-    public const int OFFSETOF__REGDISPLAY__SP = 0x3ec;
-    public const int OFFSETOF__REGDISPLAY__ControlPC = 0x3f0;
-#endif
-
-#endif // TARGET_UNIX
-
 #if TARGET_64BIT
     public const int OFFSETOF__REGDISPLAY__m_pCurrentContext = 0x8;
     public const int SIZEOF__StackFrameIterator = 0x370;
@@ -54,13 +47,17 @@ class AsmOffsets
 #endif // TARGET_64BIT
 
 #else // DEBUG
-
-#if TARGET_UNIX
-
+    // Release build offsets
 #if TARGET_AMD64
+#if TARGET_UNIX
     public const int SIZEOF__REGDISPLAY = 0x1a80;
     public const int OFFSETOF__REGDISPLAY__SP = 0x1a70;
     public const int OFFSETOF__REGDISPLAY__ControlPC = 0x1a78;
+#else // TARGET_UNIX
+    public const int SIZEOF__REGDISPLAY = 0xbe0;
+    public const int OFFSETOF__REGDISPLAY__SP = 0xbd0;
+    public const int OFFSETOF__REGDISPLAY__ControlPC = 0xbd8;
+#endif // TARGET_UNIX
 #elif TARGET_ARM64
     public const int SIZEOF__REGDISPLAY = 0x930;
     public const int OFFSETOF__REGDISPLAY__SP = 0x890;
@@ -75,24 +72,6 @@ class AsmOffsets
     public const int OFFSETOF__REGDISPLAY__ControlPC = 0x5f0;
 #endif
 
-#else // TARGET_UNIX
-
-#if TARGET_AMD64
-    public const int SIZEOF__REGDISPLAY = 0xbe0;
-    public const int OFFSETOF__REGDISPLAY__SP = 0xbd0;
-    public const int OFFSETOF__REGDISPLAY__ControlPC = 0xbd8;
-#elif TARGET_ARM64
-    public const int SIZEOF__REGDISPLAY = 0x930;
-    public const int OFFSETOF__REGDISPLAY__SP = 0x890;
-    public const int OFFSETOF__REGDISPLAY__ControlPC = 0x898;
-#elif TARGET_ARM
-    public const int SIZEOF__REGDISPLAY = 0x408;
-    public const int OFFSETOF__REGDISPLAY__SP = 0x3e8;
-    public const int OFFSETOF__REGDISPLAY__ControlPC = 0x3ec;
-#endif
-
-#endif // TARGET_UNIX
-
 #if TARGET_64BIT
     public const int OFFSETOF__REGDISPLAY__m_pCurrentContext = 0x8;
     public const int SIZEOF__StackFrameIterator = 0x360;
@@ -103,18 +82,12 @@ class AsmOffsets
 
 #endif // DEBUG
 
-#if TARGET_64BIT
-    public const int SIZEOF__EHEnum = 0x20;
-    public const int OFFSETOF__StackFrameIterator__m_pRegDisplay = 0x228;
-#else // TARGET_64BIT
-    public const int SIZEOF__EHEnum = 0x10;
-    public const int OFFSETOF__StackFrameIterator__m_pRegDisplay = 0x218;
-#endif // TARGET_64BIT
-
-#if TARGET_UNIX
-
 #if TARGET_AMD64
+#if TARGET_UNIX
     public const int SIZEOF__PAL_LIMITED_CONTEXT = 0xc20;
+#else // TARGET_UNIX
+    public const int SIZEOF__PAL_LIMITED_CONTEXT = 0x4d0;
+#endif // TARGET_UNIx
 #elif TARGET_ARM64
     public const int SIZEOF__PAL_LIMITED_CONTEXT = 0x390;
 #elif TARGET_ARM
@@ -122,18 +95,6 @@ class AsmOffsets
 #elif TARGET_X86
     public const int SIZEOF__PAL_LIMITED_CONTEXT = 0x2cc;
 #endif
-
-#else // TARGET_UNIX
-
-#if TARGET_AMD64
-    public const int SIZEOF__PAL_LIMITED_CONTEXT = 0x4d0;
-#elif TARGET_ARM64
-    public const int SIZEOF__PAL_LIMITED_CONTEXT = 0x390;
-#elif TARGET_ARM
-    public const int SIZEOF__PAL_LIMITED_CONTEXT = 0x1a0;
-#endif
-
-#endif // TARGET_UNIx
 
 #if TARGET_AMD64
     public const int OFFSETOF__PAL_LIMITED_CONTEXT__IP = 0xf8;
@@ -157,36 +118,29 @@ class AsmOffsets
     public const int OFFSETOF__PAL_LIMITED_CONTEXT__ContextFlags = 0x0;
 #endif
 
+    // Offsets / sizes that are different in 64 / 32 bit mode
 
 #if TARGET_64BIT
+    public const int SIZEOF__EHEnum = 0x20;
+    public const int OFFSETOF__StackFrameIterator__m_pRegDisplay = 0x228;
     public const int OFFSETOF__ExInfo__m_pPrevExInfo = 0;
     public const int OFFSETOF__ExInfo__m_pExContext = 8;
     public const int OFFSETOF__ExInfo__m_exception = 0x10;
-
     public const int OFFSETOF__ExInfo__m_kind = 0x18;
     public const int OFFSETOF__ExInfo__m_passNumber = 0x19;
-
-    // BEWARE: This field is used by the stackwalker to know if the dispatch code has reached the
-    //         point at which a handler is called.  In other words, it serves as an "is a handler
-    //         active" state where '_idxCurClause == MaxTryRegionIdx' means 'no'.
     public const int OFFSETOF__ExInfo__m_idxCurClause = 0x1c;
     public const int OFFSETOF__ExInfo__m_frameIter = 0x20;
-
     public const int OFFSETOF__ExInfo__m_notifyDebuggerSP = OFFSETOF__ExInfo__m_frameIter + SIZEOF__StackFrameIterator;
 #else // TARGET_64BIT
+    public const int SIZEOF__EHEnum = 0x10;
+    public const int OFFSETOF__StackFrameIterator__m_pRegDisplay = 0x218;
     public const int OFFSETOF__ExInfo__m_pPrevExInfo = 0;
     public const int OFFSETOF__ExInfo__m_pExContext = 4;
     public const int OFFSETOF__ExInfo__m_exception = 8;
-
     public const int OFFSETOF__ExInfo__m_kind = 0xC;
     public const int OFFSETOF__ExInfo__m_passNumber = 0xD;
-
-    // BEWARE: This field is used by the stackwalker to know if the dispatch code has reached the
-    //         point at which a handler is called.  In other words, it serves as an "is a handler
-    //         active" state where '_idxCurClause == MaxTryRegionIdx' means 'no'.
     public const int OFFSETOF__ExInfo__m_idxCurClause = 0x10;
     public const int OFFSETOF__ExInfo__m_frameIter = 0x18;
-
     public const int OFFSETOF__ExInfo__m_notifyDebuggerSP = OFFSETOF__ExInfo__m_frameIter + SIZEOF__StackFrameIterator;
 #endif // TARGET_64BIT
 
