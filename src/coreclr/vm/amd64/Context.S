@@ -18,8 +18,8 @@ NESTED_ENTRY ClrRestoreNonvolatileContextWorker, _TEXT, NoHandler
         set_cfa_register rbp, 0
         END_PROLOGUE
     
-        mov     r10, rcx
-        mov     r11, rdx
+        mov     r10, rdi
+        mov     r11, rsi
 
         test    byte ptr [r10 + OFFSETOF__CONTEXT__ContextFlags], CONTEXT_FLOATING_POINT
         je      Done_Restore_CONTEXT_FLOATING_POINT
