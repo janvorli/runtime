@@ -1,21 +1,21 @@
-; Licensed to the .NET Foundation under one or more agreements.
-; The .NET Foundation licenses this file to you under the MIT license.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
 
 .intel_syntax noprefix
 #include "unixasmmacros.inc"
 #include "asmconstants.h"
 
-; Some constants for CONTEXT.ContextFlags. The arch bit (CONTEXT_AMD64) is normally set in these flag constants below. Since
-; this is already arch-specific code and the arch bit is not relevant, the arch bit is excluded from the flag constants below
-; for simpler tests.
-CONTEXT_CONTROL equ 1h
-CONTEXT_INTEGER equ 2h
-CONTEXT_FLOATING_POINT equ 8h
+// Some constants for CONTEXT.ContextFlags. The arch bit (CONTEXT_AMD64) is normally set in these flag constants below. Since
+// this is already arch-specific code and the arch bit is not relevant, the arch bit is excluded from the flag constants below
+// for simpler tests.
+#define CONTEXT_CONTROL 1
+#define CONTEXT_INTEGER 2
+#define CONTEXT_FLOATING_POINT 8
 
-; Signature: EXTERN_C void STDCALL ClrRestoreNonvolatileContextWorker(PCONTEXT ContextRecord, DWORD64 ssp);
-NESTED_ENTRY ClrRestoreNonvolatileContextWorker, _TEXT
+// Signature: EXTERN_C void STDCALL ClrRestoreNonvolatileContextWorker(PCONTEXT ContextRecord, DWORD64 ssp);
+NESTED_ENTRY ClrRestoreNonvolatileContextWorker, _TEXT, NoHandler
         push_nonvol_reg rbp
-        set_frame rbp, 0
+        set_cfa_register rbp, 0
         END_PROLOGUE
     
         mov     r10, rcx
@@ -53,10 +53,10 @@ NESTED_ENTRY ClrRestoreNonvolatileContextWorker, _TEXT
         incsspq r11
     No_Ssp_Update:
 
-        ; When user-mode shadow stacks are enabled, and for example the intent is to continue execution in managed code after
-        ; exception handling, iret and ret can't be used because their shadow stack enforcement would not allow that transition,
-        ; and using them would require writing to the shadow stack, which is not preferable. Instead, iret is partially
-        ; simulated.
+        // When user-mode shadow stacks are enabled, and for example the intent is to continue execution in managed code after
+        // exception handling, iret and ret can't be used because their shadow stack enforcement would not allow that transition,
+        // and using them would require writing to the shadow stack, which is not preferable. Instead, iret is partially
+        // simulated.
         mov     eax, [r10 + OFFSETOF__CONTEXT__EFlags]
         push    rax
         popfq
@@ -64,7 +64,7 @@ NESTED_ENTRY ClrRestoreNonvolatileContextWorker, _TEXT
         jmp     qword ptr [r10 + OFFSETOF__CONTEXT__Rip]
     Done_Restore_CONTEXT_CONTROL:
     
-        ; The function was not asked to restore the control registers so we return back to the caller
+        // The function was not asked to restore the control registers so we return back to the caller
         pop     rbp
         ret
 NESTED_END ClrRestoreNonvolatileContextWorker, _TEXT
