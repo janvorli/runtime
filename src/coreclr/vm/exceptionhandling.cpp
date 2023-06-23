@@ -8080,16 +8080,7 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
         pExInfo->_ExceptionFlags.SetUnwindHasStarted();
         EEToDebuggerExceptionInterfaceWrapper::ManagedExceptionUnwindBegin(pThread);
     }
-#if defined(HOST_UNIX) && defined(HOST_AMD64)
-    if (GetIP(pStackwalkCtx) == 0)
-    {
-        RtlCaptureContext(pStackwalkCtx);
-        pStackwalkCtx->ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-        SetIP(pStackwalkCtx, 0);
-        SetSP(pStackwalkCtx, 0);
-        SetFP(pStackwalkCtx, 0);
-    }
-#endif
+
     pThread->FillRegDisplay(pRD, pStackwalkCtx);
 
     memset(pThis, 0, sizeof(StackFrameIterator));
