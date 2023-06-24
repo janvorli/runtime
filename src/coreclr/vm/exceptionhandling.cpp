@@ -5392,7 +5392,9 @@ BOOL HandleHardwareException(PAL_SEHException* ex)
             REGDISPLAY rd;
             Thread *pThread = GetThread();
 
-            ExInfo exInfo(pThread, ex->GetContextRecord(), &rd, ExKind::HardwareFault);
+            CONTEXT ctx = {0};
+            ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
+            ExInfo exInfo(pThread, &ctx /*ex->GetContextRecord()*/, &rd, ExKind::HardwareFault);
 
             DWORD exceptionCode = ex->GetExceptionRecord()->ExceptionCode;
             if (exceptionCode == STATUS_ACCESS_VIOLATION)
@@ -8126,6 +8128,15 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
 
     END_QCALL;
 
+    if (result)
+    {
+        pThis->m_AdjustedControlPC = pThis->m_crawl.GetRegisterSet()->ControlPC;
+        if (!pThis->m_crawl.HasFaulted())
+        {
+            pThis->m_AdjustedControlPC -= STACKWALK_CONTROLPC_ADJUST_OFFSET;
+        }
+    }
+
     return result;
 }
 
@@ -8304,7 +8315,12 @@ Exit:;
 
     if (retVal != SWA_FAILED)
     {
-        pThis->m_crawl.GetRegisterSet()->pCurrentContext->ContextFlags &= ~CONTEXT_EXCEPTION_ACTIVE;
+        pThis->m_AdjustedControlPC = pThis->m_crawl.GetRegisterSet()->ControlPC;
+        if (!pThis->m_crawl.HasFaulted())
+        {
+            pThis->m_AdjustedControlPC -= STACKWALK_CONTROLPC_ADJUST_OFFSET;
+        }
+
         return true;
     }
 

@@ -41,9 +41,11 @@ class AsmOffsets
 #if TARGET_64BIT
     public const int OFFSETOF__REGDISPLAY__m_pCurrentContext = 0x8;
     public const int SIZEOF__StackFrameIterator = 0x370;
+    public const int OFFSETOF__StackFrameIterator__m_AdjustedControlPC = 0x368;
 #else // TARGET_64BIT
     public const int OFFSETOF__REGDISPLAY__m_pCurrentContext = 0x4;
     public const int SIZEOF__StackFrameIterator = 0x2d0;
+    public const int OFFSETOF__StackFrameIterator__m_AdjustedControlPC = 0x2cc;
 #endif // TARGET_64BIT
 
 #else // DEBUG
@@ -74,10 +76,12 @@ class AsmOffsets
 
 #if TARGET_64BIT
     public const int OFFSETOF__REGDISPLAY__m_pCurrentContext = 0x8;
-    public const int SIZEOF__StackFrameIterator = 0x360;
+    public const int SIZEOF__StackFrameIterator = 0x370;
+    public const int OFFSETOF__StackFrameIterator__m_AdjustedControlPC = 0x360;
 #else // TARGET_64BIT
     public const int OFFSETOF__REGDISPLAY__m_pCurrentContext = 0x4;
     public const int SIZEOF__StackFrameIterator = 0x2c8;
+    public const int OFFSETOF__StackFrameIterator__m_AdjustedControlPC = 0x2c4;
 #endif // TARGET_64BIT
 
 #endif // DEBUG
@@ -170,6 +174,7 @@ class AsmOffsets
     static_assert_no_msg(offsetof(REGDISPLAY, pCurrentContext) == AsmOffsets::OFFSETOF__REGDISPLAY__m_pCurrentContext);
     static_assert_no_msg(sizeof(StackFrameIterator) == AsmOffsets::SIZEOF__StackFrameIterator);
     static_assert_no_msg(offsetof(StackFrameIterator, m_crawl) + offsetof(CrawlFrame, pRD) == OFFSETOF__StackFrameIterator__m_pRegDisplay);
+    static_assert_no_msg(offsetof(StackFrameIterator, m_AdjustedControlPC) == OFFSETOF__StackFrameIterator__m_AdjustedControlPC);
     static_assert_no_msg(sizeof(ExtendedEHClauseEnumerator) == AsmOffsets::SIZEOF__EHEnum);
     static_assert_no_msg(offsetof(ExInfo, _pPrevExInfo) == OFFSETOF__ExInfo__m_pPrevExInfo);
     static_assert_no_msg(offsetof(ExInfo, _pExContext) == OFFSETOF__ExInfo__m_pExContext);
