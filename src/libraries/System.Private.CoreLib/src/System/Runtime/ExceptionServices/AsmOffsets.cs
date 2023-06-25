@@ -44,8 +44,8 @@ class AsmOffsets
     public const int OFFSETOF__StackFrameIterator__m_AdjustedControlPC = 0x368;
 #else // TARGET_64BIT
     public const int OFFSETOF__REGDISPLAY__m_pCurrentContext = 0x4;
-    public const int SIZEOF__StackFrameIterator = 0x2d0;
-    public const int OFFSETOF__StackFrameIterator__m_AdjustedControlPC = 0x2cc;
+    public const int SIZEOF__StackFrameIterator = 0x2d8;
+    public const int OFFSETOF__StackFrameIterator__m_AdjustedControlPC = 0x2d0;
 #endif // TARGET_64BIT
 
 #else // DEBUG
@@ -80,8 +80,8 @@ class AsmOffsets
     public const int OFFSETOF__StackFrameIterator__m_AdjustedControlPC = 0x360;
 #else // TARGET_64BIT
     public const int OFFSETOF__REGDISPLAY__m_pCurrentContext = 0x4;
-    public const int SIZEOF__StackFrameIterator = 0x2c8;
-    public const int OFFSETOF__StackFrameIterator__m_AdjustedControlPC = 0x2c4;
+    public const int SIZEOF__StackFrameIterator = 0x2d0;
+    public const int OFFSETOF__StackFrameIterator__m_AdjustedControlPC = 0x2c8;
 #endif // TARGET_64BIT
 
 #endif // DEBUG
@@ -112,7 +112,7 @@ class AsmOffsets
     public const int OFFSETOF__PAL_LIMITED_CONTEXT__ContextFlags = 0x0;
 #elif TARGET_ARM
     public const int OFFSETOF__PAL_LIMITED_CONTEXT__IP = 0x40;
-    public const int OFFSETOF__PAL_LIMITED_CONTEXT__SP = 0x56;
+    public const int OFFSETOF__PAL_LIMITED_CONTEXT__SP = 0x38;
     public const int OFFSETOF__PAL_LIMITED_CONTEXT__FP = 0x30;
     public const int OFFSETOF__PAL_LIMITED_CONTEXT__ContextFlags = 0x0;
 #elif TARGET_X86
@@ -161,7 +161,7 @@ class AsmOffsets
 #elif TARGET_ARM
     static_assert_no_msg(offsetof(CONTEXT, Pc) == AsmOffsets::OFFSETOF__PAL_LIMITED_CONTEXT__IP);
     static_assert_no_msg(offsetof(CONTEXT, Sp) == AsmOffsets::OFFSETOF__PAL_LIMITED_CONTEXT__SP);
-    static_assert_no_msg(offsetof(CONTEXT, Fp) == AsmOffsets::OFFSETOF__PAL_LIMITED_CONTEXT__FP);
+    static_assert_no_msg(offsetof(CONTEXT, R11) == AsmOffsets::OFFSETOF__PAL_LIMITED_CONTEXT__FP);
 #elif TARGET_X86
     static_assert_no_msg(offsetof(CONTEXT, Eip) == AsmOffsets::OFFSETOF__PAL_LIMITED_CONTEXT__IP);
     static_assert_no_msg(offsetof(CONTEXT, Esp) == AsmOffsets::OFFSETOF__PAL_LIMITED_CONTEXT__SP);
