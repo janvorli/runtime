@@ -4308,7 +4308,7 @@ HCIMPL0(void, IL_Rethrow)
 
         ExInfo exInfo(pThread, &ctx, &rd, ExKind::None);
 
-        GCPROTECT_BEGIN(exInfo._exception);
+        GCPROTECT_BEGIN(exInfo.m_exception);
         PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_RETHROW);
         DECLARE_ARGHOLDER_ARRAY(args, 2);
 

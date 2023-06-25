@@ -176,14 +176,14 @@ class AsmOffsets
     static_assert_no_msg(offsetof(StackFrameIterator, m_crawl) + offsetof(CrawlFrame, pRD) == OFFSETOF__StackFrameIterator__m_pRegDisplay);
     static_assert_no_msg(offsetof(StackFrameIterator, m_AdjustedControlPC) == OFFSETOF__StackFrameIterator__m_AdjustedControlPC);
     static_assert_no_msg(sizeof(ExtendedEHClauseEnumerator) == AsmOffsets::SIZEOF__EHEnum);
-    static_assert_no_msg(offsetof(ExInfo, _pPrevExInfo) == OFFSETOF__ExInfo__m_pPrevExInfo);
-    static_assert_no_msg(offsetof(ExInfo, _pExContext) == OFFSETOF__ExInfo__m_pExContext);
-    static_assert_no_msg(offsetof(ExInfo, _exception) == OFFSETOF__ExInfo__m_exception);
-    static_assert_no_msg(offsetof(ExInfo, _kind) == OFFSETOF__ExInfo__m_kind);
-    static_assert_no_msg(offsetof(ExInfo, _passNumber) == OFFSETOF__ExInfo__m_passNumber);
-    static_assert_no_msg(offsetof(ExInfo, _idxCurClause) == OFFSETOF__ExInfo__m_idxCurClause);
-    static_assert_no_msg(offsetof(ExInfo, _frameIter) == OFFSETOF__ExInfo__m_frameIter);
-    static_assert_no_msg(offsetof(ExInfo, _notifyDebuggerSP) == OFFSETOF__ExInfo__m_notifyDebuggerSP);
+    static_assert_no_msg(offsetof(ExInfo, m_pPrevExInfo) == OFFSETOF__ExInfo__m_pPrevExInfo);
+    static_assert_no_msg(offsetof(ExInfo, m_pExContext) == OFFSETOF__ExInfo__m_pExContext);
+    static_assert_no_msg(offsetof(ExInfo, m_exception) == OFFSETOF__ExInfo__m_exception);
+    static_assert_no_msg(offsetof(ExInfo, m_kind) == OFFSETOF__ExInfo__m_kind);
+    static_assert_no_msg(offsetof(ExInfo, m_passNumber) == OFFSETOF__ExInfo__m_passNumber);
+    static_assert_no_msg(offsetof(ExInfo, m_idxCurClause) == OFFSETOF__ExInfo__m_idxCurClause);
+    static_assert_no_msg(offsetof(ExInfo, m_frameIter) == OFFSETOF__ExInfo__m_frameIter);
+    static_assert_no_msg(offsetof(ExInfo, m_notifyDebuggerSP) == OFFSETOF__ExInfo__m_notifyDebuggerSP);
 #endif    
 
 }

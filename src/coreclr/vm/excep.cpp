@@ -6584,7 +6584,7 @@ void HandleManagedFaultNew(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext
         }
     }
 
-    GCPROTECT_BEGIN(exInfo._exception);
+    GCPROTECT_BEGIN(exInfo.m_exception);
     PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_THROWHW_EX);
     DECLARE_ARGHOLDER_ARRAY(args, 2);
     args[ARGNUM_0] = DWORD_TO_ARGHOLDER(exceptionCode);

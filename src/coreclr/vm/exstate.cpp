@@ -24,7 +24,7 @@ OBJECTHANDLE ThreadExceptionState::GetThrowableAsHandle()
     }
     else if (m_pExInfo)
     {
-        return m_pExInfo->_hThrowable;
+        return m_pExInfo->m_hThrowable;
     }
 
     return NULL;
@@ -114,9 +114,9 @@ OBJECTREF ThreadExceptionState::GetThrowable()
     {
         return ObjectFromHandle(m_pCurrentTracker->m_hThrowable);
     }
-    if (m_pExInfo && m_pExInfo->_exception != NULL)
+    if (m_pExInfo && m_pExInfo->m_exception != NULL)
     {
-        return m_pExInfo->_exception;
+        return m_pExInfo->m_exception;
     }
 #else // FEATURE_EH_FUNCLETS
     if (m_currentExInfo.m_hThrowable)
@@ -194,8 +194,8 @@ void ThreadExceptionState::SetThrowable(OBJECTREF throwable DEBUG_ARG(SetThrowab
         }
         if (m_pExInfo != NULL)
         {
-            _ASSERTE(m_pExInfo->_hThrowable == NULL);
-            m_pExInfo->_hThrowable = hNewThrowable;
+            _ASSERTE(m_pExInfo->m_hThrowable == NULL);
+            m_pExInfo->m_hThrowable = hNewThrowable;
         }
 #else // FEATURE_EH_FUNCLETS
         m_currentExInfo.m_hThrowable = hNewThrowable;
@@ -215,7 +215,7 @@ DWORD ThreadExceptionState::GetExceptionCode()
     _ASSERTE(m_pExInfo);
     {   
         GCX_COOP();
-        return ((EXCEPTIONREF)m_pExInfo->_exception)->GetXCode();
+        return ((EXCEPTIONREF)m_pExInfo->m_exception)->GetXCode();
     }
 #else // FEATURE_EH_FUNCLETS
     return m_currentExInfo.m_ExceptionCode;
@@ -330,7 +330,7 @@ PTR_CONTEXT ThreadExceptionState::GetContextRecord()
     }
     else if (m_pExInfo)
     {
-        return dac_cast<PTR_CONTEXT>(m_pExInfo->_pExContext);
+        return dac_cast<PTR_CONTEXT>(m_pExInfo->m_pExContext);
     }
     else
     {
@@ -351,7 +351,7 @@ ExceptionFlags* ThreadExceptionState::GetFlags()
     }
     else if (m_pExInfo)
     {
-        return &(m_pExInfo->_ExceptionFlags);
+        return &(m_pExInfo->m_ExceptionFlags);
     }
     else
     {
@@ -378,7 +378,7 @@ DebuggerExState*    ThreadExceptionState::GetDebuggerState()
     }
     else if (m_pExInfo)
     {
-        return &(m_pExInfo->_DebuggerExState);
+        return &(m_pExInfo->m_DebuggerExState);
     }
     else
     {

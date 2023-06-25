@@ -1631,14 +1631,14 @@ StackWalkAction StackFrameIterator::Filter(void)
         {
             if (!m_movedPastFirstExInfo)
             {
-                if ((pExInfo->_passNumber == 2) && !pExInfo->_csfEnclosingClause.IsNull() && m_sfFuncletParent.IsNull())
+                if ((pExInfo->m_passNumber == 2) && !pExInfo->m_csfEnclosingClause.IsNull() && m_sfFuncletParent.IsNull())
                 {
                     // We are in the 2nd pass and we have already called an exceptionally called
                     // a finally funclet, but we have not seen any funclet on the call stack yet.
                     // Simulate that we have actualy seen a finally funclet during this pass and
                     // that it didn't report GC references to ensure that the references will be
                     // reported by the parent correctly.
-                    m_sfFuncletParent = (StackFrame)pExInfo->_csfEnclosingClause;
+                    m_sfFuncletParent = (StackFrame)pExInfo->m_csfEnclosingClause;
                     m_sfParent = m_sfFuncletParent;
                     m_fProcessNonFilterFunclet = true;
                     m_fDidFuncletReportGCReferences = false;
@@ -2073,11 +2073,11 @@ ProcessFuncletsForGCReporting:
                                         if (g_isNewExceptionHandlingEnabled)
                                         {
                                             STRESS_LOG2(LF_GCROOTS, LL_INFO100,
-                                                "STACKWALK: Reached parent of funclet which didn't report GC roots, since funclet is already unwound, pExInfo->_sfCallerOfActualHandlerFrame=%p, m_sfFuncletParent=%p\n", (void*)pExInfo->_sfCallerOfActualHandlerFrame.SP, (void*)m_sfFuncletParent.SP);
+                                                "STACKWALK: Reached parent of funclet which didn't report GC roots, since funclet is already unwound, pExInfo->m_sfCallerOfActualHandlerFrame=%p, m_sfFuncletParent=%p\n", (void*)pExInfo->m_sfCallerOfActualHandlerFrame.SP, (void*)m_sfFuncletParent.SP);
                                         }
 
                                         _ASSERT(pExInfo != NULL || pTracker != NULL);
-                                        if ((pExInfo && pExInfo->_sfCallerOfActualHandlerFrame == m_sfFuncletParent) ||
+                                        if ((pExInfo && pExInfo->m_sfCallerOfActualHandlerFrame == m_sfFuncletParent) ||
                                             (pTracker && pTracker->GetCallerOfActualHandlingFrame() == m_sfFuncletParent))
                                         {
                                             // we should not skip reporting for this parent frame
@@ -2096,7 +2096,7 @@ ProcessFuncletsForGCReporting:
                                             
                                             if (g_isNewExceptionHandlingEnabled)
                                             {
-                                                m_crawl.ehClauseForCatch = pExInfo->_ClauseForCatch;
+                                                m_crawl.ehClauseForCatch = pExInfo->m_ClauseForCatch;
                                                 STRESS_LOG2(LF_GCROOTS, LL_INFO100,
                                                     "STACKWALK: Parent of funclet which didn't report GC roots is handling an exception"
                                                     "(EH handler range [%x, %x) ), so we need to specially report roots to ensure variables alive"
@@ -2138,7 +2138,7 @@ ProcessFuncletsForGCReporting:
                                                 m_fDidFuncletReportGCReferences = true;
                                                 shouldSkipReporting = false;
                                                 m_crawl.fShouldParentFrameUseUnwindTargetPCforGCReporting = true;
-                                                m_crawl.ehClauseForCatch = pExInfo->_ClauseForCatch;
+                                                m_crawl.ehClauseForCatch = pExInfo->m_ClauseForCatch;
                                             }                                                
                                         }
                                         else

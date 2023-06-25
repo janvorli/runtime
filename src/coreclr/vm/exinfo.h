@@ -199,50 +199,50 @@ struct ExInfo
     ExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, ExKind exceptionKind);
     
     // Previous ExInfo in the chain of exceptions rethrown from their catch / finally handlers
-    PTR_ExInfo _pPrevExInfo;
-    void* _pExContext;
+    PTR_ExInfo m_pPrevExInfo;
+    CONTEXT* m_pExContext;
     // actual exception object reference
-    OBJECTREF _exception;
+    OBJECTREF m_exception;
     // Kind of the exception (software, hardware, rethrown)
-    ExKind _kind;
+    ExKind m_kind;
     // Exception handling pass (1 or 2)
-    uint8_t _passNumber;
+    uint8_t m_passNumber;
     // Index of the current exception handling clause
-    uint32_t _idxCurClause;
+    uint32_t m_idxCurClause;
     // Stack frame iterator used to walk stack frames while handling the exception
-    StackFrameIterator _frameIter;
-    volatile size_t _notifyDebuggerSP;
-    REGDISPLAY *_pRD;
+    StackFrameIterator m_frameIter;
+    volatile size_t m_notifyDebuggerSP;
+    REGDISPLAY *m_pRD;
     // Stack trace of the current exception
-    StackTraceInfo _stackTraceInfo;
+    StackTraceInfo m_stackTraceInfo;
     // Initial explicit frame
-    Frame* _pFrame;
+    Frame* m_pFrame;
 
     // Low and high bounds of the stack unwound by the exception. They are updated during 2nd pass only.
-    StackFrame          _sfLowBound;
-    StackFrame          _sfHighBound;
+    StackFrame          m_sfLowBound;
+    StackFrame          m_sfHighBound;
     // Stack frame of the caller of the currently running exception handling clause (catch, finally, filter)
-    CallerStackFrame    _csfEHClause;
+    CallerStackFrame    m_csfEHClause;
     // Stack frame of the caller of the code that encloses the currently running exception handling clause
-    CallerStackFrame    _csfEnclosingClause;
+    CallerStackFrame    m_csfEnclosingClause;
     // Stack frame of the caller of the catch handler
-    StackFrame          _sfCallerOfActualHandlerFrame;
+    StackFrame          m_sfCallerOfActualHandlerFrame;
     // The exception handling clause for the catch handler that was identified during pass 1
-    EE_ILEXCEPTION_CLAUSE _ClauseForCatch;
+    EE_ILEXCEPTION_CLAUSE m_ClauseForCatch;
 
 #ifdef TARGET_UNIX
     // Exception propagation callback and context for ObjectiveC exception propagation support
-    void(*_propagateExceptionCallback)(void* context);
-    void *_propagateExceptionContext;
+    void(*m_propagateExceptionCallback)(void* context);
+    void *m_propagateExceptionContext;
 #endif // TARGET_UNIX
 
     // thrown exception object handle
-    OBJECTHANDLE    _hThrowable;
+    OBJECTHANDLE    m_hThrowable;
 
     // The following fields are for profiler / debugger use only
-    EE_ILEXCEPTION_CLAUSE _CurrentClause;
-    DebuggerExState _DebuggerExState;
-    ExceptionFlags _ExceptionFlags;
+    EE_ILEXCEPTION_CLAUSE m_CurrentClause;
+    DebuggerExState m_DebuggerExState;
+    ExceptionFlags m_ExceptionFlags;
 };
 
 #endif // !FEATURE_EH_FUNCLETS

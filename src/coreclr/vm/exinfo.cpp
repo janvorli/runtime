@@ -304,24 +304,24 @@ void ExInfo::SetExceptionCode(const EXCEPTION_RECORD *pCER)
 
 ExInfo::ExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, ExKind exceptionKind)
 {
-    _pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-    _pExContext = pCtx;
-    _pRD = pRD;
-    _passNumber = 1;
-    _kind = exceptionKind;
-    _idxCurClause = 0xffffffff;
-    _stackTraceInfo.Init();
-    _stackTraceInfo.AllocateStackTrace();
-    _pFrame = pThread->GetFrame();
-    _sfLowBound.SetMaxVal();
-    memset(&_ClauseForCatch, 0, sizeof(_ClauseForCatch));
-    memset(&_CurrentClause, 0, sizeof(_CurrentClause));
-    _exception = NULL;
-    _hThrowable = NULL;
-    _notifyDebuggerSP = NULL;
+    m_pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+    m_pExContext = pCtx;
+    m_pRD = pRD;
+    m_passNumber = 1;
+    m_kind = exceptionKind;
+    m_idxCurClause = 0xffffffff;
+    m_stackTraceInfo.Init();
+    m_stackTraceInfo.AllocateStackTrace();
+    m_pFrame = pThread->GetFrame();
+    m_sfLowBound.SetMaxVal();
+    memset(&m_ClauseForCatch, 0, sizeof(m_ClauseForCatch));
+    memset(&m_CurrentClause, 0, sizeof(m_CurrentClause));
+    m_exception = NULL;
+    m_hThrowable = NULL;
+    m_notifyDebuggerSP = NULL;
 #ifdef HOST_UNIX
-    _propagateExceptionCallback = NULL;
-    _propagateExceptionContext = NULL;
+    m_propagateExceptionCallback = NULL;
+    m_propagateExceptionContext = NULL;
 #endif // HOST_UNIX
     pThread->GetExceptionState()->SetCurrentExInfo(this);
 }
