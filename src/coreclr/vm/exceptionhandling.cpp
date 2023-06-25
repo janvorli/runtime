@@ -7680,68 +7680,6 @@ extern "C" void * QCALLTYPE RhpCallCatchFunclet(QCall::ObjectHandleOnStack excep
     ExceptionTracker::UpdateNonvolatileRegisters(pvRegDisplay->pCurrentContext, pvRegDisplay, FALSE);
     if (pHandlerIP != NULL)
     {
-        CONTEXT *pContextRecord = pvRegDisplay->pCurrentContext;
-        UINT_PTR uAbortAddr = 0;
-        UINT_PTR uResumePC = GetIP(pvRegDisplay->pCurrentContext);
-#if defined(DEBUGGING_SUPPORTED)
-    // // Don't honour thread abort requests at this time for intercepted exceptions.
-    // if (fIntercepted)
-    // {
-    //     uAbortAddr = 0;
-    // }
-    // else
-#endif // !DEBUGGING_SUPPORTED
-        {
-            CopyOSContext(pThread->m_OSContext, pContextRecord);
-            SetIP(pThread->m_OSContext, (PCODE)uResumePC);
-#ifdef TARGET_UNIX
-            uAbortAddr = NULL;
-#else
-            uAbortAddr = (UINT_PTR)COMPlusCheckForAbort(uResumePC);
-#endif
-        }
-
-        if (uAbortAddr)
-        {
-            // if (pfAborting != NULL)
-            // {
-            //     *pfAborting = true;
-            // }
-
-            EH_LOG((LL_INFO100, "thread abort in progress, resuming thread under control...\n"));
-
-            // We are aborting, so keep the reference to the current EH clause index.
-            // We will use this when the exception is reraised and we begin commencing
-            // exception dispatch. This is done in ExceptionTracker::ProcessOSExceptionNotification.
-            //
-            // The "if" condition below can be false if the exception has been intercepted (refer to
-            // ExceptionTracker::CallCatchHandler for details)
-            // if ((ehClauseCurrentHandlerIndex > 0) && (!sfEstablisherOfActualHandlerFrame.IsNull()))
-            // {
-            //     pThread->m_dwIndexClauseForCatch = ehClauseCurrentHandlerIndex;
-            //     pThread->m_sfEstablisherOfActualHandlerFrame = sfEstablisherOfActualHandlerFrame;
-            // }
-
-            CONSISTENCY_CHECK(CheckPointer(pContextRecord));
-
-            STRESS_LOG1(LF_EH, LL_INFO10, "resume under control: ip: %p\n", uResumePC);
-
-#if defined(TARGET_AMD64)
-            pContextRecord->Rcx = uResumePC;
-#elif defined(TARGET_X86)
-            pContextRecord->Ecx = uResumePC;
-#elif defined(TARGET_ARM) || defined(TARGET_ARM64)
-            // On ARM & ARM64, we save off the original PC in Lr. This is the same as done
-            // in HandleManagedFault for H/W generated exceptions.
-            pContextRecord->Lr = uResumePC;
-#elif defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
-            pContextRecord->Ra = uResumePC;
-#endif
-
-            //uResumePC = uAbortAddr;
-            SetIP(pvRegDisplay->pCurrentContext, uAbortAddr);
-        }
-
         ClrRestoreNonvolatileContext(pvRegDisplay->pCurrentContext);
     }
     else
