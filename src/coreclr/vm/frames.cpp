@@ -1030,6 +1030,7 @@ void GCFrame::Remove()
             break;
         }
 
+        pPrevFrame = pFrame;
         pFrame = pFrame->m_Next;
     }
 
