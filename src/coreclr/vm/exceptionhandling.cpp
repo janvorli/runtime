@@ -7988,14 +7988,6 @@ extern "C" BOOL QCALLTYPE RhpEHEnumNext(EH_CLAUSE_ENUMERATOR* pEHEnum, RhEHClaus
     return result;
 }
 
-void ResetNextExInfoForSP(StackFrameIterator* pThis, TADDR SP)
-{
-    while (pThis->m_pNextExInfo && (pThis->m_crawl.GetRegisterSet()->SP > (TADDR)(pThis->m_pNextExInfo)))
-    {
-        pThis->m_pNextExInfo = pThis->m_pNextExInfo->m_pPrevExInfo;
-    }
-}
-
 extern uint32_t g_exceptionCount;
 
 MethodDesc * GetUserMethodForILStub(Thread * pThread, UINT_PTR uStubSP, MethodDesc * pILStubMD, Frame ** ppFrameOut);
@@ -8122,7 +8114,7 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
 
     pExInfo->m_sfLowBound = GetRegdisplaySP(pThis->m_crawl.GetRegisterSet());
 
-    ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
+    pThis->ResetNextExInfoForSP(pThis->m_crawl.GetRegisterSet()->SP);
 
     _ASSERTE(!result || pThis->GetFrameState() == StackFrameIterator::SFITER_FRAMELESS_METHOD);
 
@@ -8130,11 +8122,12 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
 
     if (result)
     {
-        pThis->m_AdjustedControlPC = pThis->m_crawl.GetRegisterSet()->ControlPC;
+        TADDR adjustedControlPC = pThis->m_crawl.GetRegisterSet()->ControlPC;
         if (!pThis->m_crawl.HasFaulted())
         {
-            pThis->m_AdjustedControlPC -= STACKWALK_CONTROLPC_ADJUST_OFFSET;
+            adjustedControlPC -= STACKWALK_CONTROLPC_ADJUST_OFFSET;
         }
+        pThis->SetAdjustedControlPC(adjustedControlPC);
     }
 
     return result;
@@ -8159,7 +8152,7 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
     pThread->ResetThrowControlForThread();
 
     bool exCollide = false;
-    ExInfo* pExInfo = pThis->m_pNextExInfo;
+    ExInfo* pExInfo = pThis->GetNextExInfo();
     ExInfo* pTopExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
 
     // Check for reverse pinvoke (but eliminate the case when the caller is managed) or CallDescrWorkerInternal.
@@ -8257,18 +8250,18 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                             _ASSERTE_MSG(FALSE, "StackFrameIterator::Next failed");
                         }
                         exCollide = true;
-                        if ((pThis->m_pNextExInfo->m_passNumber == 1) ||
-                            (pThis->m_pNextExInfo->m_idxCurClause == 0xFFFFFFFF))
+                        if ((pThis->GetNextExInfo()->m_passNumber == 1) ||
+                            (pThis->GetNextExInfo()->m_idxCurClause == 0xFFFFFFFF))
                         {
                             _ASSERTE_MSG(FALSE, "did not expect to collide with a 1st-pass ExInfo during a EH stackwalk");
                         }
                         else
                         {
-                            *uExCollideClauseIdx = pExInfo->m_idxCurClause;// pThis->m_pNextExInfo->m_idxCurClause;
+                            *uExCollideClauseIdx = pExInfo->m_idxCurClause;
                             pExInfo->m_kind = (ExKind)((uint8_t)pExInfo->m_kind | (uint8_t)ExKind::SupersededFlag);
 
                             // Unwind until we hit the frame of the prevExInfo
-                            ExInfo* pPrevExInfo = pThis->m_pNextExInfo;
+                            ExInfo* pPrevExInfo = pThis->GetNextExInfo();
                             do
                             {
                                 retVal = pThis->Next();
@@ -8276,7 +8269,7 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                             while ((retVal == SWA_CONTINUE) && pThis->m_crawl.GetRegisterSet()->SP != pPrevExInfo->m_pRD->SP);
                             _ASSERTE(retVal != SWA_FAILED);
 
-                            ResetNextExInfoForSP(pThis, pThis->m_crawl.GetRegisterSet()->SP);
+                            pThis->ResetNextExInfoForSP(pThis->m_crawl.GetRegisterSet()->SP);
                         }
                     }
                 }
@@ -8315,11 +8308,12 @@ Exit:;
 
     if (retVal != SWA_FAILED)
     {
-        pThis->m_AdjustedControlPC = pThis->m_crawl.GetRegisterSet()->ControlPC;
+        TADDR adjustedControlPC = pThis->m_crawl.GetRegisterSet()->ControlPC;
         if (!pThis->m_crawl.HasFaulted())
         {
-            pThis->m_AdjustedControlPC -= STACKWALK_CONTROLPC_ADJUST_OFFSET;
+            adjustedControlPC -= STACKWALK_CONTROLPC_ADJUST_OFFSET;
         }
+        pThis->SetAdjustedControlPC(adjustedControlPC);
 
         return true;
     }

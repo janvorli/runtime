@@ -571,6 +571,7 @@ private:
 
 class StackFrameIterator
 {
+    friend class AsmOffsetsAsserts::AsmOffsets;
 public:
     // This constructor is for the usage pattern of creating an uninitialized StackFrameIterator and then
     // calling Init() on it.
@@ -607,6 +608,20 @@ public:
 
     // advance to the next frame according to the stackwalk flags
     StackWalkAction Next(void);
+
+#ifdef FEATURE_EH_FUNCLETS
+    void ResetNextExInfoForSP(TADDR SP);
+
+    ExInfo* GetNextExInfo()
+    {
+        return m_pNextExInfo;
+    }
+
+    void SetAdjustedControlPC(TADDR pc)
+    {
+        m_AdjustedControlPC = pc;
+    }
+#endif // FEATURE_EH_FUNCLETS
 
     enum FrameState
     {
@@ -740,14 +755,16 @@ private:
     bool          m_fProcessIntermediaryNonFilterFunclet;
     bool          m_fDidFuncletReportGCReferences;
 #endif // FEATURE_EH_FUNCLETS
+    // State of forcing of GC reference reporting for managed exception handling methods (RhExThrow, RhDispatchEx etc)
     ForceGCReportingStage m_forceReportingWhileSkipping;
+    // The stack walk has moved past the first ExInfo location on the stack
     bool          m_movedPastFirstExInfo;
+    // Indicates that no funclet was seen during the current stack walk yet
     bool          m_fFuncletNotSeen;
 #if defined(RECORD_RESUMABLE_FRAME_SP)
     LPVOID m_pvResumableFrameTargetSP;
 #endif // RECORD_RESUMABLE_FRAME_SP
 #ifdef FEATURE_EH_FUNCLETS
-public:
     ExInfo* m_pNextExInfo;
     TADDR m_AdjustedControlPC;
 #endif // FEATURE_EH_FUNCLETS

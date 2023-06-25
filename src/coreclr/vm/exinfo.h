@@ -197,9 +197,10 @@ enum class ExKind : uint8_t
 struct ExInfo
 {
     ExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, ExKind exceptionKind);
-    
+
     // Previous ExInfo in the chain of exceptions rethrown from their catch / finally handlers
     PTR_ExInfo m_pPrevExInfo;
+    // Context used by the stack frame iterator
     CONTEXT* m_pExContext;
     // actual exception object reference
     OBJECTREF m_exception;

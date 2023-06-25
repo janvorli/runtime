@@ -3351,6 +3351,15 @@ void StackFrameIterator::PostProcessingForNoFrameTransition()
 #endif // ELIMINATE_FEF
 } // StackFrameIterator::PostProcessingForNoFrameTransition()
 
+#ifdef FEATURE_EH_FUNCLETS
+void StackFrameIterator::ResetNextExInfoForSP(TADDR SP)
+{
+    while (m_pNextExInfo && (m_crawl.GetRegisterSet()->SP > (TADDR)(m_pNextExInfo)))
+    {
+        m_pNextExInfo = m_pNextExInfo->m_pPrevExInfo;
+    }
+}
+#endif // FEATURE_EH_FUNCLETS
 
 #if defined(TARGET_AMD64) && !defined(DACCESS_COMPILE)
 static CrstStatic g_StackwalkCacheLock;                // Global StackwalkCache lock; only used on AMD64
