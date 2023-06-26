@@ -7466,7 +7466,7 @@ extern "C" void QCALLTYPE RhpAppendExceptionStackFrame(QCall::ObjectHandleOnStac
     MarkInlinedCallFrameAsFuncletCall(pFrame);
 
     bool canAllocateMemory = !(exceptionObj.Get() == CLRException::GetPreallocatedOutOfMemoryException()) &&
-                                !(exceptionObj.Get() == CLRException::GetPreallocatedStackOverflowException());
+                             !(exceptionObj.Get() == CLRException::GetPreallocatedStackOverflowException());
 
     EECodeInfo codeInfo(ip);
     _ASSERTE(codeInfo.IsValid());
@@ -7598,7 +7598,7 @@ extern "C" void * QCALLTYPE RhpCallCatchFunclet(QCall::ObjectHandleOnStack excep
     HandlerFn* pfnHandler = (HandlerFn*)pHandlerIP;
     exInfo->m_sfHighBound = exInfo->m_frameIter.m_crawl.GetRegisterSet()->SP;
     DWORD_PTR dwResumePC;
-    ULONG64 targetSp;
+
     if (pHandlerIP != NULL)
     {
         _ASSERTE(exInfo->m_sfCallerOfActualHandlerFrame == EECodeManager::GetCallerSp(pvRegDisplay));
@@ -7611,6 +7611,7 @@ extern "C" void * QCALLTYPE RhpCallCatchFunclet(QCall::ObjectHandleOnStack excep
         exInfo->m_csfEnclosingClause = CallerStackFrame::FromRegDisplay(exInfo->m_frameIter.m_crawl.GetRegisterSet());
 
         MethodDesc *pMD = exInfo->m_frameIter.m_crawl.GetFunction();
+        // Profiler, debugger and ETW events
         MakeCallbacksRelatedToHandler(true, pThread, pMD, &exInfo->m_ClauseForCatch, (DWORD_PTR)pHandlerIP, GetSP(pvRegDisplay->pCurrentContext));
 
 #ifdef USE_FUNCLET_CALL_HELPER
@@ -7620,20 +7621,18 @@ extern "C" void * QCALLTYPE RhpCallCatchFunclet(QCall::ObjectHandleOnStack excep
         CallerStackFrame* pCallerStackFrame = &exInfo->m_csfEHClause;
         UINT_PTR *pFuncletCallerSP = &(pCallerStackFrame->SP);
         dwResumePC = CallEHFunclet(OBJECTREFToObject(throwable),
-                                    CastHandlerFn(pfnHandler),
-                                    GetFirstNonVolatileRegisterAddress(pvRegDisplay->pCurrentContext),
-                                    pFuncletCallerSP);
+                                   CastHandlerFn(pfnHandler),
+                                   GetFirstNonVolatileRegisterAddress(pvRegDisplay->pCurrentContext),
+                                   pFuncletCallerSP);
 #else
         dwResumePC = pfnHandler(establisherFrame, OBJECTREFToObject(throwable));
 #endif            
+        // Profiler, debugger and ETW events
         MakeCallbacksRelatedToHandler(false, pThread, pMD, &exInfo->m_ClauseForCatch, (DWORD_PTR)pHandlerIP, GetSP(pvRegDisplay->pCurrentContext));
         SetIP(pvRegDisplay->pCurrentContext, dwResumePC);
-        targetSp = GetSP(pvRegDisplay->pCurrentContext);
     }
-    else
-    {
-        targetSp = GetSP(pvRegDisplay->pCurrentContext);
-    }
+
+    ULONG64 targetSp = GetSP(pvRegDisplay->pCurrentContext);
 
     while (pFrame < (void*)targetSp)
     {
@@ -7672,8 +7671,6 @@ extern "C" void * QCALLTYPE RhpCallCatchFunclet(QCall::ObjectHandleOnStack excep
     }
 
     pThread->GetExceptionState()->SetCurrentExInfo(pExInfo);
-
-    // TODO: should this be conditional - the original call to this was checking pThread->GetExceptionState()->IsExceptionInProgress()
 
     pThread->SafeSetLastThrownObject(NULL);
 
@@ -7763,20 +7760,22 @@ extern "C" void QCALLTYPE RhpCallFinallyFunclet(BYTE* pHandlerIP, REGDISPLAY* pv
     exInfo->m_sfHighBound = exInfo->m_frameIter.m_crawl.GetRegisterSet()->SP;
 
     MethodDesc *pMD = exInfo->m_frameIter.m_crawl.GetFunction();
+    // Profiler, debugger and ETW events
     MakeCallbacksRelatedToHandler(true, pThread, pMD, &exInfo->m_CurrentClause, (DWORD_PTR)pHandlerIP, GetSP(pvRegDisplay->pCurrentContext));
 #ifdef USE_FUNCLET_CALL_HELPER
-        // Invoke the finally funclet. 
-        // Since the actual caller of the funclet is the assembly helper, pass the reference
-        // to the CallerStackFrame instance so that it can be updated.
-        CallerStackFrame* pCallerStackFrame = &exInfo->m_csfEHClause;
-        UINT_PTR *pFuncletCallerSP = &(pCallerStackFrame->SP);
-        DWORD_PTR dwResumePC = CallEHFunclet(NULL,
-                                                CastHandlerFn(pfnHandler),
-                                                GetFirstNonVolatileRegisterAddress(pvRegDisplay->pCurrentContext),
-                                                pFuncletCallerSP);
+    // Invoke the finally funclet. 
+    // Since the actual caller of the funclet is the assembly helper, pass the reference
+    // to the CallerStackFrame instance so that it can be updated.
+    CallerStackFrame* pCallerStackFrame = &exInfo->m_csfEHClause;
+    UINT_PTR *pFuncletCallerSP = &(pCallerStackFrame->SP);
+    DWORD_PTR dwResumePC = CallEHFunclet(NULL,
+                                         CastHandlerFn(pfnHandler),
+                                         GetFirstNonVolatileRegisterAddress(pvRegDisplay->pCurrentContext),
+                                         pFuncletCallerSP);
 #else
     DWORD_PTR dwResumePC = pfnHandler(establisherFrame, NULL);
 #endif        
+    // Profiler, debugger and ETW events
     MakeCallbacksRelatedToHandler(false, pThread, pMD, &exInfo->m_CurrentClause, (DWORD_PTR)pHandlerIP, GetSP(pvRegDisplay->pCurrentContext) );
     END_QCALL;
 }
@@ -7794,7 +7793,7 @@ extern "C" BOOL QCALLTYPE RhpCallFilterFunclet(QCall::ObjectHandleOnStack except
     Frame* pFrame = pThread->GetFrame();
     MarkInlinedCallFrameAsEHHelperCall(pFrame);
 
-    ExInfo* pExInfo = GET_THREAD()->GetExceptionState()->GetCurrentExInfo();
+    ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
     OBJECTREF throwable = exceptionObj.Get();
     throwable = PossiblyUnwrapThrowable(throwable, pExInfo->m_frameIter.m_crawl.GetAssembly());
 
@@ -7803,6 +7802,7 @@ extern "C" BOOL QCALLTYPE RhpCallFilterFunclet(QCall::ObjectHandleOnStack except
     pExInfo->m_csfEHClause = CallerStackFrame((UINT_PTR)GetCurrentSP());
     pExInfo->m_csfEnclosingClause = CallerStackFrame::FromRegDisplay(pExInfo->m_frameIter.m_crawl.GetRegisterSet());
     MethodDesc *pMD = pExInfo->m_frameIter.m_crawl.GetFunction();
+    // Profiler, debugger and ETW events
     MakeCallbacksRelatedToHandler(true, pThread, pMD, &pExInfo->m_CurrentClause, (DWORD_PTR)pFilterIP, GetSP(pvRegDisplay->pCurrentContext));
 #ifdef USE_FUNCLET_CALL_HELPER
     // Invoke the filter funclet. 
@@ -7814,13 +7814,14 @@ extern "C" BOOL QCALLTYPE RhpCallFilterFunclet(QCall::ObjectHandleOnStack except
     // it will retrieve the framepointer for accessing the locals in the parent
     // method.
     dwResult = CallEHFilterFunclet(OBJECTREFToObject(throwable),
-                                        GetFrameRestoreBase(pvRegDisplay->pCallerContext),
-                                        CastHandlerFn(pfnHandler),
-                                        pFuncletCallerSP);
+                                  GetFrameRestoreBase(pvRegDisplay->pCallerContext),
+                                  CastHandlerFn(pfnHandler),
+                                  pFuncletCallerSP);
 #else
     dwResult = pfnHandler(establisherFrame, OBJECTREFToObject(throwable));
 #endif        
 
+    // Profiler, debugger and ETW events
     MakeCallbacksRelatedToHandler(false, pThread, pMD, &pExInfo->m_CurrentClause, (DWORD_PTR)pFilterIP, GetSP(pvRegDisplay->pCurrentContext));
     END_QCALL;
 
@@ -7929,7 +7930,6 @@ extern "C" BOOL QCALLTYPE RhpEHEnumNext(EH_CLAUSE_ENUMERATOR* pEHEnum, RhEHClaus
 extern uint32_t g_exceptionCount;
 
 MethodDesc * GetUserMethodForILStub(Thread * pThread, UINT_PTR uStubSP, MethodDesc * pILStubMD, Frame ** ppFrameOut);
-void MarkInlinedCallFrameAsEHHelperCall(Frame* pFrame);
 
 extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalkCtx, bool instructionFault)
 {
@@ -7988,16 +7988,12 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
                 //          We NULL it out because we get the interception event after this point.
                 //  * Notifify debugger and return.
                 //      In this case the normal EH proceeds and we need to reset m_sfResumeStackFrame to the sf catch handler.
-                //  TODO: remove this call and try to report the IL catch handler in the IL stub itself.
+
+                // TODO: New exception handling debugger events completion
+                /*
                 EXCEPTION_POINTERS ptrs;
-                // TODO: this is probably wrong
-                ptrs.ContextRecord = pExInfo->m_pExContext;
-                EXCEPTION_RECORD exRecord = {0};
-                // TODO: This is fake
-                ptrs.ExceptionRecord = &exRecord;
-                //m_sfResumeStackFrame.Clear();
                 EEToDebuggerExceptionInterfaceWrapper::NotifyOfCHFFilter(&ptrs, pILStubFrame);
-                //m_sfResumeStackFrame    = sf;
+                */
             }
             else
             {
@@ -8060,12 +8056,12 @@ extern "C" bool QCALLTYPE RhpSfiInit(StackFrameIterator* pThis, CONTEXT* pStackw
 
     if (result)
     {
-        TADDR adjustedControlPC = pThis->m_crawl.GetRegisterSet()->ControlPC;
+        TADDR controlPC = pThis->m_crawl.GetRegisterSet()->ControlPC;
         if (!pThis->m_crawl.HasFaulted())
         {
-            adjustedControlPC -= STACKWALK_CONTROLPC_ADJUST_OFFSET;
+            controlPC -= STACKWALK_CONTROLPC_ADJUST_OFFSET;
         }
-        pThis->SetAdjustedControlPC(adjustedControlPC);
+        pThis->SetAdjustedControlPC(controlPC);
     }
 
     return result;
@@ -8089,7 +8085,6 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
     // just clear the thread state.
     pThread->ResetThrowControlForThread();
 
-    bool exCollide = false;
     ExInfo* pExInfo = pThis->GetNextExInfo();
     ExInfo* pTopExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
 
@@ -8186,12 +8181,14 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                         if (retVal == SWA_FAILED)
                         {
                             _ASSERTE_MSG(FALSE, "StackFrameIterator::Next failed");
+                            break;
                         }
-                        exCollide = true;
+
                         if ((pThis->GetNextExInfo()->m_passNumber == 1) ||
                             (pThis->GetNextExInfo()->m_idxCurClause == 0xFFFFFFFF))
                         {
                             _ASSERTE_MSG(FALSE, "did not expect to collide with a 1st-pass ExInfo during a EH stackwalk");
+                            EEPOLICY_HANDLE_FATAL_ERROR(COR_E_EXECUTIONENGINE);
                         }
                         else
                         {
@@ -8222,7 +8219,6 @@ extern "C" bool QCALLTYPE RhpSfiNext(StackFrameIterator* pThis, uint* uExCollide
                                              !(pTopExInfo->m_exception == CLRException::GetPreallocatedStackOverflowException());
 
                     pTopExInfo->m_stackTraceInfo.AppendElement(canAllocateMemory, NULL, GetRegdisplaySP(pTopExInfo->m_frameIter.m_crawl.GetRegisterSet()), pMD, &pTopExInfo->m_frameIter.m_crawl);
-
                 }
             }
         }
@@ -8246,12 +8242,12 @@ Exit:;
 
     if (retVal != SWA_FAILED)
     {
-        TADDR adjustedControlPC = pThis->m_crawl.GetRegisterSet()->ControlPC;
+        TADDR controlPC = pThis->m_crawl.GetRegisterSet()->ControlPC;
         if (!pThis->m_crawl.HasFaulted())
         {
-            adjustedControlPC -= STACKWALK_CONTROLPC_ADJUST_OFFSET;
+            controlPC -= STACKWALK_CONTROLPC_ADJUST_OFFSET;
         }
-        pThis->SetAdjustedControlPC(adjustedControlPC);
+        pThis->SetAdjustedControlPC(controlPC);
 
         return true;
     }
@@ -8259,19 +8255,18 @@ Exit:;
     return false;
 }
 
-
+namespace AsmOffsetsAsserts
+{
 // Verify that the offsets into CONTEXT, REGDISPLAY, ExInfo and StackFrameIterator that the new managed exception handling
 // use match between the managed code and the native ones.
 #define public
 #define const static constexpr
 
-namespace AsmOffsetsAsserts
-{
     #include "../../libraries/System.Private.CoreLib/src/System/Runtime/ExceptionServices/AsmOffsets.cs"
-};
 
 #undef public
 #undef const
+};
 
 #endif
 

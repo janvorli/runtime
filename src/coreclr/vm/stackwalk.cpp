@@ -3354,7 +3354,7 @@ void StackFrameIterator::PostProcessingForNoFrameTransition()
 #ifdef FEATURE_EH_FUNCLETS
 void StackFrameIterator::ResetNextExInfoForSP(TADDR SP)
 {
-    while (m_pNextExInfo && (m_crawl.GetRegisterSet()->SP > (TADDR)(m_pNextExInfo)))
+    while (m_pNextExInfo && (SP > (TADDR)(m_pNextExInfo)))
     {
         m_pNextExInfo = m_pNextExInfo->m_pPrevExInfo;
     }

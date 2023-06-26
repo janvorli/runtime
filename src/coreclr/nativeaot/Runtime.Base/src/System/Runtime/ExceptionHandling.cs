@@ -822,8 +822,6 @@ namespace System.Runtime
             InternalCalls.RhpSetThreadDoNotTriggerGC();
 #endif
             exInfo._passNumber = 2;
-            // TODO: can we get rid of this? The native code uses it to distinguish between the case of found catch handler and
-            // the case of hitting native code.
             exInfo._idxCurClause = catchingTryRegionIdx;
             startIdx = MaxTryRegionIdx;
             unwoundReversePInvoke = false;
