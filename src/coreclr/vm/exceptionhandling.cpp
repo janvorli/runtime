@@ -5558,7 +5558,6 @@ VOID DECLSPEC_NORETURN DispatchManagedException(OBJECTREF throwable)
     args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
 
     pThread->IncPreventAbort();
-
     //Ex.RhThrowEx(throwable, &exInfo)
     CRITICAL_CALLSITE;
     CALL_MANAGED_METHOD_NORET(args)
