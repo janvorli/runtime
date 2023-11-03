@@ -2886,7 +2886,34 @@ VOID DECLSPEC_NORETURN RealCOMPlusThrow(Object *exceptionObj)
     CONTRACTL_END;
 
     OBJECTREF throwable = ObjectToOBJECTREF(exceptionObj);
-    RealCOMPlusThrow(throwable, FALSE);
+//    RealCOMPlusThrow(throwable, FALSE);
+    LOG((LF_EH, LL_INFO100, "RealCOMPlusThrow throwing %s\n",
+        throwable->GetMethodTable()->GetDebugClassName()));
+
+    GCPROTECT_BEGIN(throwable);
+
+    _ASSERTE(IsException(throwable->GetMethodTable()));
+
+    // This may look a bit odd, but there is an explanation.  The rethrow boolean
+    //  means that an actual RaiseException(EXCEPTION_COMPLUS,...) is being re-thrown,
+    //  and that the exception context saved on the Thread object should replace
+    //  the exception context from the upcoming RaiseException().  There is logic
+    //  in the stack trace code to preserve MOST of the stack trace, but to drop the
+    //  last element of the stack trace (has to do with having the address of the rethrow
+    //  instead of the address of the original call in the stack trace.  That is
+    //  controversial itself, but we won't get into that here.)
+    // However, if this is not re-raising that original exception, but rather a new
+    //  os exception for what may be an existing exception object, it is generally
+    //  a good thing to preserve the stack trace.
+    // if (!rethrow)
+    // {
+    //     ExceptionPreserveStackTrace(throwable);
+    // }
+
+    RealCOMPlusThrowWorker(throwable, FALSE);
+
+    GCPROTECT_END();
+
 }
 #endif // USE_CHECKED_OBJECTREFS
 

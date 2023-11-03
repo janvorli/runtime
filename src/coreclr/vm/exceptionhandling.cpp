@@ -7626,6 +7626,11 @@ extern "C" void * QCALLTYPE CallCatchFunclet(QCall::ObjectHandleOnStack exceptio
     void* propagateExceptionContext = pExInfo->m_propagateExceptionContext;
 #endif // HOST_UNIX
 
+#ifdef DEBUGGING_SUPPORTED
+        // This must be done before we pop the trackers.
+    BOOL fIntercepted = pThread->GetExceptionState()->GetFlags()->DebuggerInterceptInfo();
+#endif // DEBUGGING_SUPPORTED
+
     // Pop ExInfos
     while (pExInfo && pExInfo < (void*)targetSp)
     {
@@ -7643,14 +7648,25 @@ extern "C" void * QCALLTYPE CallCatchFunclet(QCall::ObjectHandleOnStack exceptio
 
     pThread->GetExceptionState()->SetCurrentExInfo(pExInfo);
 
-    pThread->SafeSetLastThrownObject(NULL);
+//    pThread->SafeSetLastThrownObject(NULL);
+            if (!pThread->GetExceptionState()->IsExceptionInProgress())
+            {
+                pThread->SafeSetLastThrownObject(NULL);
+            }
+
+            // Sync managed exception state, for the managed thread, based upon any active exception tracker
+            pThread->SyncManagedExceptionState(false);
 
     ExceptionTracker::UpdateNonvolatileRegisters(pvRegDisplay->pCurrentContext, pvRegDisplay, FALSE);
     if (pHandlerIP != NULL)
     {
-        CopyOSContext(pThread->m_OSContext, pvRegDisplay->pCurrentContext);
-        SetIP(pThread->m_OSContext, (PCODE)dwResumePC);
-        UINT_PTR uAbortAddr = (UINT_PTR)COMPlusCheckForAbort(dwResumePC);
+        UINT_PTR uAbortAddr = 0;
+        if (!fIntercepted)
+        {
+            CopyOSContext(pThread->m_OSContext, pvRegDisplay->pCurrentContext);
+            SetIP(pThread->m_OSContext, (PCODE)dwResumePC);
+            uAbortAddr = (UINT_PTR)COMPlusCheckForAbort(dwResumePC);
+        }
         if (uAbortAddr)
         {
 #ifdef TARGET_AMD64
@@ -7686,6 +7702,13 @@ extern "C" void * QCALLTYPE CallCatchFunclet(QCall::ObjectHandleOnStack exceptio
             ClrRestoreNonvolatileContext(pvRegDisplay->pCurrentContext);
         }
 #endif // HOST_UNIX
+        // if ((pThread->GetThrowable() == NULL) &&
+        //     (pThread->IsAbortInitiated()))
+        // {
+        //     // Oops, we just swallowed an abort, must restart the process
+        //     pThread->ResetAbortInitiated();
+        // }
+
         // Throw exception from the caller context
 #if defined(HOST_AMD64)
         ULONG64* returnAddress = (ULONG64*)targetSp;
