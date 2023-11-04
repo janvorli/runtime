@@ -214,6 +214,7 @@ DWORD ThreadExceptionState::GetExceptionCode()
     }
     _ASSERTE(m_pExInfo);
     {   
+        // TODO: the GCX_COOP tries to get the current thread, but it cannot for the debugger thread
         GCX_COOP();
         return ((EXCEPTIONREF)m_pExInfo->m_exception)->GetXCode();
     }

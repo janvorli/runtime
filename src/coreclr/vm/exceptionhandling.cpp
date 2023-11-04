@@ -8006,23 +8006,33 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
                 //      In this case the normal EH proceeds and we need to reset m_sfResumeStackFrame to the sf catch handler.
 
                 // TODO-NewEH: New exception handling debugger events completion
-                /*
-                EXCEPTION_POINTERS ptrs;
-                EEToDebuggerExceptionInterfaceWrapper::NotifyOfCHFFilter(&ptrs, pILStubFrame);
-                */
+                EXCEPTION_POINTERS exceptionPointers;
+                exceptionPointers.ContextRecord = pExInfo->m_pExContext;
+                EXCEPTION_RECORD exceptionRecord;
+                {
+                    GCX_COOP();
+                    exceptionRecord.ExceptionCode = ((EXCEPTIONREF)pExInfo->m_exception)->GetXCode();
+                }
+                exceptionRecord.ExceptionFlags = 0;
+                exceptionRecord.ExceptionAddress = 0;
+                exceptionRecord.ExceptionRecord = NULL;
+                exceptionRecord.NumberParameters = 0;
+                exceptionPointers.ExceptionRecord = &exceptionRecord;
+                EEToDebuggerExceptionInterfaceWrapper::NotifyOfCHFFilter(&exceptionPointers, pILStubFrame);
             }
             else
             {
+                EEToProfilerExceptionInterfaceWrapper::ExceptionSearchCatcherFound(pMD);
+
                 // We don't need to do anything special for continuable exceptions after calling
                 // this callback.  We are going to start unwinding anyway.
                 PCODE uMethodStartPC = pExInfo->m_frameIter.m_crawl.GetCodeInfo()->GetStartAddress();
                 EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedExceptionCatcherFound(pThread, pMD, (TADDR) uMethodStartPC, sp,
                                                                                                &pExInfo->m_ClauseForCatch);
-                EEToProfilerExceptionInterfaceWrapper::ExceptionSearchCatcherFound(pMD);
             }
+            pExInfo->m_ExceptionFlags.SetUnwindHasStarted();
+            EEToDebuggerExceptionInterfaceWrapper::ManagedExceptionUnwindBegin(pThread);
         }
-        pExInfo->m_ExceptionFlags.SetUnwindHasStarted();
-        EEToDebuggerExceptionInterfaceWrapper::ManagedExceptionUnwindBegin(pThread);
     }
 
     pThread->FillRegDisplay(pRD, pStackwalkCtx);
@@ -8156,6 +8166,24 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
             // Unwind to the caller of the managed code
             retVal = pThis->Next();
             _ASSERTE(retVal != SWA_FAILED);
+            if (pThis->m_crawl.GetFrame() == FRAME_TOP)
+            {
+                // No more managed code on the stack, the exception is unhandled
+                EXCEPTION_POINTERS exceptionPointers;
+                exceptionPointers.ContextRecord = pTopExInfo->m_pExContext;
+                EXCEPTION_RECORD exceptionRecord;
+                {
+                    GCX_COOP();
+                    exceptionRecord.ExceptionCode = ((EXCEPTIONREF)pTopExInfo->m_exception)->GetXCode();
+                }
+                exceptionRecord.ExceptionFlags = 0;
+                exceptionRecord.ExceptionAddress = 0;
+                exceptionRecord.ExceptionRecord = NULL;
+                exceptionRecord.NumberParameters = 0;
+                exceptionPointers.ExceptionRecord = &exceptionRecord;
+                LONG disposition = InternalUnhandledExceptionFilter_Worker(&exceptionPointers);
+                CrashDumpAndTerminateProcess(1);
+            }
             goto Exit;
         }
     }
