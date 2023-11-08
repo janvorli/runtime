@@ -215,8 +215,8 @@ DWORD ThreadExceptionState::GetExceptionCode()
     _ASSERTE(m_pExInfo);
     {   
         // TODO: the GCX_COOP tries to get the current thread, but it cannot for the debugger thread
-        GCX_COOP();
-        return ((EXCEPTIONREF)m_pExInfo->m_exception)->GetXCode();
+        //GCX_COOP();
+        return m_pExInfo->m_ExceptionCode;
     }
 #else // FEATURE_EH_FUNCLETS
     return m_currentExInfo.m_ExceptionCode;
@@ -520,6 +520,10 @@ EHClauseInfo* ThreadExceptionState::GetCurrentEHClauseInfo()
     if (m_pCurrentTracker)
     {
         return &(m_pCurrentTracker->m_EHClauseInfo);
+    }
+    else if (m_pExInfo)
+    {
+        return &(m_pExInfo->m_EHClauseInfo);
     }
     else
     {

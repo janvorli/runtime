@@ -765,6 +765,11 @@ namespace System.Runtime
             // without a catch handler or propagation callback.
             Debug.Assert(pCatchHandler != null || pReversePInvokePropagationCallback != IntPtr.Zero || unwoundReversePInvoke, "We should have a handler if we're starting the second pass");
 
+            if (pCatchHandler == (byte*)2)
+            {
+                pCatchHandler = null;
+            }
+
             // ------------------------------------------------
             //
             // Second pass
@@ -808,11 +813,20 @@ namespace System.Runtime
                     )
                 {
                     // invoke only a partial second-pass here...
-                    InvokeSecondPass(ref exInfo, startIdx, catchingTryRegionIdx);
+                    int res = InvokeSecondPass(ref exInfo, startIdx, catchingTryRegionIdx);
+                    if (res == 2)
+                    {
+                        pCatchHandler = null;
+                    }
                     break;
                 }
 
-                InvokeSecondPass(ref exInfo, startIdx);
+                int res2 = InvokeSecondPass(ref exInfo, startIdx);
+                if (res2 == 2)
+                {
+                    pCatchHandler = null;
+                    break;
+                }
             }
 
 #if FEATURE_OBJCMARSHAL
@@ -893,8 +907,16 @@ namespace System.Runtime
 
             EHEnum ehEnum;
             byte* pbMethodStartAddress;
-            if (!InternalCalls.RhpEHEnumInitFromStackFrameIterator(ref frameIter, &pbMethodStartAddress, &ehEnum))
+            int ehEnumState = InternalCalls.RhpEHEnumInitFromStackFrameIterator(ref frameIter, &pbMethodStartAddress, &ehEnum);
+            if (ehEnumState == 0)
+            {
                 return false;
+            }
+            else if (ehEnumState == 2)
+            {
+                pHandler = (byte*)2;
+                return true;
+            }
 
             byte* pbControlPC = frameIter.ControlPC;
 
@@ -906,6 +928,13 @@ namespace System.Runtime
             RhEHClause ehClause;
             for (uint curIdx = 0; InternalCalls.RhpEHEnumNext(&ehEnum, &ehClause); curIdx++)
             {
+                RhEHClauseKind clauseKind = ehClause._clauseKind;
+
+                // if (clauseKind == RhEHClauseKind.RH_EH_CLAUSE_UNUSED)
+                // {
+                //     // Debugger interception
+                //     return true;
+                // }
                 //
                 // Skip to the starting try region.  This is used by collided unwinds and rethrows to pickup where
                 // the previous dispatch left off.
@@ -931,8 +960,6 @@ namespace System.Runtime
                     // to separate runs of different try blocks with same native code offsets.
                     idxStart = MaxTryRegionIdx;
                 }
-
-                RhEHClauseKind clauseKind = ehClause._clauseKind;
 
                 if (((clauseKind != RhEHClauseKind.RH_EH_CLAUSE_TYPED) &&
                      (clauseKind != RhEHClauseKind.RH_EH_CLAUSE_FILTER))
@@ -1043,16 +1070,19 @@ namespace System.Runtime
 #endif
         }
 
-        private static void InvokeSecondPass(ref ExInfo exInfo, uint idxStart)
+        private static int InvokeSecondPass(ref ExInfo exInfo, uint idxStart)
         {
-            InvokeSecondPass(ref exInfo, idxStart, MaxTryRegionIdx);
+            return InvokeSecondPass(ref exInfo, idxStart, MaxTryRegionIdx);
         }
-        private static void InvokeSecondPass(ref ExInfo exInfo, uint idxStart, uint idxLimit)
+        private static int InvokeSecondPass(ref ExInfo exInfo, uint idxStart, uint idxLimit)
         {
             EHEnum ehEnum;
             byte* pbMethodStartAddress;
-            if (!InternalCalls.RhpEHEnumInitFromStackFrameIterator(ref exInfo._frameIter, &pbMethodStartAddress, &ehEnum))
-                return;
+            int ehEnumState = InternalCalls.RhpEHEnumInitFromStackFrameIterator(ref exInfo._frameIter, &pbMethodStartAddress, &ehEnum);
+            if (ehEnumState != 1)
+            {
+                return ehEnumState;
+            }
 
             byte* pbControlPC = exInfo._frameIter.ControlPC;
 
@@ -1125,6 +1155,8 @@ namespace System.Runtime
 #endif // NATIVEAOT
                 exInfo._idxCurClause = MaxTryRegionIdx;
             }
+
+            return 1;
         }
 
 #if NATIVEAOT

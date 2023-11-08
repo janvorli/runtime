@@ -253,6 +253,7 @@ struct ExInfo
     DebuggerExState m_DebuggerExState;
     EHClauseInfo   m_EHClauseInfo;
     ExceptionFlags m_ExceptionFlags;
+    DWORD          m_ExceptionCode;
 
 #ifndef TARGET_UNIX
     EHWatsonBucketTracker m_WatsonBucketTracker;
