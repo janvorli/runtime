@@ -8022,50 +8022,6 @@ extern "C" int32_t QCALLTYPE EHEnumInitFromStackFrameIterator(StackFrameIterator
     return result;
 }
 
-// static bool ProcessDebuggerInterception(ExInfo *pExInfo, MethodDesc *pMD)
-// {
-//     bool result = true;
-
-//     MethodDesc* pInterceptMD = NULL;
-//     StackFrame sfInterceptStackFrame;
-
-//     // check if we have reached the interception point yet
-//     pExInfo->m_DebuggerExState.GetDebuggerInterceptInfo(&pInterceptMD, NULL,
-//             reinterpret_cast<PBYTE *>(&(sfInterceptStackFrame.SP)),
-//             NULL, NULL);
-
-//     if (pExInfo->m_passNumber == 1)
-//     {
-//         // // Save the target unwind frame just like we do when we find a catch clause.
-//         // m_sfResumeStackFrame = sfInterceptStackFrame;
-//         // ReturnStatus         = FirstPassComplete;
-//         // goto lExit;
-//         result = false; //???
-//     }
-//     else
-//     {
-//         // If the exception has gone unhandled in the first pass, we wouldn't have a chance
-//         // to set the target unwind frame.  Check for this case now.
-//         // if (m_sfResumeStackFrame.IsNull())
-//         // {
-//         //     m_sfResumeStackFrame = sfInterceptStackFrame;
-//         // }
-//         // _ASSERTE(m_sfResumeStackFrame == sfInterceptStackFrame);
-
-//         if ((pInterceptMD == pMD) && (sfInterceptStackFrame == pExInfo->m_frameIter.m_crawl.GetRegisterSet()->SP))
-//         {
-//             // If we have reached the stack frame at which the exception is intercepted,
-//             // then finish the second pass prematurely.
-//             // SecondPassIsComplete(pMD, sf);
-//             // ReturnStatus = SecondPassComplete;
-//             // goto lExit;
-//             result = false; //???
-//         }
-//     }
-
-//     return result;
-// }
-
 extern "C" BOOL QCALLTYPE EHEnumNext(EH_CLAUSE_ENUMERATOR* pEHEnum, RhEHClause* pEHClause)
 {
     QCALL_CONTRACT;
@@ -8188,7 +8144,6 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
     ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
     REGDISPLAY* pRD = pExInfo->m_pRD;
 
-
     if (pExInfo->m_passNumber == 1)
     {
         GCX_COOP();
@@ -8245,6 +8200,7 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
             else
             {
                 EEToProfilerExceptionInterfaceWrapper::ExceptionSearchCatcherFound(pMD);
+                EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionLeave(pMD);
 
                 // We don't need to do anything special for continuable exceptions after calling
                 // this callback.  We are going to start unwinding anyway.
@@ -8284,22 +8240,19 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
         result = (retVal != SWA_FAILED);
     }
 
+    MethodDesc *pMD = pThis->m_crawl.GetFunction();
     if (pExInfo->m_passNumber == 1)
     {
-        MethodDesc *pMD = pThis->m_crawl.GetFunction();
         EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionEnter(pMD);
 
         // Notify the debugger that we are on the first pass for a managed exception.
         // Note that this callback is made for every managed frame.
         EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedException(pThread, GetControlPC(pThis->m_crawl.GetRegisterSet()), GetRegdisplaySP(pThis->m_crawl.GetRegisterSet()));
     }
-
-    // // check if the exception is intercepted.
-    // if (result && pExInfo->m_ExceptionFlags.DebuggerInterceptInfo())
-    // {
-    //     MethodDesc *pMD = pThis->m_crawl.GetFunction();
-    //     result = ProcessDebuggerInterception(pExInfo, pMD);
-    // }
+    else
+    {
+        EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionEnter(pMD);
+    }
 
     pExInfo->m_sfLowBound = GetRegdisplaySP(pThis->m_crawl.GetRegisterSet());
 
@@ -8343,6 +8296,16 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
 
     ExInfo* pExInfo = pThis->GetNextExInfo();
     ExInfo* pTopExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+
+    MethodDesc *pMD = pThis->m_crawl.GetFunction();
+    if (pTopExInfo->m_passNumber == 1)
+    {
+        EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionLeave(pMD);
+    }
+    else
+    {
+        EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionLeave(pMD);
+    }
 
     // Check for reverse pinvoke (but eliminate the case when the caller is managed) or CallDescrWorkerInternal.
     if (!ExecutionManager::IsManagedCode(GetIP(pThis->m_crawl.GetRegisterSet()->pCallerContext)))
@@ -8489,7 +8452,7 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
             }
             else if (pTopExInfo->m_passNumber == 1)
             {
-                MethodDesc *pMD = pFrame->GetFunction();
+                pMD = pFrame->GetFunction();
                 if (pMD != NULL)
                 {
                     GCX_COOP();
@@ -8505,22 +8468,19 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
 
     _ASSERTE(retVal == SWA_FAILED || pThis->GetFrameState() == StackFrameIterator::SFITER_FRAMELESS_METHOD);
 
+    pMD = pThis->m_crawl.GetFunction();
     if (pTopExInfo->m_passNumber == 1)
     {
-        MethodDesc *pMD = pThis->m_crawl.GetFunction();
         EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionEnter(pMD);
 
         // Notify the debugger that we are on the first pass for a managed exception.
         // Note that this callback is made for every managed frame.
         EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedException(pThread, GetControlPC(pThis->m_crawl.GetRegisterSet()), GetRegdisplaySP(pThis->m_crawl.GetRegisterSet()));
     }
-
-    // // check if the exception is intercepted.
-    // if ((retVal != SWA_FAILED) && pExInfo->m_ExceptionFlags.DebuggerInterceptInfo())
-    // {
-    //     MethodDesc *pMD = pThis->m_crawl.GetFunction();
-    //     result = ProcessDebuggerInterception(pExInfo, pMD);
-    // }
+    else
+    {
+        EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionEnter(pMD);
+    }
 
 Exit:;
     END_QCALL;

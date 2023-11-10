@@ -359,6 +359,7 @@ void ExInfo::MakeCallbacksRelatedToHandler(
 
     if (fBeforeCallingHandler)
     {
+        m_EHClauseInfo.SetManagedCodeEntered(TRUE);
         StackFrame sfToStore = sf;
         if ((m_pPrevExInfo != NULL) &&
             (m_pPrevExInfo->m_csfEnclosingClause == m_csfEnclosingClause))
@@ -429,6 +430,8 @@ void ExInfo::MakeCallbacksRelatedToHandler(
             }
         }
 
+        // TODO: when exception happens in filter, this is not called!
+        m_EHClauseInfo.SetManagedCodeEntered(FALSE);
         m_EHClauseInfo.ResetInfo();
     }
 }
