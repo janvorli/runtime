@@ -110,6 +110,7 @@ MethodTable* g_pCastHelpers;
 #ifdef FEATURE_EH_FUNCLETS
 GPTR_IMPL(MethodTable,      g_pEHClass);
 GPTR_IMPL(MethodTable,      g_pExceptionServicesInternalCallsClass);
+GPTR_IMPL(MethodTable,      g_pStackFrameIteratorClass);
 GVAL_IMPL(bool,             g_isNewExceptionHandlingEnabled);
 #endif
 

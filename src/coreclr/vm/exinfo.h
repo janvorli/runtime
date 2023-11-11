@@ -254,6 +254,7 @@ struct ExInfo
     EHClauseInfo   m_EHClauseInfo;
     ExceptionFlags m_ExceptionFlags;
     DWORD          m_ExceptionCode;
+    MethodDesc    *m_pMDToReport;
 
 #ifndef TARGET_UNIX
     EHWatsonBucketTracker m_WatsonBucketTracker;

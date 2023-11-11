@@ -392,6 +392,7 @@ GVAL_DECL(DWORD,            g_TlsIndex);
 #ifdef FEATURE_EH_FUNCLETS
 GPTR_DECL(MethodTable,      g_pEHClass);
 GPTR_DECL(MethodTable,      g_pExceptionServicesInternalCallsClass);
+GPTR_DECL(MethodTable,      g_pStackFrameIteratorClass);
 GVAL_DECL(bool,             g_isNewExceptionHandlingEnabled);
 #endif
 

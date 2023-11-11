@@ -8200,7 +8200,11 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
             else
             {
                 EEToProfilerExceptionInterfaceWrapper::ExceptionSearchCatcherFound(pMD);
-                EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionLeave(pMD);
+                if (pExInfo->m_pMDToReport != NULL)
+                {
+                    EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionLeave(pExInfo->m_pMDToReport);
+                    pExInfo->m_pMDToReport = NULL;
+                }
 
                 // We don't need to do anything special for continuable exceptions after calling
                 // this callback.  We are going to start unwinding anyway.
@@ -8233,7 +8237,7 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
                         !(pExInfo->m_exception == CLRException::GetPreallocatedStackOverflowException());
 
                     pExInfo->m_stackTraceInfo.AppendElement(canAllocateMemory, NULL, GetRegdisplaySP(pExInfo->m_frameIter.m_crawl.GetRegisterSet()), pMD, &pExInfo->m_frameIter.m_crawl);
-                }
+              }
             }
         }
         StackWalkAction retVal = pThis->Next();
@@ -8244,6 +8248,7 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
     if (pExInfo->m_passNumber == 1)
     {
         EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionEnter(pMD);
+        pExInfo->m_pMDToReport = pMD;
 
         // Notify the debugger that we are on the first pass for a managed exception.
         // Note that this callback is made for every managed frame.
@@ -8252,6 +8257,7 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
     else
     {
         EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionEnter(pMD);
+        pExInfo->m_pMDToReport = pMD;        
     }
 
     pExInfo->m_sfLowBound = GetRegdisplaySP(pThis->m_crawl.GetRegisterSet());
@@ -8296,15 +8302,24 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
 
     ExInfo* pExInfo = pThis->GetNextExInfo();
     ExInfo* pTopExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+    bool isCollided = false;
 
     MethodDesc *pMD = pThis->m_crawl.GetFunction();
     if (pTopExInfo->m_passNumber == 1)
     {
-        EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionLeave(pMD);
+        if (pTopExInfo->m_pMDToReport != NULL)
+        {
+            EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionLeave(pTopExInfo->m_pMDToReport);
+            pTopExInfo->m_pMDToReport = NULL;
+        }
     }
     else
     {
-        EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionLeave(pMD);
+        if (pTopExInfo->m_pMDToReport != NULL)
+        {
+            EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionLeave(pTopExInfo->m_pMDToReport);
+            pTopExInfo->m_pMDToReport = NULL;
+        }
     }
 
     // Check for reverse pinvoke (but eliminate the case when the caller is managed) or CallDescrWorkerInternal.
@@ -8434,6 +8449,7 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
                         else
                         {
                             *uExCollideClauseIdx = pExInfo->m_idxCurClause;
+                            isCollided = true;
                             pExInfo->m_kind = (ExKind)((uint8_t)pExInfo->m_kind | (uint8_t)ExKind::SupersededFlag);
 
                             // Unwind until we hit the frame of the prevExInfo
@@ -8471,15 +8487,23 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
     pMD = pThis->m_crawl.GetFunction();
     if (pTopExInfo->m_passNumber == 1)
     {
-        EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionEnter(pMD);
-
-        // Notify the debugger that we are on the first pass for a managed exception.
-        // Note that this callback is made for every managed frame.
-        EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedException(pThread, GetControlPC(pThis->m_crawl.GetRegisterSet()), GetRegdisplaySP(pThis->m_crawl.GetRegisterSet()));
+        // TODO: skip this and the related ...Leave for collided Unwind - maybe move this to the AppendElement above?
+        if (!isCollided)
+        {
+            EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionEnter(pMD);
+            pTopExInfo->m_pMDToReport = pMD;
+            // Notify the debugger that we are on the first pass for a managed exception.
+            // Note that this callback is made for every managed frame.
+            EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedException(pThread, GetControlPC(pThis->m_crawl.GetRegisterSet()), GetRegdisplaySP(pThis->m_crawl.GetRegisterSet()));
+        }
     }
     else
     {
-        EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionEnter(pMD);
+        if (!isCollided)
+        {
+            EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionEnter(pMD);
+            pTopExInfo->m_pMDToReport = pMD;
+        }
     }
 
 Exit:;

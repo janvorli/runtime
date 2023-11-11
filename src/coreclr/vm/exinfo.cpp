@@ -113,6 +113,8 @@ void ExInfo::Init()
     m_StackAddress = this;
     DestroyExceptionHandle();
     m_hThrowable = NULL;
+    m_ExceptionCode = 0;
+    m_pMDToReport = NULL;
 
     // By default, mark the tracker as not having delivered the first
     // chance exception notification
