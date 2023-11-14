@@ -4235,34 +4235,6 @@ void ExceptionTracker::MakeCallbacksRelatedToHandler(
 
 #ifdef DEBUGGER_EXCEPTION_INTERCEPTION_SUPPORTED
 
-struct WalkToInterceptFrameCallbackData
-{
-    CONTEXT context;
-    UINT_PTR uInterceptStackFrame;
-};
-
-StackWalkAction WalkToInterceptFrameCallback(CrawlFrame* pCf, void* data)
-{
-    CONTRACTL {
-        NOTHROW;
-        GC_NOTRIGGER;
-    }
-    CONTRACTL_END;
-
-    WalkToInterceptFrameCallbackData *pCallbackData = (WalkToInterceptFrameCallbackData*)data;
-    
-    StackWalkAction result = SWA_CONTINUE;
-
-    if (pCf->GetRegisterSet()->SP == pCallbackData->uInterceptStackFrame)
-    {
-        pCallbackData->context = *pCf->GetRegisterSet()->pCurrentContext;
-        result = SWA_ABORT;
-    }
-
-    return result;
-}
-
-
 //---------------------------------------------------------------------------------------
 //
 // This function is called by DefaultCatchHandler() to intercept an exception and start an unwind.
@@ -4298,72 +4270,20 @@ EXCEPTION_DISPOSITION ClrDebuggerDoUnwindAndIntercept(X86_FIRST_ARG(EXCEPTION_RE
     if (g_isNewExceptionHandlingEnabled)
     {
         // TODO: call into the managed EH code?
-        _ASSERTE_MSG(FALSE, "ClrDebuggerDoUnwindAndIntercept not implemented yet");
+        //_ASSERTE_MSG(FALSE, "ClrDebuggerDoUnwindAndIntercept not implemented yet");
+        GCX_COOP();
+
+        PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__UNWIND_AND_INTERCEPT);
+        DECLARE_ARGHOLDER_ARRAY(args, 2);
+        args[ARGNUM_0] = PTR_TO_ARGHOLDER(pExState->GetCurrentExInfo());
+
+        pThread->IncPreventAbort();
+        //Ex.RhUnwindAndIntercept(throwable, &exInfo)
+        CRITICAL_CALLSITE;
+        CALL_MANAGED_METHOD_NORET(args)
+
+        //GCPROTECT_END();        
         UNREACHABLE();
-//         WalkToInterceptFrameCallbackData callbackData;
-//         callbackData.uInterceptStackFrame = uInterceptStackFrame;
-//         StackWalkAction swa = GetThread()->StackWalkFrames(WalkToInterceptFrameCallback, &callbackData, THREAD_EXECUTING_MANAGED_CODE | HANDLESKIPPEDFRAMES, NULL);
-//         _ASSERTE(swa == SWA_ABORT);
-//         // TODO: this is a copy & paste, extract it into a function
-//         Frame* pFrame = pThread->GetFrame();
-//         while (pFrame < (void*)uInterceptStackFrame)
-//         {
-//             pFrame->ExceptionUnwind();
-//             pFrame->Pop(pThread);
-//             pFrame = pThread->GetFrame();
-//         }
-
-//         GCFrame* pGCFrame = pThread->GetGCFrame();
-//         while (pGCFrame && pGCFrame < (void*)uInterceptStackFrame)
-//         {
-//             pGCFrame->Pop();
-//             pGCFrame = pThread->GetGCFrame();
-//         }
-
-//         ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-
-//     // #ifdef HOST_UNIX
-//     //     Interop::ManagedToNativeExceptionCallback propagateExceptionCallback = pExInfo->m_propagateExceptionCallback;
-//     //     void* propagateExceptionContext = pExInfo->m_propagateExceptionContext;
-//     // #endif // HOST_UNIX
-
-//     // #ifdef DEBUGGING_SUPPORTED
-//     //         // This must be done before we pop the trackers.
-//     //     BOOL fIntercepted = pThread->GetExceptionState()->GetFlags()->DebuggerInterceptInfo();
-//     // #endif // DEBUGGING_SUPPORTED
-
-//         // Pop ExInfos
-//         while (pExInfo && pExInfo < (void*)uInterceptStackFrame)
-//         {
-//             if (pExInfo->m_hThrowable)
-//             {
-//                 if (!CLRException::IsPreallocatedExceptionHandle(pExInfo->m_hThrowable))
-//                 {
-//                     DestroyHandle(pExInfo->m_hThrowable);
-//                 }
-//                 pExInfo->m_hThrowable = NULL;
-//             }
-//             pExInfo->m_stackTraceInfo.FreeStackTrace();
-//             pExInfo = pExInfo->m_pPrevExInfo;
-//         }
-
-//         pThread->GetExceptionState()->SetCurrentExInfo(pExInfo); 
-
-// #ifdef TARGET_AMD64
-// #define RETURN_REG Rax
-// #elif defined(TARGET_ARM64)
-// #define RETURN_REG X0
-// #elif defined(TARGET_ARM)
-// #define RETURN_REG R0
-// #elif defined(TARGET_X86)
-// #define RETURN_REG Eax
-// #else
-// #error Missing definition of RETURN_REG for the current architecture
-// #endif
-//         callbackData.context.RETURN_REG = (UINT_PTR)pThread;
-//         SetIP(&callbackData.context, INVALID_RESUME_ADDRESS);
-
-//         ExceptionTracker::ResumeExecution(&callbackData.context);
     }
     else
     {
@@ -7880,6 +7800,74 @@ extern "C" void * QCALLTYPE CallCatchFunclet(QCall::ObjectHandleOnStack exceptio
     return NULL;
 }
 
+extern "C" void QCALLTYPE ResumeAtInterceptionLocation(REGDISPLAY* pvRegDisplay)
+{
+    Thread* pThread = GET_THREAD();
+    pThread->DecPreventAbort();
+
+    Frame* pFrame = pThread->GetFrame();
+    MarkInlinedCallFrameAsFuncletCall(pFrame);
+    
+    UINT_PTR targetSp = GetSP(pvRegDisplay->pCurrentContext);
+
+    while (pFrame < (void*)targetSp)
+    {
+        pFrame->ExceptionUnwind();
+        pFrame->Pop(pThread);
+        pFrame = pThread->GetFrame();
+    }
+
+    GCFrame* pGCFrame = pThread->GetGCFrame();
+    while (pGCFrame && pGCFrame < (void*)targetSp)
+    {
+        pGCFrame->Pop();
+        pGCFrame = pThread->GetGCFrame();
+    }
+
+    ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+
+    // This must be done before we pop the trackers.
+    BOOL fIntercepted = pThread->GetExceptionState()->GetFlags()->DebuggerInterceptInfo();
+    _ASSERTE(fIntercepted);
+
+    // Pop ExInfos
+    while (pExInfo && pExInfo < (void*)targetSp)
+    {
+        if (pExInfo->m_hThrowable)
+        {
+            if (!CLRException::IsPreallocatedExceptionHandle(pExInfo->m_hThrowable))
+            {
+                DestroyHandle(pExInfo->m_hThrowable);
+            }
+            pExInfo->m_hThrowable = NULL;
+        }
+        pExInfo->m_stackTraceInfo.FreeStackTrace();
+        pExInfo = pExInfo->m_pPrevExInfo;
+    }
+
+    pThread->GetExceptionState()->SetCurrentExInfo(pExInfo);
+    // retrieve the interception information
+    MethodDesc *pInterceptMD = NULL;
+    StackFrame sfInterceptStackFrame;
+    UINT_PTR    uResumePC = 0;
+    ULONG_PTR   ulRelOffset;
+
+    pThread->GetExceptionState()->GetDebuggerState()->GetDebuggerInterceptInfo(&pInterceptMD, NULL, (PBYTE*)&(sfInterceptStackFrame.SP), &ulRelOffset, NULL);
+
+    PCODE pStartAddress = pInterceptMD->GetNativeCode();
+
+    EECodeInfo codeInfo(pStartAddress);
+    _ASSERTE(codeInfo.IsValid());
+
+    // Note that the value returned for ulRelOffset is actually the offset,
+    // so we need to adjust it to get the actual IP.
+    _ASSERTE(FitsIn<DWORD>(ulRelOffset));
+    uResumePC = codeInfo.GetJitManager()->GetCodeAddressForRelOffset(codeInfo.GetMethodToken(), static_cast<DWORD>(ulRelOffset));
+
+    SetIP(pvRegDisplay->pCurrentContext, uResumePC);
+    ClrRestoreNonvolatileContext(pvRegDisplay->pCurrentContext);    
+}
+
 extern "C" void QCALLTYPE CallFinallyFunclet(BYTE* pHandlerIP, REGDISPLAY* pvRegDisplay, ExInfo* exInfo)
 {
     QCALL_CONTRACT;
@@ -8199,6 +8187,7 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
             }
             else
             {
+                _ASSERTE(pExInfo->m_pMDToReport != NULL);
                 EEToProfilerExceptionInterfaceWrapper::ExceptionSearchCatcherFound(pMD);
                 if (pExInfo->m_pMDToReport != NULL)
                 {
@@ -8305,22 +8294,6 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
     bool isCollided = false;
 
     MethodDesc *pMD = pThis->m_crawl.GetFunction();
-    if (pTopExInfo->m_passNumber == 1)
-    {
-        if (pTopExInfo->m_pMDToReport != NULL)
-        {
-            EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionLeave(pTopExInfo->m_pMDToReport);
-            pTopExInfo->m_pMDToReport = NULL;
-        }
-    }
-    else
-    {
-        if (pTopExInfo->m_pMDToReport != NULL)
-        {
-            EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionLeave(pTopExInfo->m_pMDToReport);
-            pTopExInfo->m_pMDToReport = NULL;
-        }
-    }
 
     // Check for reverse pinvoke (but eliminate the case when the caller is managed) or CallDescrWorkerInternal.
     if (!ExecutionManager::IsManagedCode(GetIP(pThis->m_crawl.GetRegisterSet()->pCallerContext)))
@@ -8484,23 +8457,29 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
 
     _ASSERTE(retVal == SWA_FAILED || pThis->GetFrameState() == StackFrameIterator::SFITER_FRAMELESS_METHOD);
 
-    pMD = pThis->m_crawl.GetFunction();
-    if (pTopExInfo->m_passNumber == 1)
+    if (!isCollided)
     {
-        // TODO: skip this and the related ...Leave for collided Unwind - maybe move this to the AppendElement above?
-        if (!isCollided)
+        pMD = pThis->m_crawl.GetFunction();
+        if (pTopExInfo->m_passNumber == 1)
         {
+            if (pTopExInfo->m_pMDToReport != NULL)
+            {
+                EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionLeave(pTopExInfo->m_pMDToReport);
+                //pTopExInfo->m_pMDToReport = NULL;
+            }
             EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionEnter(pMD);
             pTopExInfo->m_pMDToReport = pMD;
             // Notify the debugger that we are on the first pass for a managed exception.
             // Note that this callback is made for every managed frame.
             EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedException(pThread, GetControlPC(pThis->m_crawl.GetRegisterSet()), GetRegdisplaySP(pThis->m_crawl.GetRegisterSet()));
         }
-    }
-    else
-    {
-        if (!isCollided)
+        else
         {
+            if (pTopExInfo->m_pMDToReport != NULL)
+            {
+                EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionLeave(pTopExInfo->m_pMDToReport);
+                //pTopExInfo->m_pMDToReport = NULL;
+            }
             EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionEnter(pMD);
             pTopExInfo->m_pMDToReport = pMD;
         }

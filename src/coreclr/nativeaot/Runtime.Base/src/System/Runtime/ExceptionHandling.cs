@@ -522,7 +522,7 @@ namespace System.Runtime
             internal PAL_LIMITED_CONTEXT* _pExContext;
 
             [FieldOffset(AsmOffsets.OFFSETOF__ExInfo__m_exception)]
-            private object _exception;  // actual object reference, specially reported by GcScanRootsWorker
+            internal object _exception;  // actual object reference, specially reported by GcScanRootsWorker
 
             [FieldOffset(AsmOffsets.OFFSETOF__ExInfo__m_kind)]
             internal ExKind _kind;
@@ -642,6 +642,76 @@ namespace System.Runtime
             DispatchEx(ref exInfo._frameIter, ref exInfo);
             FallbackFailFast(RhFailFastReason.InternalError, null);
         }
+#if !NATIVEAOT
+        public static void RhUnwindAndIntercept(ref ExInfo exInfo, UIntPtr interceptStackFrameSP)
+        {
+            exInfo._passNumber = 2;
+            exInfo._idxCurClause = MaxTryRegionIdx;
+            uint startIdx = MaxTryRegionIdx;
+            bool unwoundReversePInvoke = false;
+            bool isValid = exInfo._frameIter.Init(exInfo._pExContext, (exInfo._kind & ExKind.InstructionFaultFlag) != 0);
+            for (; isValid && ((byte*)exInfo._frameIter.SP <= (byte*)interceptStackFrameSP); isValid = exInfo._frameIter.Next(&startIdx, &unwoundReversePInvoke))
+            {
+                Debug.Assert(isValid, "Unwind and intercept failed unexpectedly");
+                DebugScanCallFrame(exInfo._passNumber, exInfo._frameIter.ControlPC, exInfo._frameIter.SP);
+
+                if (unwoundReversePInvoke)
+                {
+                    // Found the native frame that called the reverse P/invoke.
+                    // It is not possible to run managed second pass handlers on a native frame.
+                    break;
+                }
+
+                if ((exInfo._frameIter.SP == interceptStackFrameSP)
+// ????
+// #if TARGET_ARM64
+//                     && (exInfo._frameIter.ControlPC == prevControlPC)
+// #endif
+                    )
+                {
+                    // // invoke only a partial second-pass here...
+                    // int res = InvokeSecondPass(ref exInfo, startIdx, catchingTryRegionIdx);
+                    // if (res == 2)
+                    // {
+                    //     pCatchHandler = null;
+                    // }
+                    break;
+                }
+
+                int res2 = InvokeSecondPass(ref exInfo, startIdx);
+                if (res2 == 2)
+                {
+                    //pCatchHandler = null;
+                    Debug.Assert(false);
+                    break;
+                }
+            }
+
+            // ------------------------------------------------
+            //
+            // Call the interception code
+            //
+            // ------------------------------------------------
+            if (unwoundReversePInvoke)
+            {
+#pragma warning disable CS8500
+                fixed (EH.ExInfo* pExInfo = &exInfo)
+                {
+                    InternalCalls.RhpCallCatchFunclet(
+                        ObjectHandleOnStack.Create(ref exInfo._exception), null, exInfo._frameIter.RegisterSet, pExInfo);
+                }
+#pragma warning restore CS8500
+            }
+            else
+            {
+                InternalCalls.ResumeAtInterceptionLocation(exInfo._frameIter.RegisterSet);
+            }
+            // currently, RhpCallCatchFunclet will resume after the catch
+            Debug.Assert(false, "unreachable");
+            FallbackFailFast(RhFailFastReason.InternalError, null);
+        }
+#endif // !NATIVEAOT
+
 
 #if NATIVEAOT
         [RuntimeExport("RhRethrow")]
