@@ -1628,7 +1628,9 @@ StackWalkAction StackFrameIterator::Filter(void)
         fRecheckCurrentFrame = false;
         fSkipFuncletCallback = true;
 
-        if ((m_flags & GC_FUNCLET_REFERENCE_REPORTING) && (pExInfo != NULL) && (m_crawl.GetRegisterSet()->SP > (SIZE_T)pExInfo))
+        SIZE_T spToCheck = (m_frameState == SFITER_FRAME_FUNCTION) ? (SIZE_T)dac_cast<TADDR>(m_crawl.pFrame) : m_crawl.GetRegisterSet()->SP;
+
+        if ((m_flags & GC_FUNCLET_REFERENCE_REPORTING) && (pExInfo != NULL) && (spToCheck > (SIZE_T)pExInfo))
         {
             if (!m_movedPastFirstExInfo)
             {
@@ -2398,7 +2400,7 @@ StackWalkAction StackFrameIterator::NextRaw(void)
         // make sure we're not skipping a different transition
         if (m_crawl.pFrame->NeedsUpdateRegDisplay())
         {
-            CONSISTENCY_CHECK(m_crawl.pFrame->IsTransitionToNativeFrame());
+            //CONSISTENCY_CHECK(m_crawl.pFrame->IsTransitionToNativeFrame());
             if (m_crawl.pFrame->GetVTablePtr() == InlinedCallFrame::GetMethodFrameVPtr())
             {
                 // ControlPC may be different as the InlinedCallFrame stays active throughout

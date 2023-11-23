@@ -8352,17 +8352,14 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
                 EXCEPTION_POINTERS exceptionPointers;
                 exceptionPointers.ContextRecord = pTopExInfo->m_pExContext;
                 EXCEPTION_RECORD exceptionRecord;
-                {
-                    GCX_COOP();
-                    exceptionRecord.ExceptionCode = ((EXCEPTIONREF)pTopExInfo->m_exception)->GetXCode();
-                }
+                exceptionRecord.ExceptionCode = pTopExInfo->m_ExceptionCode;
                 exceptionRecord.ExceptionFlags = 0;
                 exceptionRecord.ExceptionAddress = 0;
                 exceptionRecord.ExceptionRecord = NULL;
                 exceptionRecord.NumberParameters = 0;
                 exceptionPointers.ExceptionRecord = &exceptionRecord;
                 LONG disposition = InternalUnhandledExceptionFilter_Worker(&exceptionPointers);
-                CrashDumpAndTerminateProcess(1);
+                CrashDumpAndTerminateProcess(exceptionRecord.ExceptionCode);
             }
             goto Exit;
         }
