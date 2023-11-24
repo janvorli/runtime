@@ -1054,19 +1054,23 @@ namespace System.Runtime
                     byte* pFilterFunclet = ehClause._filterAddress;
 
                     bool shouldInvokeHandler = false;
+#if NATIVEAOT
                     try
                     {
+#endif
                         shouldInvokeHandler =
 #if NATIVEAOT
                             InternalCalls.RhpCallFilterFunclet(exception, pFilterFunclet, frameIter.RegisterSet);
 #else
                             InternalCalls.RhpCallFilterFunclet(ObjectHandleOnStack.Create(ref exception), pFilterFunclet, frameIter.RegisterSet);
 #endif
+#if NATIVEAOT
                     }
                     catch when (true)
                     {
                         // Prevent leaking any exception from the filter funclet
                     }
+#endif
 
                     if (shouldInvokeHandler)
                     {

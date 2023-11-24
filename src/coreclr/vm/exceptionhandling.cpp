@@ -7933,22 +7933,32 @@ extern "C" BOOL QCALLTYPE CallFilterFunclet(QCall::ObjectHandleOnStack exception
     MethodDesc *pMD = pExInfo->m_frameIter.m_crawl.GetFunction();
     // Profiler, debugger and ETW events
     pExInfo->MakeCallbacksRelatedToHandler(true, pThread, pMD, &pExInfo->m_CurrentClause, (DWORD_PTR)pFilterIP, GetSP(pvRegDisplay->pCurrentContext));
+    EX_TRY
+    {
 #ifdef USE_FUNCLET_CALL_HELPER
-    // Invoke the filter funclet. 
-    // Since the actual caller of the funclet is the assembly helper, pass the reference
-    // to the CallerStackFrame instance so that it can be updated.
-    CallerStackFrame* pCallerStackFrame = &pExInfo->m_csfEHClause;
-    UINT_PTR *pFuncletCallerSP = &(pCallerStackFrame->SP);
-    // For invoking IL filter funclet, we pass the CallerSP to the funclet using which
-    // it will retrieve the framepointer for accessing the locals in the parent
-    // method.
-    dwResult = CallEHFilterFunclet(OBJECTREFToObject(throwable),
-                                  GetFrameRestoreBase(pvRegDisplay->pCallerContext),
-                                  CastHandlerFn(pfnHandler),
-                                  pFuncletCallerSP);
+        // Invoke the filter funclet. 
+        // Since the actual caller of the funclet is the assembly helper, pass the reference
+        // to the CallerStackFrame instance so that it can be updated.
+        CallerStackFrame* pCallerStackFrame = &pExInfo->m_csfEHClause;
+        UINT_PTR *pFuncletCallerSP = &(pCallerStackFrame->SP);
+        // For invoking IL filter funclet, we pass the CallerSP to the funclet using which
+        // it will retrieve the framepointer for accessing the locals in the parent
+        // method.
+        dwResult = CallEHFilterFunclet(OBJECTREFToObject(throwable),
+                                    GetFrameRestoreBase(pvRegDisplay->pCallerContext),
+                                    CastHandlerFn(pfnHandler),
+                                    pFuncletCallerSP);
 #else
-    dwResult = pfnHandler(establisherFrame, OBJECTREFToObject(throwable));
-#endif        
+        dwResult = pfnHandler(establisherFrame, OBJECTREFToObject(throwable));
+#endif
+    }
+    EX_CATCH
+    {
+        // Exceptions that occur in the filter funclet are swallowed and the return value is simulated
+        // to be false.
+        dwResult = EXCEPTION_CONTINUE_SEARCH;
+    }
+    EX_END_CATCH(SwallowAllExceptions);
 
     // Profiler, debugger and ETW events
     pExInfo->MakeCallbacksRelatedToHandler(false, pThread, pMD, &pExInfo->m_CurrentClause, (DWORD_PTR)pFilterIP, GetSP(pvRegDisplay->pCurrentContext));
@@ -8330,8 +8340,15 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
             // Either add handling those here as well or rewrite all these perf critical places in C#, so that CallDescrWorker is the only path that 
             // needs to be handled here.
             size_t CallDescrWorkerInternalReturnAddress = (size_t)CallDescrWorkerInternal + CallDescrWorkerInternalReturnAddressOffset;
-            if (GetIP(pThis->m_crawl.GetRegisterSet()->pCallerContext) == CallDescrWorkerInternalReturnAddress)
+            size_t callerIP = GetIP(pThis->m_crawl.GetRegisterSet()->pCallerContext);
+            if (callerIP == CallDescrWorkerInternalReturnAddress)
             {
+                invalidRevPInvoke = true;
+            }
+            else if (pThis->m_crawl.IsFilterFunclet())
+            {
+                // TODO-NewEH: if this turns out to be a perf problem, we can modify the filter funclet invocation to go through an asm helper on all platforms and 
+                // use the return address to detect this case
                 invalidRevPInvoke = true;
             }
         }
