@@ -8265,6 +8265,26 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
 
     _ASSERTE(!result || pThis->GetFrameState() == StackFrameIterator::SFITER_FRAMELESS_METHOD);
 
+    if (pExInfo->m_passNumber == 1)
+    {
+        // We might have skipped some HelperMethod frames while unwinding through native code. We need to add all of those
+        // to the stack trace.
+        Frame *pFrame = pThread->GetFrame();
+        while (pFrame != FRAME_TOP && (TADDR)pFrame < pThis->m_crawl.GetRegisterSet()->SP)
+        {
+            MethodDesc *pMD = pFrame->GetFunction();
+            if (pMD != NULL)
+            {
+                GCX_COOP();
+                bool canAllocateMemory = !(pExInfo->m_exception == CLRException::GetPreallocatedOutOfMemoryException()) &&
+                    !(pExInfo->m_exception == CLRException::GetPreallocatedStackOverflowException());
+
+                pExInfo->m_stackTraceInfo.AppendElement(canAllocateMemory, NULL, GetRegdisplaySP(pExInfo->m_frameIter.m_crawl.GetRegisterSet()), pMD, &pExInfo->m_frameIter.m_crawl);
+            }
+            pFrame = pFrame->PtrNextFrame();
+        }
+    }
+
     END_QCALL;
 
     if (result)
