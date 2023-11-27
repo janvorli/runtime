@@ -4234,7 +4234,7 @@ void ThrowNew(OBJECTREF oref)
         }
     }
 
-    DispatchManagedException(oref);
+    DispatchManagedException(oref, /* preserveStackTrace */false);
 }
 #endif // FEATURE_EH_FUNCLETS
 

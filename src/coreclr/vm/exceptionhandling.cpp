@@ -882,8 +882,15 @@ ProcessCLRExceptionNew(IN     PEXCEPTION_RECORD   pExceptionRecord,
     STATIC_CONTRACT_THROWS;
 
 #ifndef HOST_UNIX
+
     if (!(pExceptionRecord->ExceptionFlags & EXCEPTION_UNWINDING))
     {
+        // Failfast if exception indicates corrupted process state
+        if (IsProcessCorruptedStateException(pExceptionRecord->ExceptionCode, /* throwable */ NULL))
+        {
+            EEPOLICY_HANDLE_FATAL_ERROR(pExceptionRecord->ExceptionCode);
+        }
+
         Thread* pThread         = GetThread();
         ClrUnwindEx(pExceptionRecord,
                     (UINT_PTR)pThread,
@@ -5484,7 +5491,6 @@ BOOL HandleHardwareException(PAL_SEHException* ex)
             args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
 
             pThread->IncPreventAbort();
-
             //Ex.RhThrowHwEx(exceptionCode, &exInfo)
             CALL_MANAGED_METHOD_NORET(args)
 
@@ -5542,7 +5548,7 @@ BOOL HandleHardwareException(PAL_SEHException* ex)
 
 #endif // TARGET_UNIX
 
-VOID DECLSPEC_NORETURN DispatchManagedException(OBJECTREF throwable)
+VOID DECLSPEC_NORETURN DispatchManagedException(OBJECTREF throwable, bool preserveStackTrace)
 {
     STATIC_CONTRACT_THROWS;
     STATIC_CONTRACT_GC_TRIGGERS;
@@ -5552,7 +5558,10 @@ VOID DECLSPEC_NORETURN DispatchManagedException(OBJECTREF throwable)
 
    _ASSERTE(IsException(throwable->GetMethodTable()));
 
-    ExceptionPreserveStackTrace(throwable);
+    if (preserveStackTrace)
+    {
+        ExceptionPreserveStackTrace(throwable);
+    }
 
     CONTEXT ctx = {};
     ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;

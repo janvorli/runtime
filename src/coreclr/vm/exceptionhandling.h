@@ -22,7 +22,7 @@ ProcessCLRException(IN     PEXCEPTION_RECORD     pExceptionRecord,
                     IN OUT PT_CONTEXT            pContextRecord,
                     IN OUT PT_DISPATCHER_CONTEXT pDispatcherContext);
 
-VOID DECLSPEC_NORETURN DispatchManagedException(OBJECTREF throwable);
+VOID DECLSPEC_NORETURN DispatchManagedException(OBJECTREF throwable, bool preserveStackTrace = true);
 VOID DECLSPEC_NORETURN DispatchManagedException(RuntimeExceptionKind reKind);
 
 enum CLRUnwindStatus { UnwindPending, FirstPassComplete, SecondPassComplete };
