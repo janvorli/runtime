@@ -256,6 +256,22 @@ struct ExInfo
     DWORD          m_ExceptionCode;
     MethodDesc    *m_pMDToReport;
 
+    BOOL           m_fDeliveredFirstChanceNotification;
+
+    inline BOOL DeliveredFirstChanceNotification()
+    {
+        LIMITED_METHOD_CONTRACT;
+
+        return m_fDeliveredFirstChanceNotification;
+    }
+
+    inline void SetFirstChanceNotificationStatus(BOOL fDelivered)
+    {
+        LIMITED_METHOD_CONTRACT;
+
+        m_fDeliveredFirstChanceNotification = fDelivered;
+    }
+
 #ifndef TARGET_UNIX
     EHWatsonBucketTracker m_WatsonBucketTracker;
 

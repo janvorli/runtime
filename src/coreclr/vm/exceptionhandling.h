@@ -441,8 +441,6 @@ private:
     bool HandleNestedExceptionEscape(StackFrame sf, bool fIsFirstPass);
 
 #if defined(DEBUGGING_SUPPORTED)
-    BOOL NotifyDebuggerOfStub(Thread* pThread, StackFrame sf, Frame* pCurrentFrame);
-
     void
         MakeCallbacksRelatedToHandler(bool fBeforeCallingHandler,
                                       Thread* pThread,

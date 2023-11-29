@@ -10951,8 +10951,17 @@ void ExceptionNotifications::DeliverFirstChanceNotification()
     // processing for subsequent frames on the stack since FirstChance notification
     // will be delivered only when the exception is first thrown/rethrown.
     ThreadExceptionState *pCurTES = GetThread()->GetExceptionState();
-    _ASSERTE(pCurTES->GetCurrentExceptionTracker());
-    _ASSERTE(!(pCurTES->GetCurrentExceptionTracker()->DeliveredFirstChanceNotification()));
+
+    if (g_isNewExceptionHandlingEnabled)
+    {
+        _ASSERTE(pCurTES->GetCurrentExInfo());
+        _ASSERTE(!(pCurTES->GetCurrentExInfo()->DeliveredFirstChanceNotification()));
+    }
+    else
+    {
+        _ASSERTE(pCurTES->GetCurrentExceptionTracker());
+        _ASSERTE(!(pCurTES->GetCurrentExceptionTracker()->DeliveredFirstChanceNotification()));
+    }
     {
         GCX_COOP();
         if (ExceptionNotifications::CanDeliverNotificationToCurrentAppDomain(FirstChanceExceptionHandler))
@@ -10968,8 +10977,16 @@ void ExceptionNotifications::DeliverFirstChanceNotification()
 
         }
 
-        // Mark the exception tracker as having delivered the first chance notification
-        pCurTES->GetCurrentExceptionTracker()->SetFirstChanceNotificationStatus(TRUE);
+        if (g_isNewExceptionHandlingEnabled)
+        {
+            // Mark the exception tracker as having delivered the first chance notification
+            pCurTES->GetCurrentExInfo()->SetFirstChanceNotificationStatus(TRUE);
+        }
+        else
+        {
+            // Mark the exception tracker as having delivered the first chance notification
+            pCurTES->GetCurrentExceptionTracker()->SetFirstChanceNotificationStatus(TRUE);
+        }
     }
 }
 

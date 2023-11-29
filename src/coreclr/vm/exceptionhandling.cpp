@@ -2307,6 +2307,46 @@ bool ExceptionTracker::HandleNestedExceptionEscape(StackFrame sf, bool fIsFirstP
     return fResult;
 }
 
+#if defined(DEBUGGING_SUPPORTED)
+BOOL NotifyDebuggerOfStub(Thread* pThread, Frame* pCurrentFrame)
+{
+    LIMITED_METHOD_CONTRACT;
+
+    BOOL fDeliveredFirstChanceNotification = FALSE;
+
+    // <TODO>
+    // Remove this once SIS is fully enabled.
+    // </TODO>
+    extern bool g_EnableSIS;
+
+    if (g_EnableSIS)
+    {
+        _ASSERTE(GetThreadNULLOk() == pThread);
+
+        GCX_COOP();
+
+        // For debugger, we may want to notify 1st chance exceptions if they're coming out of a stub.
+        // We recognize stubs as Frames with a M2U transition type. The debugger's stackwalker also
+        // recognizes these frames and publishes ICorDebugInternalFrames in the stackwalk. It's
+        // important to use pFrame as the stack address so that the Exception callback matches up
+        // w/ the ICorDebugInternlFrame stack range.
+        if (CORDebuggerAttached())
+        {
+            if (pCurrentFrame->GetTransitionType() == Frame::TT_M2U)
+            {
+                // Use -1 for the backing store pointer whenever we use the address of a frame as the stack pointer.
+                EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedException(pThread,
+                                                                                   (SIZE_T)0,
+                                                                                   (SIZE_T)pCurrentFrame);
+                fDeliveredFirstChanceNotification = TRUE;
+            }
+        }
+    }
+
+    return fDeliveredFirstChanceNotification;
+}
+#endif // DEBUGGING_SUPPORTED
+
 CLRUnwindStatus ExceptionTracker::ProcessExplicitFrame(
     CrawlFrame* pcfThisFrame,
     StackFrame sf,
@@ -2386,7 +2426,7 @@ CLRUnwindStatus ExceptionTracker::ProcessExplicitFrame(
                 // make callback to debugger and/or profiler
                 //
 #if defined(DEBUGGING_SUPPORTED)
-                if (ExceptionTracker::NotifyDebuggerOfStub(pThread, sf, pFrame))
+                if (NotifyDebuggerOfStub(pThread, pFrame))
                 {
                     // Deliver the FirstChanceNotification after the debugger, if not already delivered.
                     if (!this->DeliveredFirstChanceNotification())
@@ -4112,43 +4152,6 @@ BOOL ExceptionTracker::ClauseCoversPC(
 }
 
 #if defined(DEBUGGING_SUPPORTED)
-BOOL ExceptionTracker::NotifyDebuggerOfStub(Thread* pThread, StackFrame sf, Frame* pCurrentFrame)
-{
-    LIMITED_METHOD_CONTRACT;
-
-    BOOL fDeliveredFirstChanceNotification = FALSE;
-
-    // <TODO>
-    // Remove this once SIS is fully enabled.
-    // </TODO>
-    extern bool g_EnableSIS;
-
-    if (g_EnableSIS)
-    {
-        _ASSERTE(GetThreadNULLOk() == pThread);
-
-        GCX_COOP();
-
-        // For debugger, we may want to notify 1st chance exceptions if they're coming out of a stub.
-        // We recognize stubs as Frames with a M2U transition type. The debugger's stackwalker also
-        // recognizes these frames and publishes ICorDebugInternalFrames in the stackwalk. It's
-        // important to use pFrame as the stack address so that the Exception callback matches up
-        // w/ the ICorDebugInternlFrame stack range.
-        if (CORDebuggerAttached())
-        {
-            if (pCurrentFrame->GetTransitionType() == Frame::TT_M2U)
-            {
-                // Use -1 for the backing store pointer whenever we use the address of a frame as the stack pointer.
-                EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedException(pThread,
-                                                                                   (SIZE_T)0,
-                                                                                   (SIZE_T)pCurrentFrame);
-                fDeliveredFirstChanceNotification = TRUE;
-            }
-        }
-    }
-
-    return fDeliveredFirstChanceNotification;
-}
 
 bool ExceptionTracker::IsFilterStartOffset(EE_ILEXCEPTION_CLAUSE* pEHClause, DWORD_PTR dwHandlerStartPC)
 {
@@ -7554,6 +7557,10 @@ extern "C" void QCALLTYPE AppendExceptionStackFrame(QCall::ObjectHandleOnStack e
 
     pExInfo->m_stackTraceInfo.AppendElement(canAllocateMemory, ip, sp, pMD, &pExInfo->m_frameIter.m_crawl);
     pExInfo->m_stackTraceInfo.SaveStackTrace(canAllocateMemory, pExInfo->m_hThrowable, /*bReplaceStack*/FALSE, /*bSkipLastElement*/FALSE);
+    if (!pExInfo->DeliveredFirstChanceNotification())
+    {
+        ExceptionNotifications::DeliverFirstChanceNotification();
+    }
 
     END_QCALL;
 }
@@ -8245,7 +8252,17 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
                         !(pExInfo->m_exception == CLRException::GetPreallocatedStackOverflowException());
 
                     pExInfo->m_stackTraceInfo.AppendElement(canAllocateMemory, NULL, GetRegdisplaySP(pExInfo->m_frameIter.m_crawl.GetRegisterSet()), pMD, &pExInfo->m_frameIter.m_crawl);
-              }
+
+#if defined(DEBUGGING_SUPPORTED)
+                    if (NotifyDebuggerOfStub(pThread, pFrame))
+                    {
+                        if (!pExInfo->DeliveredFirstChanceNotification())
+                        {
+                            ExceptionNotifications::DeliverFirstChanceNotification();
+                        }
+                    }
+#endif // DEBUGGING_SUPPORTED
+                }
             }
         }
         StackWalkAction retVal = pThis->Next();
@@ -8289,6 +8306,15 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
                     !(pExInfo->m_exception == CLRException::GetPreallocatedStackOverflowException());
 
                 pExInfo->m_stackTraceInfo.AppendElement(canAllocateMemory, NULL, GetRegdisplaySP(pExInfo->m_frameIter.m_crawl.GetRegisterSet()), pMD, &pExInfo->m_frameIter.m_crawl);
+#if defined(DEBUGGING_SUPPORTED)
+                if (NotifyDebuggerOfStub(pThread, pFrame))
+                {
+                    if (!pExInfo->DeliveredFirstChanceNotification())
+                    {
+                        ExceptionNotifications::DeliverFirstChanceNotification();
+                    }
+                }
+#endif // DEBUGGING_SUPPORTED
             }
             pFrame = pFrame->PtrNextFrame();
         }
@@ -8492,6 +8518,15 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
                                              !(pTopExInfo->m_exception == CLRException::GetPreallocatedStackOverflowException());
 
                     pTopExInfo->m_stackTraceInfo.AppendElement(canAllocateMemory, NULL, GetRegdisplaySP(pTopExInfo->m_frameIter.m_crawl.GetRegisterSet()), pMD, &pTopExInfo->m_frameIter.m_crawl);
+#if defined(DEBUGGING_SUPPORTED)
+                    if (NotifyDebuggerOfStub(pThread, pFrame))
+                    {
+                        if (!pTopExInfo->DeliveredFirstChanceNotification())
+                        {
+                            ExceptionNotifications::DeliverFirstChanceNotification();
+                        }
+                    }
+#endif // DEBUGGING_SUPPORTED
                 }
             }
         }

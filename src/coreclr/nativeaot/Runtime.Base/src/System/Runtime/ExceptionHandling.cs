@@ -760,8 +760,9 @@ namespace System.Runtime
             bool isValid = frameIter.Init(exInfo._pExContext, (exInfo._kind & ExKind.InstructionFaultFlag) != 0);
             Debug.Assert(isValid, "RhThrowEx called with an unexpected context");
 
+#if NATIVEAOT
             OnFirstChanceExceptionViaClassLib(exceptionObj);
-
+#endif
             uint startIdx = MaxTryRegionIdx;
             for (; isValid; isValid = frameIter.Next(&startIdx, &unwoundReversePInvoke))
             {

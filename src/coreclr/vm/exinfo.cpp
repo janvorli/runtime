@@ -121,7 +121,7 @@ void ExInfo::Init()
     m_fDeliveredFirstChanceNotification = FALSE;
 
     m_pTopMostHandlerDuringSO = NULL;
-
+    
 #if defined(TARGET_X86) && defined(DEBUGGING_SUPPORTED)
     m_InterceptionContext.Init();
     m_ValidInterceptionContext = FALSE;
@@ -326,7 +326,8 @@ ExInfo::ExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, ExKind exception
     m_propagateExceptionContext(NULL),
 #endif // HOST_UNIX
     m_hThrowable(NULL),
-    m_CurrentClause({})
+    m_CurrentClause({}),
+    m_fDeliveredFirstChanceNotification(FALSE)
 {
     m_pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
     m_stackTraceInfo.Init();
