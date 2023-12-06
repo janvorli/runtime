@@ -7990,7 +7990,7 @@ struct ExtendedEHClauseEnumerator : EH_CLAUSE_ENUMERATOR
     unsigned EHCount;
 };
 
-extern "C" BOOL QCALLTYPE EHEnumInitFromStackFrameIterator(StackFrameIterator *pFrameIter, BYTE **pMethodStartAddress, EH_CLAUSE_ENUMERATOR *pEHEnum, BOOL *pIsExceptionIntercepted)
+extern "C" BOOL QCALLTYPE EHEnumInitFromStackFrameIterator(StackFrameIterator *pFrameIter, BYTE **pMethodStartAddress, EH_CLAUSE_ENUMERATOR *pEHEnum)
 {
     QCALL_CONTRACT;
 
@@ -8004,36 +8004,14 @@ extern "C" BOOL QCALLTYPE EHEnumInitFromStackFrameIterator(StackFrameIterator *p
     MarkInlinedCallFrameAsEHHelperCall(pFrame);
 
     ExInfo *pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-    // check if the exception is intercepted.
-    if (pExInfo->m_ExceptionFlags.DebuggerInterceptInfo())
-    {
-        MethodDesc *pMD = pFrameIter->m_crawl.GetFunction();
-        MethodDesc* pInterceptMD = NULL;
-        StackFrame sfInterceptStackFrame;
-
-        // check if we have reached the interception point yet
-        pExInfo->m_DebuggerExState.GetDebuggerInterceptInfo(&pInterceptMD, NULL,
-                reinterpret_cast<PBYTE *>(&(sfInterceptStackFrame.SP)),
-                NULL, NULL);
-
-        if ((pExInfo->m_passNumber == 1) || ((pInterceptMD == pMD) && (sfInterceptStackFrame == pFrameIter->m_crawl.GetRegisterSet()->SP)))
-        {
-            isExceptionIntercepted = TRUE;
-        }
-    }
-
-    if (!isExceptionIntercepted)
-    {
-        IJitManager* pJitMan = pFrameIter->m_crawl.GetJitManager();
-        const METHODTOKEN& MethToken = pFrameIter->m_crawl.GetMethodToken();
-        *pMethodStartAddress = (BYTE*)pJitMan->JitTokenToStartAddress(MethToken);
-        pExtendedEHEnum->EHCount = pJitMan->InitializeEHEnumeration(MethToken, pEHEnum);
-    }
+    IJitManager* pJitMan = pFrameIter->m_crawl.GetJitManager();
+    const METHODTOKEN& MethToken = pFrameIter->m_crawl.GetMethodToken();
+    *pMethodStartAddress = (BYTE*)pJitMan->JitTokenToStartAddress(MethToken);
+    pExtendedEHEnum->EHCount = pJitMan->InitializeEHEnumeration(MethToken, pEHEnum);
 
     END_QCALL;
 
-    *pIsExceptionIntercepted = isExceptionIntercepted;
-    return (pExtendedEHEnum->EHCount != 0) || isExceptionIntercepted;
+    return pExtendedEHEnum->EHCount != 0;
 }
 
 extern "C" BOOL QCALLTYPE EHEnumNext(EH_CLAUSE_ENUMERATOR* pEHEnum, RhEHClause* pEHClause)
@@ -8112,14 +8090,15 @@ extern uint32_t g_exceptionCount;
 
 MethodDesc * GetUserMethodForILStub(Thread * pThread, UINT_PTR uStubSP, MethodDesc * pILStubMD, Frame ** ppFrameOut);
 
-extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalkCtx, bool instructionFault)
+extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalkCtx, bool instructionFault, bool* pIsExceptionIntercepted)
 {
     QCALL_CONTRACT;
 
     bool result = false;
+    Thread* pThread = GET_THREAD();
+
     BEGIN_QCALL;
 
-    Thread* pThread = GET_THREAD();
     Frame* pFrame = pThread->GetFrame();
     MarkInlinedCallFrameAsEHHelperCall(pFrame);
 
@@ -8306,6 +8285,26 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
         }
         pThis->SetAdjustedControlPC(controlPC);
         pThis->UpdateIsRuntimeWrappedExceptions();
+
+        // check if the exception is intercepted.
+        *pIsExceptionIntercepted = FALSE;
+        ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+        if (pExInfo->m_ExceptionFlags.DebuggerInterceptInfo())
+        {
+            MethodDesc *pMD = pThis->m_crawl.GetFunction();
+            MethodDesc* pInterceptMD = NULL;
+            StackFrame sfInterceptStackFrame;
+
+            // check if we have reached the interception point yet
+            pExInfo->m_DebuggerExState.GetDebuggerInterceptInfo(&pInterceptMD, NULL,
+                    reinterpret_cast<PBYTE *>(&(sfInterceptStackFrame.SP)),
+                    NULL, NULL);
+
+            if ((pExInfo->m_passNumber == 1) || ((pInterceptMD == pMD) && (sfInterceptStackFrame == pThis->m_crawl.GetRegisterSet()->SP)))
+            {
+                *pIsExceptionIntercepted = TRUE;
+            }
+        }
     }
 
     return result;
@@ -8313,15 +8312,15 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
 
 extern "C" size_t CallDescrWorkerInternalReturnAddressOffset;
 
-extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideClauseIdx, bool* fUnwoundReversePInvoke)
+extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideClauseIdx, bool* fUnwoundReversePInvoke, bool* pIsExceptionIntercepted)
 {
     QCALL_CONTRACT;
 
     StackWalkAction retVal = SWA_FAILED;
+    Thread* pThread = GET_THREAD();
 
     BEGIN_QCALL;
 
-    Thread* pThread = GET_THREAD();
     Frame* pFrame = pThread->GetFrame();
     MarkInlinedCallFrameAsEHHelperCall(pFrame);
 
@@ -8550,6 +8549,27 @@ Exit:;
         }
         pThis->SetAdjustedControlPC(controlPC);
         pThis->UpdateIsRuntimeWrappedExceptions();
+
+        *pIsExceptionIntercepted = FALSE;
+
+        ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+        // check if the exception is intercepted.
+        if (pExInfo->m_ExceptionFlags.DebuggerInterceptInfo())
+        {
+            MethodDesc *pMD = pThis->m_crawl.GetFunction();
+            MethodDesc* pInterceptMD = NULL;
+            StackFrame sfInterceptStackFrame;
+
+            // check if we have reached the interception point yet
+            pExInfo->m_DebuggerExState.GetDebuggerInterceptInfo(&pInterceptMD, NULL,
+                    reinterpret_cast<PBYTE *>(&(sfInterceptStackFrame.SP)),
+                    NULL, NULL);
+
+            if ((pExInfo->m_passNumber == 1) || ((pInterceptMD == pMD) && (sfInterceptStackFrame == pThis->m_crawl.GetRegisterSet()->SP)))
+            {
+                *pIsExceptionIntercepted = TRUE;
+            }
+        }
 
         return true;
     }
