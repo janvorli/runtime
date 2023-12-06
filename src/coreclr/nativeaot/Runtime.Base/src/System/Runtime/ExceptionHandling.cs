@@ -678,8 +678,8 @@ namespace System.Runtime
                     break;
                 }
 
-                int res2 = InvokeSecondPass(ref exInfo, startIdx);
-                if (res2 == 2)
+                InvokeSecondPass(ref exInfo, startIdx, out bool isExceptionIntercepted);
+                if (isExceptionIntercepted)
                 {
                     //pCatchHandler = null;
                     Debug.Assert(false);
@@ -749,6 +749,7 @@ namespace System.Runtime
 
             bool isFirstRethrowFrame = (exInfo._kind & ExKind.RethrowFlag) != 0;
             bool isFirstFrame = true;
+            bool isExceptionIntercepted = false;
 
             byte* prevControlPC = null;
             byte* prevOriginalPC = null;
@@ -780,7 +781,7 @@ namespace System.Runtime
 
                 byte* pHandler;
                 if (FindFirstPassHandler(exceptionObj, startIdx, ref frameIter,
-                                         out catchingTryRegionIdx, out pHandler))
+                                         out catchingTryRegionIdx, out pHandler, out isExceptionIntercepted))
                 {
                     handlingFrameSP = frameIter.SP;
                     pCatchHandler = pHandler;
@@ -817,7 +818,7 @@ namespace System.Runtime
 #endif // !NATIVEAOT
             }
 
-            if (pCatchHandler == null && pReversePInvokePropagationCallback == IntPtr.Zero
+            if (pCatchHandler == null && pReversePInvokePropagationCallback == IntPtr.Zero && !isExceptionIntercepted
 #if !NATIVEAOT
                 && !unwoundReversePInvoke
 #endif
@@ -834,12 +835,8 @@ namespace System.Runtime
 
             // We FailFast above if the exception goes unhandled.  Therefore, we cannot run the second pass
             // without a catch handler or propagation callback.
-            Debug.Assert(pCatchHandler != null || pReversePInvokePropagationCallback != IntPtr.Zero || unwoundReversePInvoke, "We should have a handler if we're starting the second pass");
-
-            if (pCatchHandler == (byte*)2)
-            {
-                pCatchHandler = null;
-            }
+            Debug.Assert(pCatchHandler != null || pReversePInvokePropagationCallback != IntPtr.Zero || unwoundReversePInvoke || isExceptionIntercepted, "We should have a handler if we're starting the second pass");
+            Debug.Assert(!isExceptionIntercepted || (pCatchHandler == null), "No catch handler should be returned for intercepted exceptions in the first pass");
 
             // ------------------------------------------------
             //
@@ -859,6 +856,7 @@ namespace System.Runtime
             exInfo._idxCurClause = catchingTryRegionIdx;
             startIdx = MaxTryRegionIdx;
             unwoundReversePInvoke = false;
+            isExceptionIntercepted = false;
             isValid = frameIter.Init(exInfo._pExContext, (exInfo._kind & ExKind.InstructionFaultFlag) != 0);
             for (; isValid && ((byte*)frameIter.SP <= (byte*)handlingFrameSP); isValid = frameIter.Next(&startIdx, &unwoundReversePInvoke))
             {
@@ -884,16 +882,16 @@ namespace System.Runtime
                     )
                 {
                     // invoke only a partial second-pass here...
-                    int res = InvokeSecondPass(ref exInfo, startIdx, catchingTryRegionIdx);
-                    if (res == 2)
+                    InvokeSecondPass(ref exInfo, startIdx, catchingTryRegionIdx, out isExceptionIntercepted);
+                    if (isExceptionIntercepted)
                     {
                         pCatchHandler = null;
                     }
                     break;
                 }
 
-                int res2 = InvokeSecondPass(ref exInfo, startIdx);
-                if (res2 == 2)
+                InvokeSecondPass(ref exInfo, startIdx, out isExceptionIntercepted);
+                if (isExceptionIntercepted)
                 {
                     pCatchHandler = null;
                     break;
@@ -971,21 +969,19 @@ namespace System.Runtime
         }
 
         private static bool FindFirstPassHandler(object exception, uint idxStart,
-            ref StackFrameIterator frameIter, out uint tryRegionIdx, out byte* pHandler)
+            ref StackFrameIterator frameIter, out uint tryRegionIdx, out byte* pHandler, out bool isExceptionIntercepted)
         {
             pHandler = null;
             tryRegionIdx = MaxTryRegionIdx;
 
             EHEnum ehEnum;
             byte* pbMethodStartAddress;
-            int ehEnumState = InternalCalls.RhpEHEnumInitFromStackFrameIterator(ref frameIter, &pbMethodStartAddress, &ehEnum);
-            if (ehEnumState == 0)
+            if (!InternalCalls.RhpEHEnumInitFromStackFrameIterator(ref frameIter, &pbMethodStartAddress, &ehEnum, out isExceptionIntercepted))
             {
                 return false;
             }
-            else if (ehEnumState == 2)
+            else if (isExceptionIntercepted)
             {
-                pHandler = (byte*)2;
                 return true;
             }
 
@@ -1001,11 +997,6 @@ namespace System.Runtime
             {
                 RhEHClauseKind clauseKind = ehClause._clauseKind;
 
-                // if (clauseKind == RhEHClauseKind.RH_EH_CLAUSE_UNUSED)
-                // {
-                //     // Debugger interception
-                //     return true;
-                // }
                 //
                 // Skip to the starting try region.  This is used by collided unwinds and rethrows to pickup where
                 // the previous dispatch left off.
@@ -1145,18 +1136,17 @@ namespace System.Runtime
 #endif
         }
 
-        private static int InvokeSecondPass(ref ExInfo exInfo, uint idxStart)
+        private static void InvokeSecondPass(ref ExInfo exInfo, uint idxStart, out bool isExceptionIntercepted)
         {
-            return InvokeSecondPass(ref exInfo, idxStart, MaxTryRegionIdx);
+            InvokeSecondPass(ref exInfo, idxStart, MaxTryRegionIdx, out isExceptionIntercepted);
         }
-        private static int InvokeSecondPass(ref ExInfo exInfo, uint idxStart, uint idxLimit)
+        private static void InvokeSecondPass(ref ExInfo exInfo, uint idxStart, uint idxLimit, out bool isExceptionIntercepted)
         {
             EHEnum ehEnum;
             byte* pbMethodStartAddress;
-            int ehEnumState = InternalCalls.RhpEHEnumInitFromStackFrameIterator(ref exInfo._frameIter, &pbMethodStartAddress, &ehEnum);
-            if (ehEnumState != 1)
+            if (!InternalCalls.RhpEHEnumInitFromStackFrameIterator(ref exInfo._frameIter, &pbMethodStartAddress, &ehEnum, out isExceptionIntercepted) || isExceptionIntercepted)
             {
-                return ehEnumState;
+                return;
             }
 
             byte* pbControlPC = exInfo._frameIter.ControlPC;
@@ -1230,8 +1220,6 @@ namespace System.Runtime
 #endif // NATIVEAOT
                 exInfo._idxCurClause = MaxTryRegionIdx;
             }
-
-            return 1;
         }
 
 #if NATIVEAOT

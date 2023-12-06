@@ -7990,11 +7990,11 @@ struct ExtendedEHClauseEnumerator : EH_CLAUSE_ENUMERATOR
     unsigned EHCount;
 };
 
-extern "C" int32_t QCALLTYPE EHEnumInitFromStackFrameIterator(StackFrameIterator *pFrameIter, BYTE** pMethodStartAddress, EH_CLAUSE_ENUMERATOR * pEHEnum)
+extern "C" BOOL QCALLTYPE EHEnumInitFromStackFrameIterator(StackFrameIterator *pFrameIter, BYTE **pMethodStartAddress, EH_CLAUSE_ENUMERATOR *pEHEnum, BOOL *pIsExceptionIntercepted)
 {
     QCALL_CONTRACT;
 
-    int32_t result = 0;
+    BOOL isExceptionIntercepted = FALSE;
     ExtendedEHClauseEnumerator *pExtendedEHEnum = (ExtendedEHClauseEnumerator*)pEHEnum;
     pExtendedEHEnum->pFrameIter = pFrameIter;
 
@@ -8018,22 +8018,22 @@ extern "C" int32_t QCALLTYPE EHEnumInitFromStackFrameIterator(StackFrameIterator
 
         if ((pExInfo->m_passNumber == 1) || ((pInterceptMD == pMD) && (sfInterceptStackFrame == pFrameIter->m_crawl.GetRegisterSet()->SP)))
         {
-            result = 2;
+            isExceptionIntercepted = TRUE;
         }
     }
 
-    if (result == 0)
+    if (!isExceptionIntercepted)
     {
         IJitManager* pJitMan = pFrameIter->m_crawl.GetJitManager();
         const METHODTOKEN& MethToken = pFrameIter->m_crawl.GetMethodToken();
         *pMethodStartAddress = (BYTE*)pJitMan->JitTokenToStartAddress(MethToken);
         pExtendedEHEnum->EHCount = pJitMan->InitializeEHEnumeration(MethToken, pEHEnum);
-        result = (pExtendedEHEnum->EHCount != 0) ? 1 : 0;
     }
 
     END_QCALL;
 
-    return result;
+    *pIsExceptionIntercepted = isExceptionIntercepted;
+    return (pExtendedEHEnum->EHCount != 0) || isExceptionIntercepted;
 }
 
 extern "C" BOOL QCALLTYPE EHEnumNext(EH_CLAUSE_ENUMERATOR* pEHEnum, RhEHClause* pEHClause)
@@ -8049,32 +8049,7 @@ extern "C" BOOL QCALLTYPE EHEnumNext(EH_CLAUSE_ENUMERATOR* pEHEnum, RhEHClause* 
     ExtendedEHClauseEnumerator *pExtendedEHEnum = (ExtendedEHClauseEnumerator*)pEHEnum;
     StackFrameIterator *pFrameIter = pExtendedEHEnum->pFrameIter;
 
-    // ExInfo *pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-    // check if the exception is intercepted.
-    // if (pExInfo->m_ExceptionFlags.DebuggerInterceptInfo())
-    // {
-    //     MethodDesc *pMD = pFrameIter->m_crawl.GetFunction();
-    //     MethodDesc* pInterceptMD = NULL;
-    //     StackFrame sfInterceptStackFrame;
-
-    //     // check if we have reached the interception point yet
-    //     pExInfo->m_DebuggerExState.GetDebuggerInterceptInfo(&pInterceptMD, NULL,
-    //             reinterpret_cast<PBYTE *>(&(sfInterceptStackFrame.SP)),
-    //             NULL, NULL);
-
-    //     if ((pInterceptMD == pMD) && (sfInterceptStackFrame == pFrameIter->m_crawl.GetRegisterSet()->SP))
-    //     {
-    //         pEHClause->_tryStartOffset = 0;
-    //         pEHClause->_tryEndOffset = 0;
-    //         pEHClause->_handlerAddress = 0;
-    //         pEHClause->_isSameTry = 0;
-    //         pEHClause->_clauseKind = RH_EH_CLAUSE_UNUSED;
-    //         pEHClause->_pTargetType = pMD->GetMethodTable();
-    //         result = TRUE;
-    //     }
-    // }
-
-    if (!result && (pEHEnum->iCurrentPos < pExtendedEHEnum->EHCount))
+    if (pEHEnum->iCurrentPos < pExtendedEHEnum->EHCount)
     {
         IJitManager* pJitMan   = pFrameIter->m_crawl.GetJitManager();
         const METHODTOKEN& MethToken = pFrameIter->m_crawl.GetMethodToken();

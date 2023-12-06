@@ -177,7 +177,7 @@ namespace System.Runtime
 
         [RuntimeImport(Redhawk.BaseName, "RhpEHEnumInitFromStackFrameIterator")]
         [MethodImpl(MethodImplOptions.InternalCall)]
-        internal static extern unsafe int RhpEHEnumInitFromStackFrameIterator(ref StackFrameIterator pFrameIter, byte** pMethodStartAddress, void* pEHEnum);
+        internal static extern unsafe bool RhpEHEnumInitFromStackFrameIterator(ref StackFrameIterator pFrameIter, byte** pMethodStartAddress, void* pEHEnum, out bool isExceptionIntercepted);
 
         [RuntimeImport(Redhawk.BaseName, "RhpEHEnumNext")]
         [MethodImpl(MethodImplOptions.InternalCall)]

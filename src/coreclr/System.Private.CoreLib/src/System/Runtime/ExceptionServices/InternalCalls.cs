@@ -41,8 +41,8 @@ namespace System.Runtime.ExceptionServices
 #pragma warning restore CS8500
 
         [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "EHEnumInitFromStackFrameIterator")]
-        //[return: MarshalAs(UnmanagedType.Bool)]
-        internal static unsafe partial int RhpEHEnumInitFromStackFrameIterator(ref StackFrameIterator pFrameIter, byte** pMethodStartAddress, void* pEHEnum);
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static unsafe partial bool RhpEHEnumInitFromStackFrameIterator(ref StackFrameIterator pFrameIter, byte** pMethodStartAddress, void* pEHEnum, [MarshalAs(UnmanagedType.Bool)] out bool isExceptionIntercepted);
 
         [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "EHEnumNext")]
         [return: MarshalAs(UnmanagedType.Bool)]

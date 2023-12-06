@@ -27,13 +27,14 @@
 #include "MethodTable.h"
 #include "MethodTable.inl"
 
-COOP_PINVOKE_HELPER(int32_t, RhpEHEnumInitFromStackFrameIterator, (
-    StackFrameIterator* pFrameIter, void ** pMethodStartAddressOut, EHEnum* pEHEnum))
+COOP_PINVOKE_HELPER(FC_BOOL_RET, RhpEHEnumInitFromStackFrameIterator, (
+    StackFrameIterator* pFrameIter, void ** pMethodStartAddressOut, EHEnum* pEHEnum, BOOL* isExceptionIntercepted))
 {
     ICodeManager * pCodeManager = pFrameIter->GetCodeManager();
     pEHEnum->m_pCodeManager = pCodeManager;
 
-    return pCodeManager->EHEnumInit(pFrameIter->GetMethodInfo(), pMethodStartAddressOut, &pEHEnum->m_state) ? 1 : 0;
+    *isExceptionIntercepted = FALSE;
+    return pCodeManager->EHEnumInit(pFrameIter->GetMethodInfo(), pMethodStartAddressOut, &pEHEnum->m_state);
 }
 
 COOP_PINVOKE_HELPER(FC_BOOL_RET, RhpEHEnumNext, (EHEnum* pEHEnum, EHClause* pEHClause))
