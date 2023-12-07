@@ -379,14 +379,13 @@ IDacDbiInterface::FrameType DacDbiInterfaceImpl::GetStackWalkCurrentFrameInfo(St
                     // EH.DispatchEx, EH.RhThrowEx, EH.RhThrowHwEx, ExceptionServices.InternalCalls.SfiInit, ExceptionServices.InternalCalls.SfiNext
                     if (pMD->GetMethodTable() == g_pEHClass || pMD->GetMethodTable() == g_pExceptionServicesInternalCallsClass)
                     {
-                        // TODO: introduce a new type for clarity, but handle it the same way as the native stack frame at the caller
-                        ftResult = kNativeStackFrame;
+                        ftResult = kManagedExceptionHandlingCodeFrame;
                     }
                     else
                     {
                         ftResult = kManagedStackFrame;
-                        fInitFrameData = TRUE;
                     }
+                    fInitFrameData = TRUE;
                 }
                 break;
 

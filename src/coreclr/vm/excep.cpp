@@ -10979,7 +10979,7 @@ void ExceptionNotifications::DeliverFirstChanceNotification()
 
         if (g_isNewExceptionHandlingEnabled)
         {
-            // Mark the exception tracker as having delivered the first chance notification
+            // Mark the exception info as having delivered the first chance notification
             pCurTES->GetCurrentExInfo()->SetFirstChanceNotificationStatus(TRUE);
         }
         else

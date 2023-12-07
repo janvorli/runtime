@@ -121,7 +121,7 @@ void ExInfo::Init()
     m_fDeliveredFirstChanceNotification = FALSE;
 
     m_pTopMostHandlerDuringSO = NULL;
-    
+
 #if defined(TARGET_X86) && defined(DEBUGGING_SUPPORTED)
     m_InterceptionContext.Init();
     m_ValidInterceptionContext = FALSE;

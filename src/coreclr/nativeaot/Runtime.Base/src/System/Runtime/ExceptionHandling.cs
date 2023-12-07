@@ -522,7 +522,7 @@ namespace System.Runtime
             internal PAL_LIMITED_CONTEXT* _pExContext;
 
             [FieldOffset(AsmOffsets.OFFSETOF__ExInfo__m_exception)]
-            internal object _exception;  // actual object reference, specially reported by GcScanRootsWorker
+            private object _exception;  // actual object reference, specially reported by GcScanRootsWorker
 
             [FieldOffset(AsmOffsets.OFFSETOF__ExInfo__m_kind)]
             internal ExKind _kind;
@@ -695,11 +695,12 @@ namespace System.Runtime
             // ------------------------------------------------
             if (unwoundReversePInvoke)
             {
+                object exceptionObj = exInfo.ThrownException;
 #pragma warning disable CS8500
                 fixed (EH.ExInfo* pExInfo = &exInfo)
                 {
                     InternalCalls.RhpCallCatchFunclet(
-                        ObjectHandleOnStack.Create(ref exInfo._exception), null, exInfo._frameIter.RegisterSet, pExInfo);
+                        ObjectHandleOnStack.Create(ref exceptionObj), null, exInfo._frameIter.RegisterSet, pExInfo);
                 }
 #pragma warning restore CS8500
             }
@@ -980,9 +981,7 @@ namespace System.Runtime
             EHEnum ehEnum;
             byte* pbMethodStartAddress;
             if (!InternalCalls.RhpEHEnumInitFromStackFrameIterator(ref frameIter, &pbMethodStartAddress, &ehEnum))
-            {
                 return false;
-            }
 
             byte* pbControlPC = frameIter.ControlPC;
 
@@ -994,8 +993,6 @@ namespace System.Runtime
             RhEHClause ehClause;
             for (uint curIdx = 0; InternalCalls.RhpEHEnumNext(&ehEnum, &ehClause); curIdx++)
             {
-                RhEHClauseKind clauseKind = ehClause._clauseKind;
-
                 //
                 // Skip to the starting try region.  This is used by collided unwinds and rethrows to pickup where
                 // the previous dispatch left off.
@@ -1021,6 +1018,8 @@ namespace System.Runtime
                     // to separate runs of different try blocks with same native code offsets.
                     idxStart = MaxTryRegionIdx;
                 }
+
+                RhEHClauseKind clauseKind = ehClause._clauseKind;
 
                 if (((clauseKind != RhEHClauseKind.RH_EH_CLAUSE_TYPED) &&
                      (clauseKind != RhEHClauseKind.RH_EH_CLAUSE_FILTER))
@@ -1144,9 +1143,7 @@ namespace System.Runtime
             EHEnum ehEnum;
             byte* pbMethodStartAddress;
             if (!InternalCalls.RhpEHEnumInitFromStackFrameIterator(ref exInfo._frameIter, &pbMethodStartAddress, &ehEnum))
-            {
                 return;
-            }
 
             byte* pbControlPC = exInfo._frameIter.ControlPC;
 

@@ -1628,9 +1628,9 @@ StackWalkAction StackFrameIterator::Filter(void)
         fRecheckCurrentFrame = false;
         fSkipFuncletCallback = true;
 
-        SIZE_T spToCheck = (m_frameState == SFITER_FRAME_FUNCTION) ? (SIZE_T)dac_cast<TADDR>(m_crawl.pFrame) : m_crawl.GetRegisterSet()->SP;
+        SIZE_T frameSP = (m_frameState == SFITER_FRAME_FUNCTION) ? (SIZE_T)dac_cast<TADDR>(m_crawl.pFrame) : m_crawl.GetRegisterSet()->SP;
 
-        if ((m_flags & GC_FUNCLET_REFERENCE_REPORTING) && (pExInfo != NULL) && (spToCheck > (SIZE_T)pExInfo))
+        if ((m_flags & GC_FUNCLET_REFERENCE_REPORTING) && (pExInfo != NULL) && (frameSP > (SIZE_T)pExInfo))
         {
             if (!m_movedPastFirstExInfo)
             {

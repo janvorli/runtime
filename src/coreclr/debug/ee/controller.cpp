@@ -6143,9 +6143,13 @@ bool DebuggerStepper::IsInterestingFrame(FrameInfo * pFrame)
     LIMITED_METHOD_CONTRACT;
 
     // Ignore managed exception handling frames
-    if (pFrame->md != NULL && pFrame->md->GetMethodTable() == g_pEHClass)
+    if (pFrame->md != NULL)
     {
-        return false;
+        MethodTable *pMT = pFrame->md->GetMethodTable();
+        if ((pMT == g_pEHClass) || (pMT == g_pExceptionServicesInternalCallsClass))
+        {
+            return false;
+        }
     }
 
     return true;
