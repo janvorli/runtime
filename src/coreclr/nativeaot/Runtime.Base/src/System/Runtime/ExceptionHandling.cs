@@ -670,19 +670,12 @@ namespace System.Runtime
 // #endif
                     )
                 {
-                    // // invoke only a partial second-pass here...
-                    // int res = InvokeSecondPass(ref exInfo, startIdx, catchingTryRegionIdx);
-                    // if (res == 2)
-                    // {
-                    //     pCatchHandler = null;
-                    // }
                     break;
                 }
 
                 InvokeSecondPass(ref exInfo, startIdx);
                 if (isExceptionIntercepted)
                 {
-                    //pCatchHandler = null;
                     Debug.Assert(false);
                     break;
                 }
@@ -708,7 +701,7 @@ namespace System.Runtime
             {
                 InternalCalls.ResumeAtInterceptionLocation(exInfo._frameIter.RegisterSet);
             }
-            // currently, RhpCallCatchFunclet will resume after the catch
+
             Debug.Assert(false, "unreachable");
             FallbackFailFast(RhFailFastReason.InternalError, null);
         }

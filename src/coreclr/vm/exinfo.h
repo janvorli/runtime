@@ -194,9 +194,18 @@ enum class ExKind : uint8_t
     InstructionFaultFlag = 0x10
 };
 
+struct PAL_SEHException;
+
 struct ExInfo
 {
+    struct DAC_EXCEPTION_POINTERS
+    {
+        PTR_EXCEPTION_RECORD    ExceptionRecord;
+        PTR_CONTEXT             ContextRecord;
+    };
+
     ExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, ExKind exceptionKind);
+    void ReleaseResources();
 
     void MakeCallbacksRelatedToHandler(
         bool fBeforeCallingHandler,
@@ -238,8 +247,10 @@ struct ExInfo
     StackFrame          m_sfCallerOfActualHandlerFrame;
     // The exception handling clause for the catch handler that was identified during pass 1
     EE_ILEXCEPTION_CLAUSE m_ClauseForCatch;
+    DAC_EXCEPTION_POINTERS m_ptrs;
 
 #ifdef TARGET_UNIX
+    BOOL m_fOwnsExceptionPointers;
     // Exception propagation callback and context for ObjectiveC exception propagation support
     void(*m_propagateExceptionCallback)(void* context);
     void *m_propagateExceptionContext;
@@ -254,7 +265,7 @@ struct ExInfo
     EHClauseInfo   m_EHClauseInfo;
     ExceptionFlags m_ExceptionFlags;
     DWORD          m_ExceptionCode;
-    MethodDesc    *m_pMDToReport;
+    MethodDesc    *m_pMDToReportFunctionLeave;
 
     BOOL           m_fDeliveredFirstChanceNotification;
 
@@ -282,6 +293,9 @@ struct ExInfo
     }
 #endif // !TARGET_UNIX
 
+#if defined(TARGET_UNIX) //&& !defined(CROSS_COMPILE)
+    void TakeExceptionPointersOwnership(PAL_SEHException* ex);
+#endif // TARGET_UNIX // && !CROSS_COMPILE
 };
 
 #endif // !FEATURE_EH_FUNCLETS

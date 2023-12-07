@@ -5474,6 +5474,8 @@ BOOL HandleHardwareException(PAL_SEHException* ex)
             CONTEXT ctx = {};
             ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
             ExInfo exInfo(pThread, &ctx /*ex->GetContextRecord()*/, &rd, ExKind::HardwareFault);
+            exInfo.m_ptrs.ExceptionRecord = ex->GetExceptionRecord();
+            exInfo.m_ptrs.ContextRecord = ex->GetContextRecord();
 
             DWORD exceptionCode = ex->GetExceptionRecord()->ExceptionCode;
             if (exceptionCode == STATUS_ACCESS_VIOLATION)
@@ -5482,6 +5484,11 @@ BOOL HandleHardwareException(PAL_SEHException* ex)
                 {
                     exceptionCode = 0; //STATUS_REDHAWK_NULL_REFERENCE;
                 }
+            }
+
+            if (!ex->RecordsOnStack)
+            {
+                exInfo.TakeExceptionPointersOwnership(ex);
             }
 
             GCPROTECT_BEGIN(exInfo.m_exception);
@@ -7691,15 +7698,7 @@ extern "C" void * QCALLTYPE CallCatchFunclet(QCall::ObjectHandleOnStack exceptio
     // Pop ExInfos
     while (pExInfo && pExInfo < (void*)targetSp)
     {
-        if (pExInfo->m_hThrowable)
-        {
-            if (!CLRException::IsPreallocatedExceptionHandle(pExInfo->m_hThrowable))
-            {
-                DestroyHandle(pExInfo->m_hThrowable);
-            }
-            pExInfo->m_hThrowable = NULL;
-        }
-        pExInfo->m_stackTraceInfo.FreeStackTrace();
+        pExInfo->ReleaseResources();
         pExInfo = pExInfo->m_pPrevExInfo;
     }
 
@@ -7840,15 +7839,7 @@ extern "C" void QCALLTYPE ResumeAtInterceptionLocation(REGDISPLAY* pvRegDisplay)
     // Pop ExInfos
     while (pExInfo && pExInfo < (void*)targetSp)
     {
-        if (pExInfo->m_hThrowable)
-        {
-            if (!CLRException::IsPreallocatedExceptionHandle(pExInfo->m_hThrowable))
-            {
-                DestroyHandle(pExInfo->m_hThrowable);
-            }
-            pExInfo->m_hThrowable = NULL;
-        }
-        pExInfo->m_stackTraceInfo.FreeStackTrace();
+        pExInfo->ReleaseResources();
         pExInfo = pExInfo->m_pPrevExInfo;
     }
 
@@ -8157,12 +8148,12 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
             }
             else
             {
-                _ASSERTE(pExInfo->m_pMDToReport != NULL);
+                _ASSERTE(pExInfo->m_pMDToReportFunctionLeave != NULL);
                 EEToProfilerExceptionInterfaceWrapper::ExceptionSearchCatcherFound(pMD);
-                if (pExInfo->m_pMDToReport != NULL)
+                if (pExInfo->m_pMDToReportFunctionLeave != NULL)
                 {
-                    EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionLeave(pExInfo->m_pMDToReport);
-                    pExInfo->m_pMDToReport = NULL;
+                    EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionLeave(pExInfo->m_pMDToReportFunctionLeave);
+                    pExInfo->m_pMDToReportFunctionLeave = NULL;
                 }
 
                 // We don't need to do anything special for continuable exceptions after calling
@@ -8217,7 +8208,7 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
     if (pExInfo->m_passNumber == 1)
     {
         EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionEnter(pMD);
-        pExInfo->m_pMDToReport = pMD;
+        pExInfo->m_pMDToReportFunctionLeave = pMD;
 
         // Notify the debugger that we are on the first pass for a managed exception.
         // Note that this callback is made for every managed frame.
@@ -8226,7 +8217,7 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
     else
     {
         EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionEnter(pMD);
-        pExInfo->m_pMDToReport = pMD;        
+        pExInfo->m_pMDToReportFunctionLeave = pMD;        
     }
 
     pExInfo->m_sfLowBound = GetRegdisplaySP(pThis->m_crawl.GetRegisterSet());
@@ -8504,25 +8495,25 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
         pMD = pThis->m_crawl.GetFunction();
         if (pTopExInfo->m_passNumber == 1)
         {
-            if (pTopExInfo->m_pMDToReport != NULL)
+            if (pTopExInfo->m_pMDToReportFunctionLeave != NULL)
             {
-                EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionLeave(pTopExInfo->m_pMDToReport);
-                //pTopExInfo->m_pMDToReport = NULL;
+                EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionLeave(pTopExInfo->m_pMDToReportFunctionLeave);
+                //pTopExInfo->m_pMDToReportFunctionLeave = NULL;
             }
             EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionEnter(pMD);
-            pTopExInfo->m_pMDToReport = pMD;
+            pTopExInfo->m_pMDToReportFunctionLeave = pMD;
             // Notify the debugger that we are on the first pass for a managed exception.
             // Note that this callback is made for every managed frame.
             EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedException(pThread, GetControlPC(pThis->m_crawl.GetRegisterSet()), GetRegdisplaySP(pThis->m_crawl.GetRegisterSet()));
         }
         else
         {
-            if (pTopExInfo->m_pMDToReport != NULL)
+            if (pTopExInfo->m_pMDToReportFunctionLeave != NULL)
             {
-                EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionLeave(pTopExInfo->m_pMDToReport);
+                EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionLeave(pTopExInfo->m_pMDToReportFunctionLeave);
             }
             EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionEnter(pMD);
-            pTopExInfo->m_pMDToReport = pMD;
+            pTopExInfo->m_pMDToReportFunctionLeave = pMD;
         }
     }
 

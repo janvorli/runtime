@@ -114,7 +114,7 @@ void ExInfo::Init()
     DestroyExceptionHandle();
     m_hThrowable = NULL;
     m_ExceptionCode = 0;
-    m_pMDToReport = NULL;
+    m_pMDToReportFunctionLeave = NULL;
 
     // By default, mark the tracker as not having delivered the first
     // chance exception notification
@@ -321,7 +321,9 @@ ExInfo::ExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, ExKind exception
     m_pRD(pRD),
     m_pFrame(pThread->GetFrame()),
     m_ClauseForCatch({}),
+    m_ptrs({}),
 #ifdef HOST_UNIX
+    m_fOwnsExceptionPointers(FALSE),
     m_propagateExceptionCallback(NULL),
     m_propagateExceptionContext(NULL),
 #endif // HOST_UNIX
@@ -334,6 +336,40 @@ ExInfo::ExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, ExKind exception
     m_stackTraceInfo.AllocateStackTrace();
     m_sfLowBound.SetMaxVal();
     pThread->GetExceptionState()->SetCurrentExInfo(this);
+}
+
+#if defined(TARGET_UNIX) //&& !defined(CROSS_COMPILE)
+void ExInfo::TakeExceptionPointersOwnership(PAL_SEHException* ex)
+{
+    _ASSERTE(ex->GetExceptionRecord() == m_ptrs.ExceptionRecord);
+    _ASSERTE(ex->GetContextRecord() == m_ptrs.ContextRecord);
+    ex->Clear();
+    m_fOwnsExceptionPointers = TRUE;
+}
+#endif // TARGET_UNIX // && !CROSS_COMPILE
+
+void ExInfo::ReleaseResources()
+{
+    if (m_hThrowable)
+    {
+        if (!CLRException::IsPreallocatedExceptionHandle(m_hThrowable))
+        {
+            DestroyHandle(m_hThrowable);
+        }
+        m_hThrowable = NULL;
+    }
+    m_stackTraceInfo.FreeStackTrace();
+
+#ifndef TARGET_UNIX
+    // Clear any held Watson Bucketing details
+    GetWatsonBucketTracker()->ClearWatsonBucketDetails();
+#else // !TARGET_UNIX
+    if (m_fOwnsExceptionPointers)
+    {
+        PAL_FreeExceptionRecords(m_ptrs.ExceptionRecord, m_ptrs.ContextRecord);
+        m_fOwnsExceptionPointers = FALSE;
+    }
+#endif // !TARGET_UNIX
 }
 
 #endif // DACCESS_COMPILE
