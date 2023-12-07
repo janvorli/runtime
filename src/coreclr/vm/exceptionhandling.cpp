@@ -4244,7 +4244,6 @@ void ExceptionTracker::MakeCallbacksRelatedToHandler(
 }
 
 #ifdef DEBUGGER_EXCEPTION_INTERCEPTION_SUPPORTED
-
 //---------------------------------------------------------------------------------------
 //
 // This function is called by DefaultCatchHandler() to intercept an exception and start an unwind.
@@ -4279,8 +4278,6 @@ EXCEPTION_DISPOSITION ClrDebuggerDoUnwindAndIntercept(X86_FIRST_ARG(EXCEPTION_RE
 
     if (g_isNewExceptionHandlingEnabled)
     {
-        // TODO: call into the managed EH code?
-        //_ASSERTE_MSG(FALSE, "ClrDebuggerDoUnwindAndIntercept not implemented yet");
         GCX_COOP();
 
         PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__UNWIND_AND_INTERCEPT);
@@ -4288,11 +4285,11 @@ EXCEPTION_DISPOSITION ClrDebuggerDoUnwindAndIntercept(X86_FIRST_ARG(EXCEPTION_RE
         args[ARGNUM_0] = PTR_TO_ARGHOLDER(pExState->GetCurrentExInfo());
 
         pThread->IncPreventAbort();
+
         //Ex.RhUnwindAndIntercept(throwable, &exInfo)
         CRITICAL_CALLSITE;
         CALL_MANAGED_METHOD_NORET(args)
 
-        //GCPROTECT_END();        
         UNREACHABLE();
     }
     else
@@ -5591,6 +5588,7 @@ VOID DECLSPEC_NORETURN DispatchManagedException(OBJECTREF throwable, bool preser
     args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
 
     pThread->IncPreventAbort();
+
     //Ex.RhThrowEx(throwable, &exInfo)
     CRITICAL_CALLSITE;
     CALL_MANAGED_METHOD_NORET(args)
@@ -7664,7 +7662,7 @@ extern "C" void * QCALLTYPE CallCatchFunclet(QCall::ObjectHandleOnStack exceptio
 #endif // HOST_UNIX
 
 #ifdef DEBUGGING_SUPPORTED
-        // This must be done before we pop the trackers.
+    // This must be done before we pop the trackers.
     BOOL fIntercepted = pThread->GetExceptionState()->GetFlags()->DebuggerInterceptInfo();
     if (fIntercepted)
     {
@@ -7707,14 +7705,13 @@ extern "C" void * QCALLTYPE CallCatchFunclet(QCall::ObjectHandleOnStack exceptio
 
     pThread->GetExceptionState()->SetCurrentExInfo(pExInfo);
 
-//    pThread->SafeSetLastThrownObject(NULL);
-            if (!pThread->GetExceptionState()->IsExceptionInProgress())
-            {
-                pThread->SafeSetLastThrownObject(NULL);
-            }
+    if (!pThread->GetExceptionState()->IsExceptionInProgress())
+    {
+        pThread->SafeSetLastThrownObject(NULL);
+    }
 
-            // Sync managed exception state, for the managed thread, based upon any active exception tracker
-            pThread->SyncManagedExceptionState(false);
+    // Sync managed exception state, for the managed thread, based upon any active exception tracker
+    pThread->SyncManagedExceptionState(false);
 
     ExceptionTracker::UpdateNonvolatileRegisters(pvRegDisplay->pCurrentContext, pvRegDisplay, FALSE);
     if (pHandlerIP != NULL)
@@ -7765,12 +7762,6 @@ extern "C" void * QCALLTYPE CallCatchFunclet(QCall::ObjectHandleOnStack exceptio
             ClrRestoreNonvolatileContext(pvRegDisplay->pCurrentContext);
         }
 #endif // HOST_UNIX
-        // if ((pThread->GetThrowable() == NULL) &&
-        //     (pThread->IsAbortInitiated()))
-        // {
-        //     // Oops, we just swallowed an abort, must restart the process
-        //     pThread->ResetAbortInitiated();
-        // }
 
         // Throw exception from the caller context
 #if defined(HOST_AMD64)
@@ -7994,7 +7985,6 @@ extern "C" BOOL QCALLTYPE EHEnumInitFromStackFrameIterator(StackFrameIterator *p
 {
     QCALL_CONTRACT;
 
-    BOOL isExceptionIntercepted = FALSE;
     ExtendedEHClauseEnumerator *pExtendedEHEnum = (ExtendedEHClauseEnumerator*)pEHEnum;
     pExtendedEHEnum->pFrameIter = pFrameIter;
 
@@ -8090,7 +8080,7 @@ extern uint32_t g_exceptionCount;
 
 MethodDesc * GetUserMethodForILStub(Thread * pThread, UINT_PTR uStubSP, MethodDesc * pILStubMD, Frame ** ppFrameOut);
 
-extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalkCtx, bool instructionFault, bool* pIsExceptionIntercepted)
+extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalkCtx, bool instructionFault, bool* pfIsExceptionIntercepted)
 {
     QCALL_CONTRACT;
 
@@ -8287,7 +8277,7 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
         pThis->UpdateIsRuntimeWrappedExceptions();
 
         // check if the exception is intercepted.
-        *pIsExceptionIntercepted = FALSE;
+        *pfIsExceptionIntercepted = FALSE;
         ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
         if (pExInfo->m_ExceptionFlags.DebuggerInterceptInfo())
         {
@@ -8302,7 +8292,7 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
 
             if ((pExInfo->m_passNumber == 1) || ((pInterceptMD == pMD) && (sfInterceptStackFrame == pThis->m_crawl.GetRegisterSet()->SP)))
             {
-                *pIsExceptionIntercepted = TRUE;
+                *pfIsExceptionIntercepted = TRUE;
             }
         }
     }
@@ -8312,7 +8302,7 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
 
 extern "C" size_t CallDescrWorkerInternalReturnAddressOffset;
 
-extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideClauseIdx, bool* fUnwoundReversePInvoke, bool* pIsExceptionIntercepted)
+extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideClauseIdx, bool* fUnwoundReversePInvoke, bool* pfIsExceptionIntercepted)
 {
     QCALL_CONTRACT;
 
@@ -8530,7 +8520,6 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
             if (pTopExInfo->m_pMDToReport != NULL)
             {
                 EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionLeave(pTopExInfo->m_pMDToReport);
-                //pTopExInfo->m_pMDToReport = NULL;
             }
             EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionEnter(pMD);
             pTopExInfo->m_pMDToReport = pMD;
@@ -8550,7 +8539,7 @@ Exit:;
         pThis->SetAdjustedControlPC(controlPC);
         pThis->UpdateIsRuntimeWrappedExceptions();
 
-        *pIsExceptionIntercepted = FALSE;
+        *pfIsExceptionIntercepted = FALSE;
 
         ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
         // check if the exception is intercepted.
@@ -8567,7 +8556,7 @@ Exit:;
 
             if ((pExInfo->m_passNumber == 1) || ((pInterceptMD == pMD) && (sfInterceptStackFrame == pThis->m_crawl.GetRegisterSet()->SP)))
             {
-                *pIsExceptionIntercepted = TRUE;
+                *pfIsExceptionIntercepted = TRUE;
             }
         }
 
