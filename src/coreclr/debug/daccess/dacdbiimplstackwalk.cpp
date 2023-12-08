@@ -384,8 +384,8 @@ IDacDbiInterface::FrameType DacDbiInterfaceImpl::GetStackWalkCurrentFrameInfo(St
                     else
                     {
                         ftResult = kManagedStackFrame;
+                        fInitFrameData = TRUE;
                     }
-                    fInitFrameData = TRUE;
                 }
                 break;
 
