@@ -255,17 +255,6 @@ BOOL ThreadExceptionState::IsExceptionInProgress()
 
 #if !defined(DACCESS_COMPILE)
 
-void ThreadExceptionState::GetLeafFrameInfo(StackTraceElement* pStackTraceElement)
-{
-    WRAPPER_NO_CONTRACT;
-
-#ifdef FEATURE_EH_FUNCLETS
-    m_pCurrentTracker->m_StackTraceInfo.GetLeafFrameInfo(pStackTraceElement);
-#else
-    m_currentExInfo.m_StackTraceInfo.GetLeafFrameInfo(pStackTraceElement);
-#endif
-}
-
 EXCEPTION_POINTERS* ThreadExceptionState::GetExceptionPointers()
 {
     LIMITED_METHOD_CONTRACT;
@@ -274,6 +263,10 @@ EXCEPTION_POINTERS* ThreadExceptionState::GetExceptionPointers()
     if (m_pCurrentTracker)
     {
         return (EXCEPTION_POINTERS*)&(m_pCurrentTracker->m_ptrs);
+    }
+    else if (m_pExInfo)
+    {
+        return (EXCEPTION_POINTERS*)&(m_pExInfo->m_ptrs);
     }
     else
     {
@@ -308,6 +301,10 @@ PTR_EXCEPTION_RECORD ThreadExceptionState::GetExceptionRecord()
     if (m_pCurrentTracker)
     {
         return m_pCurrentTracker->m_ptrs.ExceptionRecord;
+    }
+    else if (m_pExInfo)
+    {
+        return m_pExInfo->m_ptrs.ExceptionRecord;
     }
     else
     {
@@ -593,6 +590,14 @@ ThreadExceptionState::EnumChainMemoryRegions(CLRDataEnumMemoryFlags flags)
 
     if (head == NULL)
     {
+        PTR_ExInfo exInfo = m_pExInfo;
+        while (exInfo != NULL)
+        {
+            exInfo->EnumMemoryRegions(flags);
+            exInfo.EnumMem();
+            exInfo = exInfo->m_pPrevExInfo;
+        }
+
         return;
     }
 

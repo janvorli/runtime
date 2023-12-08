@@ -338,7 +338,7 @@ ExInfo::ExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, ExKind exception
     pThread->GetExceptionState()->SetCurrentExInfo(this);
 }
 
-#if defined(TARGET_UNIX) //&& !defined(CROSS_COMPILE)
+#if defined(TARGET_UNIX)
 void ExInfo::TakeExceptionPointersOwnership(PAL_SEHException* ex)
 {
     _ASSERTE(ex->GetExceptionRecord() == m_ptrs.ExceptionRecord);
@@ -346,7 +346,7 @@ void ExInfo::TakeExceptionPointersOwnership(PAL_SEHException* ex)
     ex->Clear();
     m_fOwnsExceptionPointers = TRUE;
 }
-#endif // TARGET_UNIX // && !CROSS_COMPILE
+#endif // TARGET_UNIX
 
 void ExInfo::ReleaseResources()
 {
@@ -372,9 +372,7 @@ void ExInfo::ReleaseResources()
 #endif // !TARGET_UNIX
 }
 
-#endif // DACCESS_COMPILE
-
-bool IsFilterStartOffset(EE_ILEXCEPTION_CLAUSE* pEHClause, DWORD_PTR dwHandlerStartPC)
+static bool IsFilterStartOffset(EE_ILEXCEPTION_CLAUSE* pEHClause, DWORD_PTR dwHandlerStartPC)
 {
     EECodeInfo codeInfo((PCODE)dwHandlerStartPC);
     _ASSERTE(codeInfo.IsValid());
@@ -391,6 +389,7 @@ void ExInfo::MakeCallbacksRelatedToHandler(
     StackFrame             sf
     )
 {
+#ifdef DEBUGGING_SUPPORTED
     // Here we need to make an extra check for filter handlers because we could be calling the catch handler
     // associated with a filter handler and yet the EH clause we have saved is for the filter handler.
     BOOL fIsFilterHandler         = IsFilterHandler(pEHClause) && IsFilterStartOffset(pEHClause, dwHandlerStartPC);
@@ -472,6 +471,17 @@ void ExInfo::MakeCallbacksRelatedToHandler(
         m_EHClauseInfo.SetManagedCodeEntered(FALSE);
         m_EHClauseInfo.ResetInfo();
     }
+#endif // DEBUGGING_SUPPORTED
 }
+
+#else // DACCESS_COMPILE
+void ExInfo::EnumMemoryRegions(CLRDataEnumMemoryFlags flags)
+{
+    // ExInfo is embedded so don't enum 'this'.
+    OBJECTHANDLE_EnumMemoryRegions(m_hThrowable);
+    m_ptrs.ExceptionRecord.EnumMem();
+    m_ptrs.ContextRecord.EnumMem();
+}
+#endif // DACCESS_COMPILE
 
 #endif // !FEATURE_EH_FUNCLETS

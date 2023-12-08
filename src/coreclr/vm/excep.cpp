@@ -3418,20 +3418,6 @@ BOOL StackTraceInfo::AppendElement(BOOL bAllowAllocMem, UINT_PTR currentIP, UINT
     return bRetVal;
 }
 
-void StackTraceInfo::GetLeafFrameInfo(StackTraceElement* pStackTraceElement)
-{
-    LIMITED_METHOD_CONTRACT;
-
-    if (NULL == m_pStackTrace)
-    {
-        return;
-    }
-    _ASSERTE(NULL != pStackTraceElement);
-
-    *pStackTraceElement = m_pStackTrace[0];
-}
-
-
 void UnwindFrameChain(Thread* pThread, LPVOID pvLimitSP)
 {
     CONTRACTL

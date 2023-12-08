@@ -293,9 +293,14 @@ struct ExInfo
     }
 #endif // !TARGET_UNIX
 
-#if defined(TARGET_UNIX) //&& !defined(CROSS_COMPILE)
+#if defined(TARGET_UNIX)
     void TakeExceptionPointersOwnership(PAL_SEHException* ex);
-#endif // TARGET_UNIX // && !CROSS_COMPILE
+#endif // TARGET_UNIX
+
+#ifdef DACCESS_COMPILE
+    void EnumMemoryRegions(CLRDataEnumMemoryFlags flags);
+#endif // DACCESS_COMPILE
+
 };
 
 #endif // !FEATURE_EH_FUNCLETS
