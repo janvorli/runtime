@@ -5472,9 +5472,7 @@ BOOL HandleHardwareException(PAL_SEHException* ex)
 
             CONTEXT ctx = {};
             ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-            ExInfo exInfo(pThread, &ctx /*ex->GetContextRecord()*/, &rd, ExKind::HardwareFault);
-            exInfo.m_ptrs.ExceptionRecord = ex->GetExceptionRecord();
-            exInfo.m_ptrs.ContextRecord = ex->GetContextRecord();
+            ExInfo exInfo(pThread, &ctx, &rd, ex->GetExceptionRecord(), ex->GetContextRecord(), ExKind::HardwareFault);
 
             DWORD exceptionCode = ex->GetExceptionRecord()->ExceptionCode;
             if (exceptionCode == STATUS_ACCESS_VIOLATION)
@@ -5574,7 +5572,6 @@ VOID DECLSPEC_NORETURN DispatchManagedException(OBJECTREF throwable, bool preser
     ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
     REGDISPLAY rd;
     Thread *pThread = GetThread();
-    ExInfo exInfo(pThread, &ctx, &rd, ExKind::Throw);
 
     ULONG_PTR hr = GetHRFromThrowable(throwable);
 
@@ -5587,8 +5584,7 @@ VOID DECLSPEC_NORETURN DispatchManagedException(OBJECTREF throwable, bool preser
     CONTEXT exceptionContext;
     RtlCaptureContext(&exceptionContext);
 
-    exInfo.m_ptrs.ExceptionRecord = &exceptionRecord;
-    exInfo.m_ptrs.ContextRecord = &exceptionContext;
+    ExInfo exInfo(pThread, &ctx, &rd, &exceptionRecord, &exceptionContext, ExKind::Throw);
 
     if (pThread->IsAbortInitiated () && IsExceptionOfType(kThreadAbortException,&throwable))
     {

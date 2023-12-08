@@ -4308,12 +4308,10 @@ void RethrowNew()
 
     ExInfo *pActiveExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
 
-    ExInfo exInfo(pThread, &ctx, &rd, ExKind::None);
+    ExInfo exInfo(pThread, &ctx, &rd, pActiveExInfo->m_ptrs.ExceptionRecord, pActiveExInfo->m_ptrs.ContextRecord, ExKind::None);
 
-    exInfo.m_ptrs.ExceptionRecord = pActiveExInfo->m_ptrs.ExceptionRecord;
-    exInfo.m_ptrs.ContextRecord = pActiveExInfo->m_ptrs.ContextRecord;
 #ifdef TARGET_UNIX
-    pActiveExInfo->m_fOwnsExceptionPointers = FALSE;
+//    pActiveExInfo->m_fOwnsExceptionPointers = FALSE;
 #endif
 
     GCPROTECT_BEGIN(exInfo.m_exception);

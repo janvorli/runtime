@@ -204,7 +204,7 @@ struct ExInfo
         PTR_CONTEXT             ContextRecord;
     };
 
-    ExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, ExKind exceptionKind);
+    ExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, EXCEPTION_RECORD *exceptionRecord, CONTEXT *exceptionContext, ExKind exceptionKind);
     void ReleaseResources();
 
     void MakeCallbacksRelatedToHandler(
