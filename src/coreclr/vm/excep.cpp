@@ -6586,6 +6586,8 @@ void HandleManagedFaultNew(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext
     Thread *pThread = GetThread();
 
     ExInfo exInfo(pThread, &ctx, &rd, ExKind::HardwareFault);
+    exInfo.m_ptrs.ExceptionRecord = pExceptionRecord;
+    exInfo.m_ptrs.ContextRecord = pContext;
 
     DWORD exceptionCode = pExceptionRecord->ExceptionCode;
     if (exceptionCode == STATUS_ACCESS_VIOLATION)

@@ -5576,6 +5576,22 @@ VOID DECLSPEC_NORETURN DispatchManagedException(OBJECTREF throwable, bool preser
     Thread *pThread = GetThread();
     ExInfo exInfo(pThread, &ctx, &rd, ExKind::Throw);
 
+    // TODO: can we get rid of this or at least of the captured context? It slows EH down by 10%
+    // Idea: we could get the exception context on-demand by unwind if the need is rare / debugger only
+    ULONG_PTR hr = GetHRFromThrowable(throwable);
+
+    EXCEPTION_RECORD exceptionRecord;
+    exceptionRecord.ExceptionCode = EXCEPTION_COMPLUS;
+    exceptionRecord.ExceptionFlags = EXCEPTION_NONCONTINUABLE;
+    exceptionRecord.ExceptionAddress = NULL;
+    exceptionRecord.NumberParameters = MarkAsThrownByUs(exceptionRecord.ExceptionInformation, hr);
+
+    CONTEXT exceptionContext;
+    RtlCaptureContext(&exceptionContext);
+
+    exInfo.m_ptrs.ExceptionRecord = &exceptionRecord;
+    exInfo.m_ptrs.ContextRecord = &exceptionContext;
+
     if (pThread->IsAbortInitiated () && IsExceptionOfType(kThreadAbortException,&throwable))
     {
         pThread->ResetPreparingAbort();
@@ -8130,21 +8146,7 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
                 //          We NULL it out because we get the interception event after this point.
                 //  * Notifify debugger and return.
                 //      In this case the normal EH proceeds and we need to reset m_sfResumeStackFrame to the sf catch handler.
-
-                // TODO-NewEH: New exception handling debugger events completion
-                EXCEPTION_POINTERS exceptionPointers;
-                exceptionPointers.ContextRecord = pExInfo->m_pExContext;
-                EXCEPTION_RECORD exceptionRecord;
-                {
-                    GCX_COOP();
-                    exceptionRecord.ExceptionCode = ((EXCEPTIONREF)pExInfo->m_exception)->GetXCode();
-                }
-                exceptionRecord.ExceptionFlags = 0;
-                exceptionRecord.ExceptionAddress = 0;
-                exceptionRecord.ExceptionRecord = NULL;
-                exceptionRecord.NumberParameters = 0;
-                exceptionPointers.ExceptionRecord = &exceptionRecord;
-                EEToDebuggerExceptionInterfaceWrapper::NotifyOfCHFFilter(&exceptionPointers, pILStubFrame);
+                EEToDebuggerExceptionInterfaceWrapper::NotifyOfCHFFilter((EXCEPTION_POINTERS *)&pExInfo->m_ptrs, pILStubFrame);
             }
             else
             {
@@ -8375,18 +8377,8 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
             _ASSERTE(retVal != SWA_FAILED);
             if (pThis->m_crawl.GetFrame() == FRAME_TOP)
             {
-                // No more managed code on the stack, the exception is unhandled
-                EXCEPTION_POINTERS exceptionPointers;
-                exceptionPointers.ContextRecord = pTopExInfo->m_pExContext;
-                EXCEPTION_RECORD exceptionRecord;
-                exceptionRecord.ExceptionCode = pTopExInfo->m_ExceptionCode;
-                exceptionRecord.ExceptionFlags = 0;
-                exceptionRecord.ExceptionAddress = 0;
-                exceptionRecord.ExceptionRecord = NULL;
-                exceptionRecord.NumberParameters = 0;
-                exceptionPointers.ExceptionRecord = &exceptionRecord;
-                LONG disposition = InternalUnhandledExceptionFilter_Worker(&exceptionPointers);
-                CrashDumpAndTerminateProcess(exceptionRecord.ExceptionCode);
+                LONG disposition = InternalUnhandledExceptionFilter_Worker((EXCEPTION_POINTERS *)&pTopExInfo->m_ptrs);
+                CrashDumpAndTerminateProcess(pTopExInfo->m_ExceptionCode);
             }
             goto Exit;
         }
