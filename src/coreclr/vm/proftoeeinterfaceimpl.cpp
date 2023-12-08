@@ -8137,8 +8137,6 @@ StackWalkAction ProfilerStackWalkCallback(CrawlFrame *pCf, PROFILER_STACK_WALK_D
     {
         frameInfo.funcID = NULL;
         frameInfo.extraArg = NULL;
-        // TODO: fixme - intermediate native frames should likely be reported
-        //return SWA_CONTINUE;
     }
 
     frameInfo.IP = currentIP;

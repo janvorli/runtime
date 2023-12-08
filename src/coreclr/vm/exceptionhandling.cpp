@@ -882,7 +882,6 @@ ProcessCLRExceptionNew(IN     PEXCEPTION_RECORD   pExceptionRecord,
     STATIC_CONTRACT_THROWS;
 
 #ifndef HOST_UNIX
-
     if (!(pExceptionRecord->ExceptionFlags & EXCEPTION_UNWINDING))
     {
         // Failfast if exception indicates corrupted process state
@@ -5498,6 +5497,7 @@ BOOL HandleHardwareException(PAL_SEHException* ex)
             args[ARGNUM_1] = PTR_TO_ARGHOLDER(&exInfo);
 
             pThread->IncPreventAbort();
+
             //Ex.RhThrowHwEx(exceptionCode, &exInfo)
             CALL_MANAGED_METHOD_NORET(args)
 
@@ -5576,8 +5576,6 @@ VOID DECLSPEC_NORETURN DispatchManagedException(OBJECTREF throwable, bool preser
     Thread *pThread = GetThread();
     ExInfo exInfo(pThread, &ctx, &rd, ExKind::Throw);
 
-    // TODO: can we get rid of this or at least of the captured context? It slows EH down by 10%
-    // Idea: we could get the exception context on-demand by unwind if the need is rare / debugger only
     ULONG_PTR hr = GetHRFromThrowable(throwable);
 
     EXCEPTION_RECORD exceptionRecord;
@@ -7777,7 +7775,6 @@ extern "C" void * QCALLTYPE CallCatchFunclet(QCall::ObjectHandleOnStack exceptio
             ClrRestoreNonvolatileContext(pvRegDisplay->pCurrentContext);
         }
 #endif // HOST_UNIX
-
         // Throw exception from the caller context
 #if defined(HOST_AMD64)
         ULONG64* returnAddress = (ULONG64*)targetSp;
@@ -8359,8 +8356,6 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
             }
             else if (pThis->m_crawl.IsFilterFunclet())
             {
-                // TODO-NewEH: if this turns out to be a perf problem, we can modify the filter funclet invocation to go through an asm helper on all platforms and 
-                // use the return address to detect this case
                 invalidRevPInvoke = true;
             }
         }

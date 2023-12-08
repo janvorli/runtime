@@ -28,12 +28,11 @@
 #include "MethodTable.inl"
 
 COOP_PINVOKE_HELPER(FC_BOOL_RET, RhpEHEnumInitFromStackFrameIterator, (
-    StackFrameIterator* pFrameIter, void ** pMethodStartAddressOut, EHEnum* pEHEnum, BOOL* isExceptionIntercepted))
+    StackFrameIterator* pFrameIter, void ** pMethodStartAddressOut, EHEnum* pEHEnum))
 {
     ICodeManager * pCodeManager = pFrameIter->GetCodeManager();
     pEHEnum->m_pCodeManager = pCodeManager;
 
-    *isExceptionIntercepted = FALSE;
     return pCodeManager->EHEnumInit(pFrameIter->GetMethodInfo(), pMethodStartAddressOut, &pEHEnum->m_state);
 }
 

@@ -469,7 +469,6 @@ void ExInfo::MakeCallbacksRelatedToHandler(
             }
         }
 
-        // TODO: when exception happens in filter, this is not called!
         m_EHClauseInfo.SetManagedCodeEntered(FALSE);
         m_EHClauseInfo.ResetInfo();
     }
