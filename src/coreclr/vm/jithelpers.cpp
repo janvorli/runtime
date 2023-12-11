@@ -4301,14 +4301,11 @@ HCIMPLEND
 #ifdef FEATURE_EH_FUNCLETS
 void RethrowNew()
 {
-    CONTEXT ctx = {};
-    ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-    REGDISPLAY rd;
     Thread *pThread = GetThread();
 
     ExInfo *pActiveExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
 
-    ExInfo exInfo(pThread, &ctx, &rd, pActiveExInfo->m_ptrs.ExceptionRecord, pActiveExInfo->m_ptrs.ContextRecord, ExKind::None);
+    ExInfo exInfo(pThread, pActiveExInfo->m_ptrs.ExceptionRecord, pActiveExInfo->m_ptrs.ContextRecord, ExKind::None);
 
 #ifdef TARGET_UNIX
 //    pActiveExInfo->m_fOwnsExceptionPointers = FALSE;

@@ -204,7 +204,7 @@ struct ExInfo
         PTR_CONTEXT             ContextRecord;
     };
 
-    ExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, EXCEPTION_RECORD *exceptionRecord, CONTEXT *exceptionContext, ExKind exceptionKind);
+    ExInfo(Thread *pThread, EXCEPTION_RECORD *exceptionRecord, CONTEXT *exceptionContext, ExKind exceptionKind);
     void ReleaseResources();
 
     void MakeCallbacksRelatedToHandler(
@@ -230,7 +230,6 @@ struct ExInfo
     // Stack frame iterator used to walk stack frames while handling the exception
     StackFrameIterator m_frameIter;
     volatile size_t m_notifyDebuggerSP;
-    REGDISPLAY *m_pRD;
     // Stack trace of the current exception
     StackTraceInfo m_stackTraceInfo;
     // Initial explicit frame
@@ -268,6 +267,9 @@ struct ExInfo
     MethodDesc    *m_pMDToReportFunctionLeave;
 
     BOOL           m_fDeliveredFirstChanceNotification;
+
+    CONTEXT        m_exContext;
+    REGDISPLAY     m_regDisplay;
 
     inline BOOL DeliveredFirstChanceNotification()
     {

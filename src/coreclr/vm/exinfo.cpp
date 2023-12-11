@@ -311,14 +311,13 @@ void ExInfo::SetExceptionCode(const EXCEPTION_RECORD *pCER)
 
 #ifndef DACCESS_COMPILE
 
-ExInfo::ExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, EXCEPTION_RECORD *exceptionRecord, CONTEXT *exceptionContext, ExKind exceptionKind) :
-    m_pExContext(pCtx),
+ExInfo::ExInfo(Thread *pThread, EXCEPTION_RECORD *exceptionRecord, CONTEXT *exceptionContext, ExKind exceptionKind) :
+    m_pExContext(&m_exContext),
     m_exception((Object*)NULL),
     m_kind(exceptionKind),
     m_passNumber(1),
     m_idxCurClause(0xffffffff),
     m_notifyDebuggerSP(NULL),
-    m_pRD(pRD),
     m_pFrame(pThread->GetFrame()),
     m_ClauseForCatch({}),
     m_ptrs({exceptionRecord, exceptionContext}),
@@ -329,13 +328,15 @@ ExInfo::ExInfo(Thread *pThread, CONTEXT *pCtx, REGDISPLAY *pRD, EXCEPTION_RECORD
 #endif // HOST_UNIX
     m_hThrowable(NULL),
     m_CurrentClause({}),
-    m_fDeliveredFirstChanceNotification(FALSE)
+    m_fDeliveredFirstChanceNotification(FALSE),
+    m_exContext({})
 {
     m_pPrevExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
     m_stackTraceInfo.Init();
     m_stackTraceInfo.AllocateStackTrace();
     m_sfLowBound.SetMaxVal();
     pThread->GetExceptionState()->SetCurrentExInfo(this);
+    m_exContext.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
 }
 
 #if defined(TARGET_UNIX)

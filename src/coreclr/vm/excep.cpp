@@ -6566,12 +6566,9 @@ void HandleManagedFaultNew(EXCEPTION_RECORD* pExceptionRecord, CONTEXT* pContext
     pContext->ContextFlags |= CONTEXT_EXCEPTION_ACTIVE;
     frame->InitAndLink(pContext);
 
-    CONTEXT ctx = {};
-    ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-    REGDISPLAY rd;
     Thread *pThread = GetThread();
 
-    ExInfo exInfo(pThread, &ctx, &rd, pExceptionRecord, pContext, ExKind::HardwareFault);
+    ExInfo exInfo(pThread, pExceptionRecord, pContext, ExKind::HardwareFault);
 
     DWORD exceptionCode = pExceptionRecord->ExceptionCode;
     if (exceptionCode == STATUS_ACCESS_VIOLATION)
