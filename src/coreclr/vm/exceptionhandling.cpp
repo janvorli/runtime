@@ -7975,7 +7975,7 @@ struct ExtendedEHClauseEnumerator : EH_CLAUSE_ENUMERATOR
     unsigned EHCount;
 };
 
-extern "C" BOOL QCALLTYPE EHEnumInitFromStackFrameIterator(StackFrameIterator *pFrameIter, BYTE **pMethodStartAddress, EH_CLAUSE_ENUMERATOR *pEHEnum)
+extern "C" BOOL QCALLTYPE EHEnumInitFromStackFrameIterator(StackFrameIterator *pFrameIter, BYTE** pMethodStartAddress, EH_CLAUSE_ENUMERATOR * pEHEnum)
 {
     QCALL_CONTRACT;
 
@@ -7987,7 +7987,6 @@ extern "C" BOOL QCALLTYPE EHEnumInitFromStackFrameIterator(StackFrameIterator *p
     Frame* pFrame = pThread->GetFrame();
     MarkInlinedCallFrameAsEHHelperCall(pFrame);
 
-    ExInfo *pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
     IJitManager* pJitMan = pFrameIter->m_crawl.GetJitManager();
     const METHODTOKEN& MethToken = pFrameIter->m_crawl.GetMethodToken();
     *pMethodStartAddress = (BYTE*)pJitMan->JitTokenToStartAddress(MethToken);
@@ -8074,12 +8073,38 @@ extern uint32_t g_exceptionCount;
 
 MethodDesc * GetUserMethodForILStub(Thread * pThread, UINT_PTR uStubSP, MethodDesc * pILStubMD, Frame ** ppFrameOut);
 
+static BOOL CheckExceptionInterception(StackFrameIterator* pStackFrameIterator, ExInfo *pExInfo)
+{
+    // check if the exception is intercepted.
+    BOOL isIntercepted = FALSE;
+    if (pExInfo->m_ExceptionFlags.DebuggerInterceptInfo())
+    {
+        MethodDesc *pMD = pStackFrameIterator->m_crawl.GetFunction();
+        MethodDesc* pInterceptMD = NULL;
+        StackFrame sfInterceptStackFrame;
+
+        // check if we have reached the interception point yet
+        pExInfo->m_DebuggerExState.GetDebuggerInterceptInfo(&pInterceptMD, NULL,
+            reinterpret_cast<PBYTE *>(&(sfInterceptStackFrame.SP)),
+            NULL, NULL);
+
+        if ((pExInfo->m_passNumber == 1) ||
+            ((pInterceptMD == pMD) && (sfInterceptStackFrame == pStackFrameIterator->m_crawl.GetRegisterSet()->SP)))
+        {
+            isIntercepted = TRUE;
+        }
+    }
+
+    return isIntercepted;
+}
+
 extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalkCtx, bool instructionFault, bool* pfIsExceptionIntercepted)
 {
     QCALL_CONTRACT;
 
     bool result = false;
     Thread* pThread = GET_THREAD();
+    ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
 
     BEGIN_QCALL;
 
@@ -8093,13 +8118,11 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
     // Skip the SfiInit pinvoke frame
     pFrame = pThread->GetFrame()->PtrNextFrame();
 
-    ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
     REGDISPLAY* pRD = &pExInfo->m_regDisplay;
 
     if (pExInfo->m_passNumber == 1)
     {
         GCX_COOP();
-        pExInfo->m_ExceptionCode = ((EXCEPTIONREF)pExInfo->m_exception)->GetXCode();
         pThread->SafeSetThrowables(pExInfo->m_exception);
         EEToProfilerExceptionInterfaceWrapper::ExceptionThrown(pThread);
         UpdatePerformanceMetrics(&pThis->m_crawl, false, ((uint8_t)pExInfo->m_kind & (uint8_t)ExKind::RethrowFlag) == 0);
@@ -8197,7 +8220,6 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
     if (pExInfo->m_passNumber == 1)
     {
         EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionEnter(pMD);
-        pExInfo->m_pMDToReportFunctionLeave = pMD;
 
         // Notify the debugger that we are on the first pass for a managed exception.
         // Note that this callback is made for every managed frame.
@@ -8206,8 +8228,9 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
     else
     {
         EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionEnter(pMD);
-        pExInfo->m_pMDToReportFunctionLeave = pMD;        
     }
+
+    pExInfo->m_pMDToReportFunctionLeave = pMD;
 
     pExInfo->m_sfLowBound = GetRegdisplaySP(pThis->m_crawl.GetRegisterSet());
 
@@ -8256,25 +8279,7 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
         pThis->SetAdjustedControlPC(controlPC);
         pThis->UpdateIsRuntimeWrappedExceptions();
 
-        // check if the exception is intercepted.
-        *pfIsExceptionIntercepted = FALSE;
-        ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-        if (pExInfo->m_ExceptionFlags.DebuggerInterceptInfo())
-        {
-            MethodDesc *pMD = pThis->m_crawl.GetFunction();
-            MethodDesc* pInterceptMD = NULL;
-            StackFrame sfInterceptStackFrame;
-
-            // check if we have reached the interception point yet
-            pExInfo->m_DebuggerExState.GetDebuggerInterceptInfo(&pInterceptMD, NULL,
-                    reinterpret_cast<PBYTE *>(&(sfInterceptStackFrame.SP)),
-                    NULL, NULL);
-
-            if ((pExInfo->m_passNumber == 1) || ((pInterceptMD == pMD) && (sfInterceptStackFrame == pThis->m_crawl.GetRegisterSet()->SP)))
-            {
-                *pfIsExceptionIntercepted = TRUE;
-            }
-        }
+        *pfIsExceptionIntercepted = CheckExceptionInterception(pThis, pExInfo);;
     }
 
     return result;
@@ -8288,6 +8293,7 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
 
     StackWalkAction retVal = SWA_FAILED;
     Thread* pThread = GET_THREAD();
+    ExInfo* pTopExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
 
     BEGIN_QCALL;
 
@@ -8299,7 +8305,6 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
     pThread->ResetThrowControlForThread();
 
     ExInfo* pExInfo = pThis->GetNextExInfo();
-    ExInfo* pTopExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
     bool isCollided = false;
 
     MethodDesc *pMD = pThis->m_crawl.GetFunction();
@@ -8339,8 +8344,7 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
             // Either add handling those here as well or rewrite all these perf critical places in C#, so that CallDescrWorker is the only path that 
             // needs to be handled here.
             size_t CallDescrWorkerInternalReturnAddress = (size_t)CallDescrWorkerInternal + CallDescrWorkerInternalReturnAddressOffset;
-            size_t callerIP = GetIP(pThis->m_crawl.GetRegisterSet()->pCallerContext);
-            if (callerIP == CallDescrWorkerInternalReturnAddress)
+            if (GetIP(pThis->m_crawl.GetRegisterSet()->pCallerContext) == CallDescrWorkerInternalReturnAddress)
             {
                 invalidRevPInvoke = true;
             }
@@ -8475,7 +8479,6 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
             if (pTopExInfo->m_pMDToReportFunctionLeave != NULL)
             {
                 EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionLeave(pTopExInfo->m_pMDToReportFunctionLeave);
-                //pTopExInfo->m_pMDToReportFunctionLeave = NULL;
             }
             EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionEnter(pMD);
             pTopExInfo->m_pMDToReportFunctionLeave = pMD;
@@ -8507,26 +8510,7 @@ Exit:;
         pThis->SetAdjustedControlPC(controlPC);
         pThis->UpdateIsRuntimeWrappedExceptions();
 
-        *pfIsExceptionIntercepted = FALSE;
-
-        ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-        // check if the exception is intercepted.
-        if (pExInfo->m_ExceptionFlags.DebuggerInterceptInfo())
-        {
-            MethodDesc *pMD = pThis->m_crawl.GetFunction();
-            MethodDesc* pInterceptMD = NULL;
-            StackFrame sfInterceptStackFrame;
-
-            // check if we have reached the interception point yet
-            pExInfo->m_DebuggerExState.GetDebuggerInterceptInfo(&pInterceptMD, NULL,
-                    reinterpret_cast<PBYTE *>(&(sfInterceptStackFrame.SP)),
-                    NULL, NULL);
-
-            if ((pExInfo->m_passNumber == 1) || ((pInterceptMD == pMD) && (sfInterceptStackFrame == pThis->m_crawl.GetRegisterSet()->SP)))
-            {
-                *pfIsExceptionIntercepted = TRUE;
-            }
-        }
+        *pfIsExceptionIntercepted = CheckExceptionInterception(pThis, pTopExInfo);
 
         return true;
     }

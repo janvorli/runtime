@@ -311,7 +311,7 @@ void ExInfo::SetExceptionCode(const EXCEPTION_RECORD *pCER)
 
 #ifndef DACCESS_COMPILE
 
-ExInfo::ExInfo(Thread *pThread, EXCEPTION_RECORD *exceptionRecord, CONTEXT *exceptionContext, ExKind exceptionKind) :
+ExInfo::ExInfo(Thread *pThread, EXCEPTION_RECORD *pExceptionRecord, CONTEXT *pExceptionContext, ExKind exceptionKind) :
     m_pExContext(&m_exContext),
     m_exception((Object*)NULL),
     m_kind(exceptionKind),
@@ -320,7 +320,7 @@ ExInfo::ExInfo(Thread *pThread, EXCEPTION_RECORD *exceptionRecord, CONTEXT *exce
     m_notifyDebuggerSP(NULL),
     m_pFrame(pThread->GetFrame()),
     m_ClauseForCatch({}),
-    m_ptrs({exceptionRecord, exceptionContext}),
+    m_ptrs({pExceptionRecord, pExceptionContext}),
 #ifdef HOST_UNIX
     m_fOwnsExceptionPointers(FALSE),
     m_propagateExceptionCallback(NULL),
@@ -328,6 +328,7 @@ ExInfo::ExInfo(Thread *pThread, EXCEPTION_RECORD *exceptionRecord, CONTEXT *exce
 #endif // HOST_UNIX
     m_hThrowable(NULL),
     m_CurrentClause({}),
+    m_ExceptionCode(pExceptionRecord->ExceptionCode),
     m_fDeliveredFirstChanceNotification(FALSE),
     m_exContext({})
 {
