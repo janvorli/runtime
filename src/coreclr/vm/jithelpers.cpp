@@ -4307,10 +4307,6 @@ void RethrowNew()
 
     ExInfo exInfo(pThread, pActiveExInfo->m_ptrs.ExceptionRecord, pActiveExInfo->m_ptrs.ContextRecord, ExKind::None);
 
-#ifdef TARGET_UNIX
-//    pActiveExInfo->m_fOwnsExceptionPointers = FALSE;
-#endif
-
     GCPROTECT_BEGIN(exInfo.m_exception);
     PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__RH_RETHROW);
     DECLARE_ARGHOLDER_ARRAY(args, 2);

@@ -7574,6 +7574,35 @@ extern "C" void QCALLTYPE AppendExceptionStackFrame(QCall::ObjectHandleOnStack e
     END_QCALL;
 }
 
+static void PopExplicitFrames(Thread *pThread, void *targetSp)
+{
+    Frame* pFrame = pThread->GetFrame();
+    while (pFrame < targetSp)
+    {
+        pFrame->ExceptionUnwind();
+        pFrame->Pop(pThread);
+        pFrame = pThread->GetFrame();
+    }
+
+    GCFrame* pGCFrame = pThread->GetGCFrame();
+    while (pGCFrame && pGCFrame < targetSp)
+    {
+        pGCFrame->Pop();
+        pGCFrame = pThread->GetGCFrame();
+    }
+}
+
+static void PopExInfos(Thread *pThread, void *targetSp)
+{
+    ExInfo *pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+    while (pExInfo && pExInfo < (void*)targetSp)
+    {
+        pExInfo->ReleaseResources();
+        pExInfo = pExInfo->m_pPrevExInfo;
+    }
+    pThread->GetExceptionState()->SetCurrentExInfo(pExInfo);
+}
+
 UINT_PTR GetEstablisherFrame(REGDISPLAY* pvRegDisplay, ExInfo* exInfo)
 {
 #ifdef HOST_AMD64        
@@ -7650,20 +7679,7 @@ extern "C" void * QCALLTYPE CallCatchFunclet(QCall::ObjectHandleOnStack exceptio
     }
 
     UINT_PTR targetSp = GetSP(pvRegDisplay->pCurrentContext);
-
-    while (pFrame < (void*)targetSp)
-    {
-        pFrame->ExceptionUnwind();
-        pFrame->Pop(pThread);
-        pFrame = pThread->GetFrame();
-    }
-
-    GCFrame* pGCFrame = pThread->GetGCFrame();
-    while (pGCFrame && pGCFrame < (void*)targetSp)
-    {
-        pGCFrame->Pop();
-        pGCFrame = pThread->GetGCFrame();
-    }
+    PopExplicitFrames(pThread, (void*)targetSp)
 
     ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
 
@@ -7699,14 +7715,7 @@ extern "C" void * QCALLTYPE CallCatchFunclet(QCall::ObjectHandleOnStack exceptio
     }
 #endif // DEBUGGING_SUPPORTED
 
-    // Pop ExInfos
-    while (pExInfo && pExInfo < (void*)targetSp)
-    {
-        pExInfo->ReleaseResources();
-        pExInfo = pExInfo->m_pPrevExInfo;
-    }
-
-    pThread->GetExceptionState()->SetCurrentExInfo(pExInfo);
+    PopExInfos(pThread, (void*)targetSp);
 
     if (!pThread->GetExceptionState()->IsExceptionInProgress())
     {
@@ -7818,35 +7827,14 @@ extern "C" void QCALLTYPE ResumeAtInterceptionLocation(REGDISPLAY* pvRegDisplay)
     MarkInlinedCallFrameAsFuncletCall(pFrame);
     
     UINT_PTR targetSp = GetSP(pvRegDisplay->pCurrentContext);
+    PopExplicitFrames(pThread, (void*)targetSp)
 
-    while (pFrame < (void*)targetSp)
-    {
-        pFrame->ExceptionUnwind();
-        pFrame->Pop(pThread);
-        pFrame = pThread->GetFrame();
-    }
-
-    GCFrame* pGCFrame = pThread->GetGCFrame();
-    while (pGCFrame && pGCFrame < (void*)targetSp)
-    {
-        pGCFrame->Pop();
-        pGCFrame = pThread->GetGCFrame();
-    }
-
-    ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-
-    // This must be done before we pop the trackers.
+    // This must be done before we pop the ExInfos.
     BOOL fIntercepted = pThread->GetExceptionState()->GetFlags()->DebuggerInterceptInfo();
     _ASSERTE(fIntercepted);
 
-    // Pop ExInfos
-    while (pExInfo && pExInfo < (void*)targetSp)
-    {
-        pExInfo->ReleaseResources();
-        pExInfo = pExInfo->m_pPrevExInfo;
-    }
+    PopExInfos(pThread, (void*)targetSp);
 
-    pThread->GetExceptionState()->SetCurrentExInfo(pExInfo);
     // retrieve the interception information
     MethodDesc *pInterceptMD = NULL;
     StackFrame sfInterceptStackFrame;
