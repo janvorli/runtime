@@ -7629,6 +7629,15 @@ UINT_PTR GetEstablisherFrame(REGDISPLAY* pvRegDisplay, ExInfo* exInfo)
 #endif        
 }
 
+static TADDR GetSpForDiagnosticReporting(REGDISPLAY *pRD)
+{
+#ifdef ESTABLISHER_FRAME_ADDRESS_IS_CALLER_SP
+        return CallerStackFrame::FromRegDisplay(pRD).SP;
+#else
+        return GetSP(pRD->pCurrentContext);
+#endif
+}
+
 extern "C" void * QCALLTYPE CallCatchFunclet(QCall::ObjectHandleOnStack exceptionObj, BYTE* pHandlerIP, REGDISPLAY* pvRegDisplay, ExInfo* exInfo)
 {
     QCALL_CONTRACT;
@@ -7658,7 +7667,8 @@ extern "C" void * QCALLTYPE CallCatchFunclet(QCall::ObjectHandleOnStack exceptio
 
         MethodDesc *pMD = exInfo->m_frameIter.m_crawl.GetFunction();
         // Profiler, debugger and ETW events
-        exInfo->MakeCallbacksRelatedToHandler(true, pThread, pMD, &exInfo->m_ClauseForCatch, (DWORD_PTR)pHandlerIP, GetSP(pvRegDisplay->pCurrentContext));
+        TADDR spForDebugger = GetSpForDiagnosticReporting(pvRegDisplay);
+        exInfo->MakeCallbacksRelatedToHandler(true, pThread, pMD, &exInfo->m_ClauseForCatch, (DWORD_PTR)pHandlerIP, spForDebugger);
 
 #ifdef USE_FUNCLET_CALL_HELPER
         // Invoke the catch funclet. 
@@ -7674,12 +7684,12 @@ extern "C" void * QCALLTYPE CallCatchFunclet(QCall::ObjectHandleOnStack exceptio
         dwResumePC = pfnHandler(establisherFrame, OBJECTREFToObject(throwable));
 #endif            
         // Profiler, debugger and ETW events
-        exInfo->MakeCallbacksRelatedToHandler(false, pThread, pMD, &exInfo->m_ClauseForCatch, (DWORD_PTR)pHandlerIP, GetSP(pvRegDisplay->pCurrentContext));
+        exInfo->MakeCallbacksRelatedToHandler(false, pThread, pMD, &exInfo->m_ClauseForCatch, (DWORD_PTR)pHandlerIP, spForDebugger);
         SetIP(pvRegDisplay->pCurrentContext, dwResumePC);
     }
 
     UINT_PTR targetSp = GetSP(pvRegDisplay->pCurrentContext);
-    PopExplicitFrames(pThread, (void*)targetSp)
+    PopExplicitFrames(pThread, (void*)targetSp);
 
     ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
 
@@ -7827,7 +7837,7 @@ extern "C" void QCALLTYPE ResumeAtInterceptionLocation(REGDISPLAY* pvRegDisplay)
     MarkInlinedCallFrameAsFuncletCall(pFrame);
     
     UINT_PTR targetSp = GetSP(pvRegDisplay->pCurrentContext);
-    PopExplicitFrames(pThread, (void*)targetSp)
+    PopExplicitFrames(pThread, (void*)targetSp);
 
     // This must be done before we pop the ExInfos.
     BOOL fIntercepted = pThread->GetExceptionState()->GetFlags()->DebuggerInterceptInfo();
@@ -7876,7 +7886,8 @@ extern "C" void QCALLTYPE CallFinallyFunclet(BYTE* pHandlerIP, REGDISPLAY* pvReg
 
     MethodDesc *pMD = exInfo->m_frameIter.m_crawl.GetFunction();
     // Profiler, debugger and ETW events
-    exInfo->MakeCallbacksRelatedToHandler(true, pThread, pMD, &exInfo->m_CurrentClause, (DWORD_PTR)pHandlerIP, GetSP(pvRegDisplay->pCurrentContext));
+    TADDR spForDebugger = GetSpForDiagnosticReporting(pvRegDisplay);
+    exInfo->MakeCallbacksRelatedToHandler(true, pThread, pMD, &exInfo->m_CurrentClause, (DWORD_PTR)pHandlerIP, spForDebugger);
 #ifdef USE_FUNCLET_CALL_HELPER
     // Invoke the finally funclet. 
     // Since the actual caller of the funclet is the assembly helper, pass the reference
@@ -7894,7 +7905,7 @@ extern "C" void QCALLTYPE CallFinallyFunclet(BYTE* pHandlerIP, REGDISPLAY* pvReg
     pThread->IncPreventAbort();
 
     // Profiler, debugger and ETW events
-    exInfo->MakeCallbacksRelatedToHandler(false, pThread, pMD, &exInfo->m_CurrentClause, (DWORD_PTR)pHandlerIP, GetSP(pvRegDisplay->pCurrentContext) );
+    exInfo->MakeCallbacksRelatedToHandler(false, pThread, pMD, &exInfo->m_CurrentClause, (DWORD_PTR)pHandlerIP, spForDebugger);
     END_QCALL;
 }
 
@@ -7921,7 +7932,8 @@ extern "C" BOOL QCALLTYPE CallFilterFunclet(QCall::ObjectHandleOnStack exception
     pExInfo->m_csfEnclosingClause = CallerStackFrame::FromRegDisplay(pExInfo->m_frameIter.m_crawl.GetRegisterSet());
     MethodDesc *pMD = pExInfo->m_frameIter.m_crawl.GetFunction();
     // Profiler, debugger and ETW events
-    pExInfo->MakeCallbacksRelatedToHandler(true, pThread, pMD, &pExInfo->m_CurrentClause, (DWORD_PTR)pFilterIP, GetSP(pvRegDisplay->pCurrentContext));
+    TADDR spForDebugger = GetSpForDiagnosticReporting(pvRegDisplay);
+    pExInfo->MakeCallbacksRelatedToHandler(true, pThread, pMD, &pExInfo->m_CurrentClause, (DWORD_PTR)pFilterIP, spForDebugger);
     EX_TRY
     {
 #ifdef USE_FUNCLET_CALL_HELPER
@@ -7950,7 +7962,7 @@ extern "C" BOOL QCALLTYPE CallFilterFunclet(QCall::ObjectHandleOnStack exception
     EX_END_CATCH(SwallowAllExceptions);
 
     // Profiler, debugger and ETW events
-    pExInfo->MakeCallbacksRelatedToHandler(false, pThread, pMD, &pExInfo->m_CurrentClause, (DWORD_PTR)pFilterIP, GetSP(pvRegDisplay->pCurrentContext));
+    pExInfo->MakeCallbacksRelatedToHandler(false, pThread, pMD, &pExInfo->m_CurrentClause, (DWORD_PTR)pFilterIP, spForDebugger);
     END_QCALL;
 
     return dwResult == EXCEPTION_EXECUTE_HANDLER;
@@ -8076,8 +8088,10 @@ static BOOL CheckExceptionInterception(StackFrameIterator* pStackFrameIterator, 
             reinterpret_cast<PBYTE *>(&(sfInterceptStackFrame.SP)),
             NULL, NULL);
 
+        TADDR spForDebugger = GetSpForDiagnosticReporting(pStackFrameIterator->m_crawl.GetRegisterSet());
+
         if ((pExInfo->m_passNumber == 1) ||
-            ((pInterceptMD == pMD) && (sfInterceptStackFrame == pStackFrameIterator->m_crawl.GetRegisterSet()->SP)))
+            ((pInterceptMD == pMD) && (sfInterceptStackFrame == spForDebugger)))
         {
             isIntercepted = TRUE;
         }
@@ -8159,7 +8173,8 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
                 // We don't need to do anything special for continuable exceptions after calling
                 // this callback.  We are going to start unwinding anyway.
                 PCODE uMethodStartPC = pExInfo->m_frameIter.m_crawl.GetCodeInfo()->GetStartAddress();
-                EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedExceptionCatcherFound(pThread, pMD, (TADDR) uMethodStartPC, sp,
+                TADDR spForDebugger = GetSpForDiagnosticReporting(pRD);
+                EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedExceptionCatcherFound(pThread, pMD, (TADDR) uMethodStartPC, spForDebugger,
                                                                                                &pExInfo->m_ClauseForCatch);
             }
             pExInfo->m_ExceptionFlags.SetUnwindHasStarted();
@@ -8211,7 +8226,8 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
 
         // Notify the debugger that we are on the first pass for a managed exception.
         // Note that this callback is made for every managed frame.
-        EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedException(pThread, GetControlPC(pThis->m_crawl.GetRegisterSet()), GetRegdisplaySP(pThis->m_crawl.GetRegisterSet()));
+        TADDR spForDebugger = GetSpForDiagnosticReporting(pThis->m_crawl.GetRegisterSet());
+        EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedException(pThread, GetControlPC(pThis->m_crawl.GetRegisterSet()), spForDebugger);
     }
     else
     {
@@ -8472,7 +8488,8 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
             pTopExInfo->m_pMDToReportFunctionLeave = pMD;
             // Notify the debugger that we are on the first pass for a managed exception.
             // Note that this callback is made for every managed frame.
-            EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedException(pThread, GetControlPC(pThis->m_crawl.GetRegisterSet()), GetRegdisplaySP(pThis->m_crawl.GetRegisterSet()));
+            TADDR spForDebugger = GetSpForDiagnosticReporting(pThis->m_crawl.GetRegisterSet());
+            EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedException(pThread, GetControlPC(pThis->m_crawl.GetRegisterSet()), spForDebugger);
         }
         else
         {
