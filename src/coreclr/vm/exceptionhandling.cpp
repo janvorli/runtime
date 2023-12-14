@@ -7946,9 +7946,9 @@ extern "C" BOOL QCALLTYPE CallFilterFunclet(QCall::ObjectHandleOnStack exception
         // it will retrieve the framepointer for accessing the locals in the parent
         // method.
         dwResult = CallEHFilterFunclet(OBJECTREFToObject(throwable),
-                                    GetFrameRestoreBase(pvRegDisplay->pCallerContext),
-                                    CastHandlerFn(pfnHandler),
-                                    pFuncletCallerSP);
+                                       GetFrameRestoreBase(pvRegDisplay->pCallerContext),
+                                       CastHandlerFn(pfnHandler),
+                                       pFuncletCallerSP);
 #else
         dwResult = pfnHandler(establisherFrame, OBJECTREFToObject(throwable));
 #endif
@@ -8100,28 +8100,8 @@ static BOOL CheckExceptionInterception(StackFrameIterator* pStackFrameIterator, 
     return isIntercepted;
 }
 
-extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalkCtx, bool instructionFault, bool* pfIsExceptionIntercepted)
+static void NotifyExceptionPassStarted(StackFrameIterator *pThis, Thread *pThread, ExInfo *pExInfo)
 {
-    QCALL_CONTRACT;
-
-    bool result = false;
-    Thread* pThread = GET_THREAD();
-    ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
-
-    BEGIN_QCALL;
-
-    Frame* pFrame = pThread->GetFrame();
-    MarkInlinedCallFrameAsEHHelperCall(pFrame);
-
-    // we already fixed the context in HijackHandler, so let's
-    // just clear the thread state.
-    pThread->ResetThrowControlForThread();
-
-    // Skip the SfiInit pinvoke frame
-    pFrame = pThread->GetFrame()->PtrNextFrame();
-
-    REGDISPLAY* pRD = &pExInfo->m_regDisplay;
-
     if (pExInfo->m_passNumber == 1)
     {
         GCX_COOP();
@@ -8131,6 +8111,8 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
     }
     else // pExInfo->m_passNumber == 2
     {
+        REGDISPLAY* pRD = &pExInfo->m_regDisplay;
+
         // Clear the enclosing clause to indicate we have not processed any 2nd pass funclet yet.
         pExInfo->m_csfEnclosingClause.Clear();
         if (pExInfo->m_idxCurClause != 0xffffffff) //  the reverse pinvoke case doesn't have the m_idxCurClause set
@@ -8181,14 +8163,68 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
             EEToDebuggerExceptionInterfaceWrapper::ManagedExceptionUnwindBegin(pThread);
         }
     }
+}
 
+static void NotifyFunctionEnter(StackFrameIterator *pThis, Thread *pThread, ExInfo *pExInfo)
+{
+    MethodDesc *pMD = pThis->m_crawl.GetFunction();
+
+    if (pExInfo->m_passNumber == 1)
+    {
+        if (pExInfo->m_pMDToReportFunctionLeave != NULL)
+        {
+            EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionLeave(pExInfo->m_pMDToReportFunctionLeave);
+        }
+        EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionEnter(pMD);
+        // Notify the debugger that we are on the first pass for a managed exception.
+        // Note that this callback is made for every managed frame.
+        TADDR spForDebugger = GetSpForDiagnosticReporting(pThis->m_crawl.GetRegisterSet());
+        EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedException(pThread, GetControlPC(pThis->m_crawl.GetRegisterSet()), spForDebugger);
+    }
+    else
+    {
+        if (pExInfo->m_pMDToReportFunctionLeave != NULL)
+        {
+            EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionLeave(pExInfo->m_pMDToReportFunctionLeave);
+        }
+        EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionEnter(pMD);
+    }
+
+    pExInfo->m_pMDToReportFunctionLeave = pMD;
+}
+
+extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalkCtx, bool instructionFault, bool* pfIsExceptionIntercepted)
+{
+    QCALL_CONTRACT;
+
+    bool result = false;
+    Thread* pThread = GET_THREAD();
+    ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExInfo();
+
+    BEGIN_QCALL;
+
+    Frame* pFrame = pThread->GetFrame();
+    MarkInlinedCallFrameAsEHHelperCall(pFrame);
+
+    // we already fixed the context in HijackHandler, so let's
+    // just clear the thread state.
+    pThread->ResetThrowControlForThread();
+
+    // Skip the SfiInit pinvoke frame
+    pFrame = pThread->GetFrame()->PtrNextFrame();
+
+    NotifyExceptionPassStarted(pThis, pThread, pExInfo);
+
+    REGDISPLAY* pRD = &pExInfo->m_regDisplay;
     pThread->FillRegDisplay(pRD, pStackwalkCtx);
 
     new (pThis) StackFrameIterator();
-    result = pThis->Init(pThread, pFrame, pRD, THREAD_EXECUTING_MANAGED_CODE | HANDLESKIPPEDFRAMES) != FALSE;
+    result = pThis->Init(pThread, pFrame, pRD, THREAD_EXECUTING_MANAGED_CODE /*| HANDLESKIPPEDFRAMES*/) != FALSE;
 
+    // Walk the stack until it finds the first managed method
     while (result && pThis->GetFrameState() != StackFrameIterator::SFITER_FRAMELESS_METHOD)
     {
+        // In the first pass, add all explicit frames that have a managed function to the exception stack trace
         if (pExInfo->m_passNumber == 1)
         {
             Frame *pFrame = pThis->m_crawl.GetFrame();
@@ -8219,57 +8255,13 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
         result = (retVal != SWA_FAILED);
     }
 
-    MethodDesc *pMD = pThis->m_crawl.GetFunction();
-    if (pExInfo->m_passNumber == 1)
-    {
-        EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionEnter(pMD);
-
-        // Notify the debugger that we are on the first pass for a managed exception.
-        // Note that this callback is made for every managed frame.
-        TADDR spForDebugger = GetSpForDiagnosticReporting(pThis->m_crawl.GetRegisterSet());
-        EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedException(pThread, GetControlPC(pThis->m_crawl.GetRegisterSet()), spForDebugger);
-    }
-    else
-    {
-        EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionEnter(pMD);
-    }
-
-    pExInfo->m_pMDToReportFunctionLeave = pMD;
+    NotifyFunctionEnter(pThis, pThread, pExInfo);
 
     pExInfo->m_sfLowBound = GetRegdisplaySP(pThis->m_crawl.GetRegisterSet());
 
     pThis->ResetNextExInfoForSP(pThis->m_crawl.GetRegisterSet()->SP);
 
     _ASSERTE(!result || pThis->GetFrameState() == StackFrameIterator::SFITER_FRAMELESS_METHOD);
-
-    if (pExInfo->m_passNumber == 1)
-    {
-        // We might have skipped some HelperMethod frames while unwinding through native code. We need to add all of those
-        // to the stack trace.
-        Frame *pFrame = pThread->GetFrame();
-        while (pFrame != FRAME_TOP && (TADDR)pFrame < pThis->m_crawl.GetRegisterSet()->SP)
-        {
-            MethodDesc *pMD = pFrame->GetFunction();
-            if (pMD != NULL)
-            {
-                GCX_COOP();
-                bool canAllocateMemory = !(pExInfo->m_exception == CLRException::GetPreallocatedOutOfMemoryException()) &&
-                    !(pExInfo->m_exception == CLRException::GetPreallocatedStackOverflowException());
-
-                pExInfo->m_stackTraceInfo.AppendElement(canAllocateMemory, NULL, GetRegdisplaySP(pExInfo->m_frameIter.m_crawl.GetRegisterSet()), pMD, &pExInfo->m_frameIter.m_crawl);
-#if defined(DEBUGGING_SUPPORTED)
-                if (NotifyDebuggerOfStub(pThread, pFrame))
-                {
-                    if (!pExInfo->DeliveredFirstChanceNotification())
-                    {
-                        ExceptionNotifications::DeliverFirstChanceNotification();
-                    }
-                }
-#endif // DEBUGGING_SUPPORTED
-            }
-            pFrame = pFrame->PtrNextFrame();
-        }
-    }
 
     END_QCALL;
 
@@ -8283,7 +8275,7 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
         pThis->SetAdjustedControlPC(controlPC);
         pThis->UpdateIsRuntimeWrappedExceptions();
 
-        *pfIsExceptionIntercepted = CheckExceptionInterception(pThis, pExInfo);;
+        *pfIsExceptionIntercepted = CheckExceptionInterception(pThis, pExInfo);
     }
 
     return result;
@@ -8366,8 +8358,18 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
         if (invalidRevPInvoke)
         {
             // Unwind to the caller of the managed code
-            retVal = pThis->Next();
+            // do
+            // {
+                retVal = pThis->Next();
+                // if (retVal == SWA_FAILED)
+                // {
+                //     break;
+                // }
+            // }
+            // while (pThis->GetFrameState() == StackFrameIterator::SFITER_SKIPPED_FRAME_FUNCTION);
+
             _ASSERTE(retVal != SWA_FAILED);
+            _ASSERTE(pThis->GetFrameState() != StackFrameIterator::SFITER_SKIPPED_FRAME_FUNCTION);
             if (pThis->m_crawl.GetFrame() == FRAME_TOP)
             {
                 LONG disposition = InternalUnhandledExceptionFilter_Worker((EXCEPTION_POINTERS *)&pTopExInfo->m_ptrs);
@@ -8389,11 +8391,15 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
         *uExCollideClauseIdx = 0xffffffff;
         bool doingFuncletUnwind = pThis->m_crawl.IsFunclet();
 
+        // do
+        // {
         retVal = pThis->Next();
         if (retVal == SWA_FAILED)
         {
             break;
         }
+        // }
+        // while (pThis->GetFrameState() == StackFrameIterator::SFITER_SKIPPED_FRAME_FUNCTION);
 
         if (pThis->GetFrameState() == StackFrameIterator::SFITER_DONE)
         {
@@ -8409,13 +8415,23 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
             if (InlinedCallFrame::FrameHasActiveCall(pFrame))
             {
                 InlinedCallFrame* pInlinedCallFrame = (InlinedCallFrame*)pFrame;
-                if (((TADDR)pInlinedCallFrame->m_Datum & 6) == 6)
+                if (((TADDR)pInlinedCallFrame->m_Datum & (TADDR)InlinedCallFrameMarker::Mask) == ((TADDR)InlinedCallFrameMarker::ExceptionHandlingHelper | (TADDR)InlinedCallFrameMarker::SecondPassFuncletCaller))
                 {
                     // passing through CallCatchFunclet et al
                     if (doingFuncletUnwind)
                     {
                         // Unwind the CallCatchFunclet
-                        retVal = pThis->Next();
+                        // This is needed
+                        do
+                        {
+                            retVal = pThis->Next();
+                            if (retVal == SWA_FAILED)
+                            {
+                                break;
+                            }
+                        }
+                        while (pThis->GetFrameState() == StackFrameIterator::SFITER_SKIPPED_FRAME_FUNCTION);
+                        
                         if (retVal == SWA_FAILED)
                         {
                             _ASSERTE_MSG(FALSE, "StackFrameIterator::Next failed");
@@ -8439,8 +8455,18 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
                             do
                             {
                                 retVal = pThis->Next();
+                                // do
+                                // {
+                                //     retVal = pThis->Next();
+                                //     if (retVal == SWA_FAILED)
+                                //     {
+                                //         break;
+                                //     }
+                                // }
+                                // while (pThis->GetFrameState() == StackFrameIterator::SFITER_SKIPPED_FRAME_FUNCTION);
                             }
-                            while ((retVal == SWA_CONTINUE) && pThis->m_crawl.GetRegisterSet()->SP != pPrevExInfo->m_regDisplay.SP);
+                            while ((retVal == SWA_CONTINUE) && 
+                                (pThis->GetFrameState() == StackFrameIterator::SFITER_SKIPPED_FRAME_FUNCTION || pThis->m_crawl.GetRegisterSet()->SP != pPrevExInfo->m_regDisplay.SP));
                             _ASSERTE(retVal != SWA_FAILED);
 
                             pThis->ResetNextExInfoForSP(pThis->m_crawl.GetRegisterSet()->SP);
@@ -8477,29 +8503,7 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
 
     if (!isCollided)
     {
-        pMD = pThis->m_crawl.GetFunction();
-        if (pTopExInfo->m_passNumber == 1)
-        {
-            if (pTopExInfo->m_pMDToReportFunctionLeave != NULL)
-            {
-                EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionLeave(pTopExInfo->m_pMDToReportFunctionLeave);
-            }
-            EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionEnter(pMD);
-            pTopExInfo->m_pMDToReportFunctionLeave = pMD;
-            // Notify the debugger that we are on the first pass for a managed exception.
-            // Note that this callback is made for every managed frame.
-            TADDR spForDebugger = GetSpForDiagnosticReporting(pThis->m_crawl.GetRegisterSet());
-            EEToDebuggerExceptionInterfaceWrapper::FirstChanceManagedException(pThread, GetControlPC(pThis->m_crawl.GetRegisterSet()), spForDebugger);
-        }
-        else
-        {
-            if (pTopExInfo->m_pMDToReportFunctionLeave != NULL)
-            {
-                EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionLeave(pTopExInfo->m_pMDToReportFunctionLeave);
-            }
-            EEToProfilerExceptionInterfaceWrapper::ExceptionUnwindFunctionEnter(pMD);
-            pTopExInfo->m_pMDToReportFunctionLeave = pMD;
-        }
+        NotifyFunctionEnter(pThis, pThread, pTopExInfo);
     }
 
 Exit:;

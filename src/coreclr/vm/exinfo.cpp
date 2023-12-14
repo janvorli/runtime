@@ -329,6 +329,7 @@ ExInfo::ExInfo(Thread *pThread, EXCEPTION_RECORD *pExceptionRecord, CONTEXT *pEx
     m_hThrowable(NULL),
     m_CurrentClause({}),
     m_ExceptionCode(pExceptionRecord->ExceptionCode),
+    m_pMDToReportFunctionLeave(NULL),
     m_fDeliveredFirstChanceNotification(FALSE),
     m_exContext({})
 {
