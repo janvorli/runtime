@@ -7632,9 +7632,9 @@ UINT_PTR GetEstablisherFrame(REGDISPLAY* pvRegDisplay, ExInfo* exInfo)
 static TADDR GetSpForDiagnosticReporting(REGDISPLAY *pRD)
 {
 #ifdef ESTABLISHER_FRAME_ADDRESS_IS_CALLER_SP
-        return CallerStackFrame::FromRegDisplay(pRD).SP;
+    return CallerStackFrame::FromRegDisplay(pRD).SP;
 #else
-        return GetSP(pRD->pCurrentContext);
+    return GetSP(pRD->pCurrentContext);
 #endif
 }
 
@@ -8219,7 +8219,7 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
     pThread->FillRegDisplay(pRD, pStackwalkCtx);
 
     new (pThis) StackFrameIterator();
-    result = pThis->Init(pThread, pFrame, pRD, THREAD_EXECUTING_MANAGED_CODE /*| HANDLESKIPPEDFRAMES*/) != FALSE;
+    result = pThis->Init(pThread, pFrame, pRD, THREAD_EXECUTING_MANAGED_CODE) != FALSE;
 
     // Walk the stack until it finds the first managed method
     while (result && pThis->GetFrameState() != StackFrameIterator::SFITER_FRAMELESS_METHOD)
@@ -8279,6 +8279,23 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
     }
 
     return result;
+}
+
+static StackWalkAction MoveToNextNonSkippedFrame(StackFrameIterator* pStackFrameIterator)
+{
+    StackWalkAction retVal;
+
+    do
+    {
+        retVal = pStackFrameIterator->Next();
+        if (retVal == SWA_FAILED)
+        {
+            break;
+        }
+    }
+    while (pStackFrameIterator->GetFrameState() == StackFrameIterator::SFITER_SKIPPED_FRAME_FUNCTION);
+
+    return retVal;
 }
 
 extern "C" size_t CallDescrWorkerInternalReturnAddressOffset;
@@ -8358,18 +8375,10 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
         if (invalidRevPInvoke)
         {
             // Unwind to the caller of the managed code
-            // do
-            // {
-                retVal = pThis->Next();
-                // if (retVal == SWA_FAILED)
-                // {
-                //     break;
-                // }
-            // }
-            // while (pThis->GetFrameState() == StackFrameIterator::SFITER_SKIPPED_FRAME_FUNCTION);
-
+            retVal = pThis->Next();
             _ASSERTE(retVal != SWA_FAILED);
             _ASSERTE(pThis->GetFrameState() != StackFrameIterator::SFITER_SKIPPED_FRAME_FUNCTION);
+
             if (pThis->m_crawl.GetFrame() == FRAME_TOP)
             {
                 LONG disposition = InternalUnhandledExceptionFilter_Worker((EXCEPTION_POINTERS *)&pTopExInfo->m_ptrs);
@@ -8391,15 +8400,11 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
         *uExCollideClauseIdx = 0xffffffff;
         bool doingFuncletUnwind = pThis->m_crawl.IsFunclet();
 
-        // do
-        // {
         retVal = pThis->Next();
         if (retVal == SWA_FAILED)
         {
             break;
         }
-        // }
-        // while (pThis->GetFrameState() == StackFrameIterator::SFITER_SKIPPED_FRAME_FUNCTION);
 
         if (pThis->GetFrameState() == StackFrameIterator::SFITER_DONE)
         {
@@ -8421,16 +8426,7 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
                     if (doingFuncletUnwind)
                     {
                         // Unwind the CallCatchFunclet
-                        // This is needed
-                        do
-                        {
-                            retVal = pThis->Next();
-                            if (retVal == SWA_FAILED)
-                            {
-                                break;
-                            }
-                        }
-                        while (pThis->GetFrameState() == StackFrameIterator::SFITER_SKIPPED_FRAME_FUNCTION);
+                        retVal = MoveToNextNonSkippedFrame(pThis);
                         
                         if (retVal == SWA_FAILED)
                         {
@@ -8454,19 +8450,9 @@ extern "C" bool QCALLTYPE SfiNext(StackFrameIterator* pThis, uint* uExCollideCla
                             ExInfo* pPrevExInfo = pThis->GetNextExInfo();
                             do
                             {
-                                retVal = pThis->Next();
-                                // do
-                                // {
-                                //     retVal = pThis->Next();
-                                //     if (retVal == SWA_FAILED)
-                                //     {
-                                //         break;
-                                //     }
-                                // }
-                                // while (pThis->GetFrameState() == StackFrameIterator::SFITER_SKIPPED_FRAME_FUNCTION);
+                                retVal = MoveToNextNonSkippedFrame(pThis);
                             }
-                            while ((retVal == SWA_CONTINUE) && 
-                                (pThis->GetFrameState() == StackFrameIterator::SFITER_SKIPPED_FRAME_FUNCTION || pThis->m_crawl.GetRegisterSet()->SP != pPrevExInfo->m_regDisplay.SP));
+                            while ((retVal == SWA_CONTINUE) && pThis->m_crawl.GetRegisterSet()->SP != pPrevExInfo->m_regDisplay.SP);
                             _ASSERTE(retVal != SWA_FAILED);
 
                             pThis->ResetNextExInfoForSP(pThis->m_crawl.GetRegisterSet()->SP);
