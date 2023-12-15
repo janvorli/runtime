@@ -150,9 +150,9 @@ namespace System.Runtime
 #endif
         }
 
+#if NATIVEAOT
         private static void OnFirstChanceExceptionViaClassLib(object exception)
         {
-#if NATIVEAOT
             IntPtr pOnFirstChanceFunction =
                 (IntPtr)InternalCalls.RhpGetClasslibFunctionFromEEType(exception.GetMethodTable(), ClassLibFunctionId.OnFirstChance);
 
@@ -169,17 +169,8 @@ namespace System.Runtime
             {
                 // disallow all exceptions leaking out of callbacks
             }
-#else
-            try
-            {
-                AppContext.OnFirstChanceException(exception);
-            }
-            catch when (true)
-            {
-                // disallow all exceptions leaking out of callbacks
-            }
-#endif
         }
+#endif // NATIVEAOT
 
         private static void OnUnhandledExceptionViaClassLib(object exception)
         {
