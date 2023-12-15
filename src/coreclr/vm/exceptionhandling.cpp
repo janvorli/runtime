@@ -4282,7 +4282,7 @@ EXCEPTION_DISPOSITION ClrDebuggerDoUnwindAndIntercept(X86_FIRST_ARG(EXCEPTION_RE
         PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__UNWIND_AND_INTERCEPT);
         DECLARE_ARGHOLDER_ARRAY(args, 2);
         args[ARGNUM_0] = PTR_TO_ARGHOLDER(pExState->GetCurrentExInfo());
-
+        args[ARGNUM_1] = PTR_TO_ARGHOLDER(uInterceptStackFrame);
         pThread->IncPreventAbort();
 
         //Ex.RhUnwindAndIntercept(throwable, &exInfo)

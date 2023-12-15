@@ -663,12 +663,7 @@ namespace System.Runtime
                     break;
                 }
 
-                if ((exInfo._frameIter.SP == interceptStackFrameSP)
-// ????
-// #if TARGET_ARM64
-//                     && (exInfo._frameIter.ControlPC == prevControlPC)
-// #endif
-                    )
+                if (exInfo._frameIter.SP == interceptStackFrameSP)
                 {
                     break;
                 }
