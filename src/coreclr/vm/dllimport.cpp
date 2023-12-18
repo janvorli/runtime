@@ -5865,7 +5865,7 @@ EXTERN_C LPVOID STDCALL NDirectImportWorker(NDirectMethodDesc* pMD)
         //
         INDEBUG(Thread *pThread = GetThread());
         {
-            _ASSERTE(pThread->GetFrame()->GetVTablePtr() == InlinedCallFrame::GetMethodFrameVPtr()
+            _ASSERTE((pThread->GetFrame() != FRAME_TOP && pThread->GetFrame()->GetVTablePtr() == InlinedCallFrame::GetMethodFrameVPtr())
                 || pMD->ShouldSuppressGCTransition());
 
             CONSISTENCY_CHECK(pMD->IsNDirect());
