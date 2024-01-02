@@ -38,6 +38,8 @@ typedef DPTR(InteropLib::ABI::ManagedObjectWrapperLayout) PTR_ManagedObjectWrapp
 #include "rejit.h"
 #include "request_common.h"
 
+#include "exinfo.h"
+
 // GC headers define these to EE-specific stuff that we don't want.
 #undef EnterCriticalSection
 #undef LeaveCriticalSection
@@ -759,10 +761,21 @@ ClrDataAccess::GetThreadData(CLRDATA_ADDRESS threadAddr, struct DacpThreadData *
     threadData->nextThread =
         HOST_CDADDR(ThreadStore::s_pThreadStore->m_ThreadList.GetNext(thread));
 #ifdef FEATURE_EH_FUNCLETS
-    if (thread->m_ExceptionState.m_pCurrentTracker)
+    if (g_isNewExceptionHandlingEnabled)
     {
-        threadData->firstNestedException = PTR_HOST_TO_TADDR(
-            thread->m_ExceptionState.m_pCurrentTracker->m_pPrevNestedInfo);
+        if (thread->m_ExceptionState.m_pExInfo)
+        {
+            threadData->firstNestedException = PTR_HOST_TO_TADDR(
+                thread->m_ExceptionState.m_pExInfo->m_pPrevExInfo);
+        }
+    }
+    else
+    {
+        if (thread->m_ExceptionState.m_pCurrentTracker)
+        {
+            threadData->firstNestedException = PTR_HOST_TO_TADDR(
+                thread->m_ExceptionState.m_pCurrentTracker->m_pPrevNestedInfo);
+        }
     }
 #else
     threadData->firstNestedException = PTR_HOST_TO_TADDR(
@@ -3148,19 +3161,36 @@ ClrDataAccess::GetNestedExceptionData(CLRDATA_ADDRESS exception, CLRDATA_ADDRESS
     SOSDacEnter();
 
 #ifdef FEATURE_EH_FUNCLETS
-    ExceptionTracker *pExData = PTR_ExceptionTracker(TO_TADDR(exception));
-#else
-    ExInfo *pExData = PTR_ExInfo(TO_TADDR(exception));
-#endif // FEATURE_EH_FUNCLETS
-
-    if (!pExData)
+    if (g_isNewExceptionHandlingEnabled)
     {
-        hr = E_INVALIDARG;
+        ExInfo *pExData = PTR_ExInfo(TO_TADDR(exception));
+        if (!pExData)
+        {
+            hr = E_INVALIDARG;
+        }
+        else
+        {
+            *exceptionObject = TO_CDADDR(*PTR_TADDR(pExData->m_hThrowable));
+            *nextNestedException = PTR_HOST_TO_TADDR(pExData->m_pPrevExInfo);
+        }
     }
     else
     {
-        *exceptionObject = TO_CDADDR(*PTR_TADDR(pExData->m_hThrowable));
-        *nextNestedException = PTR_HOST_TO_TADDR(pExData->m_pPrevNestedInfo);
+        ExceptionTracker *pExData = PTR_ExceptionTracker(TO_TADDR(exception));
+#else
+    {
+        ExInfo *pExData = PTR_ExInfo(TO_TADDR(exception));
+#endif // FEATURE_EH_FUNCLETS
+
+        if (!pExData)
+        {
+            hr = E_INVALIDARG;
+        }
+        else
+        {
+            *exceptionObject = TO_CDADDR(*PTR_TADDR(pExData->m_hThrowable));
+            *nextNestedException = PTR_HOST_TO_TADDR(pExData->m_pPrevNestedInfo);
+        }
     }
 
     SOSDacLeave();

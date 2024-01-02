@@ -39,6 +39,8 @@
 #include "runtimecallablewrapper.h"
 #endif
 
+#include "exinfo.h"
+
 #endif // FEATURE_NATIVEAOT
 
 #include "eventtracepriv.h"
@@ -2762,13 +2764,23 @@ VOID ETW::ExceptionLog::ExceptionThrown(CrawlFrame  *pCf, BOOL bIsReThrownExcept
 
         ThreadExceptionState *pExState = pThread->GetExceptionState();
 #ifndef FEATURE_EH_FUNCLETS
-        PTR_ExInfo pExInfo = NULL;
+        {
+            PTR_ExInfo pExInfo = NULL;
 #else
-        PTR_ExceptionTracker pExInfo = NULL;
+        if (g_isNewExceptionHandlingEnabled)
+        {
+            PTR_ExInfo pExInfo = pExState->GetCurrentExInfo();
+            _ASSERTE(pExInfo != NULL);
+            bIsNestedException = (pExInfo->m_pPrevExInfo != NULL);
+        }
+        else
+        {
+            PTR_ExceptionTracker pExInfo = NULL;
 #endif //!FEATURE_EH_FUNCLETS
-        pExInfo = pExState->GetCurrentExceptionTracker();
-        _ASSERTE(pExInfo != NULL);
-        bIsNestedException = (pExInfo->GetPreviousExceptionTracker() != NULL);
+            pExInfo = pExState->GetCurrentExceptionTracker();
+            _ASSERTE(pExInfo != NULL);
+            bIsNestedException = (pExInfo->GetPreviousExceptionTracker() != NULL);
+        }
         bIsCLSCompliant = IsException((gc.exceptionObj)->GetMethodTable()) &&
                           ((gc.exceptionObj)->GetMethodTable() != CoreLibBinder::GetException(kRuntimeWrappedException));
 

@@ -10,6 +10,7 @@
 //*****************************************************************************
 
 #include "stdafx.h"
+#include "exinfo.h"
 
 // XXX Microsoft - Why aren't these extra MD APIs in a header?
 STDAPI GetMDPublicInterfaceFromInternal(
@@ -4597,14 +4598,31 @@ ClrDataExceptionState::GetPrevious(
     {
         if (m_prevExInfo)
         {
+            OBJECTHANDLE hThrowable;
+            ClrDataExStateType* pPrevNestedInfo;
+#ifdef FEATURE_EH_FUNCLETS
+            if (g_isNewExceptionHandlingEnabled)
+            {
+                hThrowable = ((ExInfo*)m_prevExInfo)->m_hThrowable;
+                pPrevNestedInfo = ((ExInfo*)m_prevExInfo)->m_pPrevExInfo;
+            }
+            else
+            {
+                hThrowable = ((ExceptionTracker*)m_prevExInfo)->m_hThrowable;
+                pPrevNestedInfo = ((ExceptionTracker*)m_prevExInfo)->m_pPrevNestedInfo;
+            }
+#else // FEATURE_EH_FUNCLETS
+            hThrowable = ((ExInfo*)m_prevExInfo)->m_hThrowable;
+            pPrevNestedInfo = ((ExInfo*)m_prevExInfo)->m_pPrevNestedInfo;
+#endif // FEATURE_EH_FUNCLETS
             *exState = new (nothrow)
                 ClrDataExceptionState(m_dac,
                                       m_appDomain,
                                       m_thread,
                                       CLRDATA_EXCEPTION_DEFAULT,
                                       m_prevExInfo,
-                                      m_prevExInfo->m_hThrowable,
-                                      m_prevExInfo->m_pPrevNestedInfo);
+                                      hThrowable,
+                                      pPrevNestedInfo);
             status = *exState ? S_OK : E_OUTOFMEMORY;
         }
         else
@@ -4958,11 +4976,28 @@ ClrDataExceptionState::NewFromThread(ClrDataAccess* dac,
 
     ClrDataExStateType* exState;
     ClrDataExceptionState* exIf;
+    OBJECTHANDLE hThrowable;
+    ClrDataExStateType* pPrevNestedInfo;
+
+    PTR_ThreadExceptionState threadExState = thread->GetExceptionState();
 
 #ifdef FEATURE_EH_FUNCLETS
-    exState = thread->GetExceptionState()->m_pCurrentTracker;
+    if (g_isNewExceptionHandlingEnabled)
+    {
+        exState = threadExState->m_pExInfo;
+        hThrowable = threadExState->m_pExInfo->m_hThrowable;
+        pPrevNestedInfo = threadExState->m_pExInfo->m_pPrevExInfo;
+    }
+    else
+    {
+        exState = threadExState->m_pCurrentTracker;
+        hThrowable = threadExState->m_pCurrentTracker->m_hThrowable;
+        pPrevNestedInfo = threadExState->m_pCurrentTracker->m_pPrevNestedInfo;
+    }
 #else
-    exState = &(thread->GetExceptionState()->m_currentExInfo);
+    exState = &(threadExState->m_currentExInfo);
+    hThrowable = threadExState->m_currentExInfo.m_hThrowable;
+    pPrevNestedInfo = threadExState->m_currentExInfo.m_pPrevNestedInfo;
 #endif // FEATURE_EH_FUNCLETS
 
     exIf = new (nothrow)
@@ -4971,8 +5006,8 @@ ClrDataExceptionState::NewFromThread(ClrDataAccess* dac,
                               thread,
                               CLRDATA_EXCEPTION_DEFAULT,
                               exState,
-                              exState->m_hThrowable,
-                              exState->m_pPrevNestedInfo);
+                              hThrowable,
+                              pPrevNestedInfo);
     if (!exIf)
     {
         return E_OUTOFMEMORY;
@@ -4998,7 +5033,14 @@ ClrDataExceptionState::GetCurrentExceptionRecord()
     PTR_EXCEPTION_RECORD pExRecord = NULL;
 
 #ifdef FEATURE_EH_FUNCLETS
-    pExRecord = m_exInfo->m_ptrs.ExceptionRecord;
+    if (g_isNewExceptionHandlingEnabled)
+    {
+        pExRecord = ((ExInfo*)m_exInfo)->m_ptrs.ExceptionRecord;
+    }
+    else
+    {
+        pExRecord = ((ExceptionTracker*)m_exInfo)->m_ptrs.ExceptionRecord;
+    }
 #else // FEATURE_EH_FUNCLETS
     pExRecord = m_exInfo->m_pExceptionRecord;
 #endif // FEATURE_EH_FUNCLETS
@@ -5012,7 +5054,14 @@ ClrDataExceptionState::GetCurrentContextRecord()
     PTR_CONTEXT pContext = NULL;
 
 #ifdef FEATURE_EH_FUNCLETS
-    pContext = m_exInfo->m_ptrs.ContextRecord;
+    if (g_isNewExceptionHandlingEnabled)
+    {
+        pContext = ((ExInfo*)m_exInfo)->m_ptrs.ContextRecord;
+    }
+    else
+    {
+        pContext = ((ExceptionTracker*)m_exInfo)->m_ptrs.ContextRecord;
+    }
 #else // FEATURE_EH_FUNCLETS
     pContext = m_exInfo->m_pContext;
 #endif // FEATURE_EH_FUNCLETS
