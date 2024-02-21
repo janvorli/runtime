@@ -28,10 +28,6 @@ class EEToDebuggerExceptionInterfaceWrapper
         }
         CONTRACTL_END;
 
-        FILE* log = fopen("f:\\issues\\newehfailures\\log.txt", "a");
-        fprintf(log, "FirstChanceManagedException sp=%p,ip=%p\n", (void*)currentSP, (void*)currentIP);
-        fclose(log);
-
         ThreadExceptionState* pExState = pThread->GetExceptionState();
         pExState->GetDebuggerState()->SetDebuggerIndicatedFramePointer((LPVOID)currentSP);
 
@@ -58,9 +54,6 @@ class EEToDebuggerExceptionInterfaceWrapper
         }
         CONTRACTL_END;
 
-        FILE* log = fopen("f:\\issues\\newehfailures\\log.txt", "a");
-        fprintf(log, "FirstChanceManagedExceptionCatcherFound sp=%p\n", (void*)currentSP);
-        fclose(log);
 
         ThreadExceptionState* pExState = pThread->GetExceptionState();
         pExState->GetDebuggerState()->SetDebuggerIndicatedFramePointer((LPVOID)currentSP);
@@ -76,10 +69,6 @@ class EEToDebuggerExceptionInterfaceWrapper
     {
         WRAPPER_NO_CONTRACT;
 
-        FILE* log = fopen("f:\\issues\\newehfailures\\log.txt", "a");
-        fprintf(log, "NotifyOfCHFFilter\n");
-        fclose(log);
-
         if (CORDebuggerAttached())
         {
             g_pDebugInterface->NotifyOfCHFFilter(pExceptionInfo, pFrame);
@@ -89,10 +78,6 @@ class EEToDebuggerExceptionInterfaceWrapper
     static inline void ManagedExceptionUnwindBegin(Thread* pThread)
     {
         WRAPPER_NO_CONTRACT;
-
-        FILE* log = fopen("f:\\issues\\newehfailures\\log.txt", "a");
-        fprintf(log, "ManagedExceptionUnwindBegin\n");
-        fclose(log);
 
         if (CORDebuggerAttached())
         {

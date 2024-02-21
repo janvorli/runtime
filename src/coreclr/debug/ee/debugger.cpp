@@ -11392,9 +11392,6 @@ HRESULT Debugger::GetAndSendInterceptCommand(DebuggerIPCEvent *event)
             // Now start processing the parameters from the event.
             //
             FramePointer targetFramePointer = event->InterceptException.frameToken;
-            FILE* log = fopen("f:\\issues\\newehfailures\\log.txt", "a");
-            fprintf(log, "GetAndSendInterceptCommand: targetFramePointer = %p\n", (void*)targetFramePointer.GetSPValue());
-            fclose(log);
 
             ControllerStackInfo csi;
 
@@ -11590,9 +11587,6 @@ HRESULT Debugger::GetAndSendInterceptCommand(DebuggerIPCEvent *event)
                             pExState->GetFlags()->SetSentDebugUserFirstChance();
                             pExState->GetFlags()->SetSentDebugUnwindBegin();
 
-                            FILE* log = fopen("f:\\issues\\newehfailures\\log.txt", "a");
-                            fprintf(log, "Setting up intercept context %p\n", pBreakpoint);
-                            fclose(log);
                             //
                             // Save off this breakpoint, so that if the exception gets unwound before we hit
                             // the breakpoint - the exception info can call back to remove it.

@@ -7793,17 +7793,9 @@ VOID DECLSPEC_NORETURN UnwindAndContinueRethrowHelperAfterCatch(Frame* pEntryFra
                                                             (PBYTE*)&uInterceptStackFrame,
                                                             NULL, NULL);
 
-        FILE* log = fopen("f:\\issues\\newehfailures\\log.txt", "a");
-        fprintf(log, "UnwindAndContinueRethrowHelperAfterCatch: uInterceptStackFrame=%p\n", (void*)uInterceptStackFrame);
-        fclose(log);
-
         ExInfo *pPrevExInfo = (ExInfo*)pExState->GetCurrentExceptionTracker();
         if (pPrevExInfo != NULL && pPrevExInfo->m_DebuggerExState.GetDebuggerInterceptContext() != NULL)
         {
-            FILE* log = fopen("f:\\issues\\newehfailures\\log.txt", "a");
-            fprintf(log, "UnwindAndContinueRethrowHelperAfterCatch: continuing interception unwind\n");
-            fclose(log);
-
             PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__UNWIND_AND_INTERCEPT);
             DECLARE_ARGHOLDER_ARRAY(args, 2);
             args[ARGNUM_0] = PTR_TO_ARGHOLDER(pPrevExInfo);//pExState->GetCurrentExceptionTracker());

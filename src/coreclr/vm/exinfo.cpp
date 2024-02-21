@@ -330,6 +330,7 @@ ExInfo::ExInfo(Thread *pThread, EXCEPTION_RECORD *pExceptionRecord, CONTEXT *pEx
 {
     m_StackTraceInfo.AllocateStackTrace();
     pThread->GetExceptionState()->m_pCurrentTracker = this;
+    m_pInitialFrame = pThread->GetFrame();
     if (exceptionKind == ExKind::HardwareFault)
     {
         // Hardware exception handling needs to start on the FaultingExceptionFrame, so we are
@@ -398,7 +399,6 @@ void ExInfo::PopExInfos(Thread *pThread, void *targetSp)
             pExState->GetDebuggerState()->GetDebuggerInterceptInfo(NULL, NULL, (PBYTE*)&dwInterceptStackFrame,
                                                                    NULL, NULL);
         }
-        // fprintf(stderr, "PopExInfos: dwInterceptStackFrame = %p\n", (void*)dwInterceptStackFrame);
     }
 #endif // DEBUGGING_SUPPORTED
 
@@ -407,17 +407,9 @@ void ExInfo::PopExInfos(Thread *pThread, void *targetSp)
 #if defined(DEBUGGING_SUPPORTED)
         if (g_pDebugInterface != NULL)
         {
-            // fprintf(stderr, "PopExInfos: pExInfo = %p, pExInfo->m_ScannedStackRange.GetUpperBound().SP = %p\n",
-            //         pExInfo, (void*)pExInfo->m_ScannedStackRange.GetUpperBound().SP);
-            // fprintf(stderr, "PopExInfos: debugger intercept context at %p\n",
-            //         (void*)pExInfo->m_DebuggerExState.GetDebuggerInterceptContext());
             if (pExInfo->m_ScannedStackRange.GetUpperBound().SP < dwInterceptStackFrame)
             {
-                FILE* log = fopen("f:\\issues\\newehfailures\\log.txt", "a");
-                fprintf(log, "PopExInfos deleting intercept context %p, pExInfo->m_ScannedStackRange.GetUpperBound().SP=%p, dwInterceptStackFrame=%p\n", (void*)pExInfo->m_DebuggerExState.GetDebuggerInterceptContext(), (void*)pExInfo->m_ScannedStackRange.GetUpperBound().SP, (void*)dwInterceptStackFrame);
-                fclose(log);
-                // g_pDebugInterface->DeleteInterceptContext(pExInfo->m_DebuggerExState.GetDebuggerInterceptContext());
-                //while(true);
+                g_pDebugInterface->DeleteInterceptContext(pExInfo->m_DebuggerExState.GetDebuggerInterceptContext());
             }
         }
 #endif // DEBUGGING_SUPPORTED
