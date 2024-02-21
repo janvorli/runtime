@@ -7784,7 +7784,42 @@ VOID DECLSPEC_NORETURN UnwindAndContinueRethrowHelperAfterCatch(Frame* pEntryFra
 #ifdef FEATURE_EH_FUNCLETS
     if (g_isNewExceptionHandlingEnabled && !nativeRethrow)
     {
-        DispatchManagedException(orThrowable);
+        Thread *pThread = GetThread();
+        ThreadExceptionState* pExState = pThread->GetExceptionState();
+        // Continuation of the interception
+        UINT_PTR uInterceptStackFrame  = 0;
+
+        pExState->GetDebuggerState()->GetDebuggerInterceptInfo(NULL, NULL,
+                                                            (PBYTE*)&uInterceptStackFrame,
+                                                            NULL, NULL);
+
+        FILE* log = fopen("f:\\issues\\newehfailures\\log.txt", "a");
+        fprintf(log, "UnwindAndContinueRethrowHelperAfterCatch: uInterceptStackFrame=%p\n", (void*)uInterceptStackFrame);
+        fclose(log);
+
+        ExInfo *pPrevExInfo = (ExInfo*)pExState->GetCurrentExceptionTracker();
+        if (pPrevExInfo != NULL && pPrevExInfo->m_DebuggerExState.GetDebuggerInterceptContext() != NULL)
+        {
+            FILE* log = fopen("f:\\issues\\newehfailures\\log.txt", "a");
+            fprintf(log, "UnwindAndContinueRethrowHelperAfterCatch: continuing interception unwind\n");
+            fclose(log);
+
+            PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__UNWIND_AND_INTERCEPT);
+            DECLARE_ARGHOLDER_ARRAY(args, 2);
+            args[ARGNUM_0] = PTR_TO_ARGHOLDER(pPrevExInfo);//pExState->GetCurrentExceptionTracker());
+            args[ARGNUM_1] = PTR_TO_ARGHOLDER(uInterceptStackFrame);
+            pThread->IncPreventAbort();
+
+            //Ex.RhUnwindAndIntercept(throwable, &exInfo)
+            CRITICAL_CALLSITE;
+            CALL_MANAGED_METHOD_NORET(args)
+
+            UNREACHABLE();
+        }
+        else
+        {
+            DispatchManagedException(orThrowable);
+        }
     }
     else
 #endif // FEATURE_EH_FUNCLETS

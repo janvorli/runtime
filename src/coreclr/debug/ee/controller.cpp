@@ -8895,6 +8895,9 @@ DebuggerContinuableExceptionBreakpoint::DebuggerContinuableExceptionBreakpoint(T
                                                                                AppDomain *pAppDomain)
   : DebuggerController(pThread, pAppDomain)
 {
+    FILE* log = fopen("f:\\issues\\newehfailures\\log.txt", "a");
+    fprintf(log, "Setting up breakpoint at %p\n", (void*)(jitInfo->m_addrOfCode + nativeOffset));
+    fclose(log);
     _ASSERTE( jitInfo != NULL );
     // Add a native patch at the specified native offset, which is where we are going to resume execution.
     AddBindAndActivateNativeManagedPatch(jitInfo->m_nativeCodeVersion.GetMethodDesc(), jitInfo, nativeOffset, LEAF_MOST_FRAME, pAppDomain);

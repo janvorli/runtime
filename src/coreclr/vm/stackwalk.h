@@ -459,6 +459,7 @@ private:
     friend class StackFrameIterator;
 #ifdef FEATURE_EH_FUNCLETS
     friend class ExceptionTracker;
+    friend void NotifyFunctionEnter(StackFrameIterator *pThis, Thread *pThread, ExInfo *pExInfo);
 #endif // FEATURE_EH_FUNCLETS
 
     CodeManState      codeManState;

@@ -383,8 +383,45 @@ void ExInfo::ReleaseResources()
 void ExInfo::PopExInfos(Thread *pThread, void *targetSp)
 {
     ExInfo *pExInfo = (PTR_ExInfo)pThread->GetExceptionState()->GetCurrentExceptionTracker();
+#if defined(DEBUGGING_SUPPORTED)
+    DWORD_PTR dwInterceptStackFrame = 0;
+
+    // This method may be called on an unmanaged thread, in which case no interception can be done.
+    if (pExInfo)
+    {
+        ThreadExceptionState* pExState = pThread->GetExceptionState();
+
+        // If the exception is intercepted, then pop trackers according to the stack frame at which
+        // the exception is intercepted.  We must retrieve the frame pointer before we start popping trackers.
+        if (pExState->GetFlags()->DebuggerInterceptInfo())
+        {
+            pExState->GetDebuggerState()->GetDebuggerInterceptInfo(NULL, NULL, (PBYTE*)&dwInterceptStackFrame,
+                                                                   NULL, NULL);
+        }
+        // fprintf(stderr, "PopExInfos: dwInterceptStackFrame = %p\n", (void*)dwInterceptStackFrame);
+    }
+#endif // DEBUGGING_SUPPORTED
+
     while (pExInfo && pExInfo < (void*)targetSp)
     {
+#if defined(DEBUGGING_SUPPORTED)
+        if (g_pDebugInterface != NULL)
+        {
+            // fprintf(stderr, "PopExInfos: pExInfo = %p, pExInfo->m_ScannedStackRange.GetUpperBound().SP = %p\n",
+            //         pExInfo, (void*)pExInfo->m_ScannedStackRange.GetUpperBound().SP);
+            // fprintf(stderr, "PopExInfos: debugger intercept context at %p\n",
+            //         (void*)pExInfo->m_DebuggerExState.GetDebuggerInterceptContext());
+            if (pExInfo->m_ScannedStackRange.GetUpperBound().SP < dwInterceptStackFrame)
+            {
+                FILE* log = fopen("f:\\issues\\newehfailures\\log.txt", "a");
+                fprintf(log, "PopExInfos deleting intercept context %p, pExInfo->m_ScannedStackRange.GetUpperBound().SP=%p, dwInterceptStackFrame=%p\n", (void*)pExInfo->m_DebuggerExState.GetDebuggerInterceptContext(), (void*)pExInfo->m_ScannedStackRange.GetUpperBound().SP, (void*)dwInterceptStackFrame);
+                fclose(log);
+                // g_pDebugInterface->DeleteInterceptContext(pExInfo->m_DebuggerExState.GetDebuggerInterceptContext());
+                //while(true);
+            }
+        }
+#endif // DEBUGGING_SUPPORTED
+
         pExInfo->ReleaseResources();
         pExInfo = (PTR_ExInfo)pExInfo->m_pPrevNestedInfo;
     }
