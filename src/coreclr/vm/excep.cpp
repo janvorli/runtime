@@ -7786,19 +7786,19 @@ VOID DECLSPEC_NORETURN UnwindAndContinueRethrowHelperAfterCatch(Frame* pEntryFra
     {
         Thread *pThread = GetThread();
         ThreadExceptionState* pExState = pThread->GetExceptionState();
-        // Continuation of the interception
-        UINT_PTR uInterceptStackFrame  = 0;
-
-        pExState->GetDebuggerState()->GetDebuggerInterceptInfo(NULL, NULL,
-                                                            (PBYTE*)&uInterceptStackFrame,
-                                                            NULL, NULL);
-
         ExInfo *pPrevExInfo = (ExInfo*)pExState->GetCurrentExceptionTracker();
         if (pPrevExInfo != NULL && pPrevExInfo->m_DebuggerExState.GetDebuggerInterceptContext() != NULL)
         {
+            // Continuation of the interception
+            UINT_PTR uInterceptStackFrame  = 0;
+
+            pExState->GetDebuggerState()->GetDebuggerInterceptInfo(NULL, NULL,
+                                                                (PBYTE*)&uInterceptStackFrame,
+                                                                NULL, NULL);
+
             PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__UNWIND_AND_INTERCEPT);
             DECLARE_ARGHOLDER_ARRAY(args, 2);
-            args[ARGNUM_0] = PTR_TO_ARGHOLDER(pPrevExInfo);//pExState->GetCurrentExceptionTracker());
+            args[ARGNUM_0] = PTR_TO_ARGHOLDER(pPrevExInfo);
             args[ARGNUM_1] = PTR_TO_ARGHOLDER(uInterceptStackFrame);
             pThread->IncPreventAbort();
 

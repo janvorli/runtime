@@ -930,19 +930,19 @@ ProcessCLRExceptionNew(IN     PEXCEPTION_RECORD   pExceptionRecord,
     {
         GCX_COOP();
         ThreadExceptionState* pExState = pThread->GetExceptionState();
-        UINT_PTR uInterceptStackFrame  = 0;
-
-        pExState->GetDebuggerState()->GetDebuggerInterceptInfo(NULL, NULL,
-                                                            (PBYTE*)&uInterceptStackFrame,
-                                                            NULL, NULL);
-
         ExInfo *pPrevExInfo = (ExInfo*)pExState->GetCurrentExceptionTracker();
         if (pPrevExInfo != NULL && pPrevExInfo->m_DebuggerExState.GetDebuggerInterceptContext() != NULL)
         {
             // Continuation of an exception interception
+            UINT_PTR uInterceptStackFrame  = 0;
+
+            pExState->GetDebuggerState()->GetDebuggerInterceptInfo(NULL, NULL,
+                                                                (PBYTE*)&uInterceptStackFrame,
+                                                                NULL, NULL);
+
             PREPARE_NONVIRTUAL_CALLSITE(METHOD__EH__UNWIND_AND_INTERCEPT);
             DECLARE_ARGHOLDER_ARRAY(args, 2);
-            args[ARGNUM_0] = PTR_TO_ARGHOLDER(pPrevExInfo);//pExState->GetCurrentExceptionTracker());
+            args[ARGNUM_0] = PTR_TO_ARGHOLDER(pPrevExInfo);
             args[ARGNUM_1] = PTR_TO_ARGHOLDER(uInterceptStackFrame);
             pThread->IncPreventAbort();
 
@@ -7579,30 +7579,30 @@ extern "C" void QCALLTYPE AppendExceptionStackFrame(QCall::ObjectHandleOnStack e
     Thread* pThread = GET_THREAD();
 
     {
-    GCX_COOP();
+        GCX_COOP();
 
-    Frame* pFrame = pThread->GetFrame();
-    MarkInlinedCallFrameAsEHHelperCall(pFrame);
+        Frame* pFrame = pThread->GetFrame();
+        MarkInlinedCallFrameAsEHHelperCall(pFrame);
 
-    bool canAllocateMemory = !(exceptionObj.Get() == CLRException::GetPreallocatedOutOfMemoryException()) &&
-                             !(exceptionObj.Get() == CLRException::GetPreallocatedStackOverflowException());
+        bool canAllocateMemory = !(exceptionObj.Get() == CLRException::GetPreallocatedOutOfMemoryException()) &&
+                                !(exceptionObj.Get() == CLRException::GetPreallocatedStackOverflowException());
 
-    MethodDesc *pMD = pExInfo->m_frameIter.m_crawl.GetFunction();
+        MethodDesc *pMD = pExInfo->m_frameIter.m_crawl.GetFunction();
 #if _DEBUG
-    EECodeInfo codeInfo(ip);
-    _ASSERTE(codeInfo.IsValid());
-    _ASSERTE(pMD == codeInfo.GetMethodDesc());
+        EECodeInfo codeInfo(ip);
+        _ASSERTE(codeInfo.IsValid());
+        _ASSERTE(pMD == codeInfo.GetMethodDesc());
 #endif // _DEBUG
 
-    // Compensate for a bug in the old EH that doesn't mark faulting instructions as faulting. The VS expects that behavior.
-    bool hasFaulted = pExInfo->m_frameIter.m_crawl.HasFaulted();
-    if (hasFaulted)
-    {
-        pExInfo->m_frameIter.m_crawl.hasFaulted = false;
-    }
-    pExInfo->m_StackTraceInfo.AppendElement(canAllocateMemory, ip, sp, pMD, &pExInfo->m_frameIter.m_crawl);
-    pExInfo->m_StackTraceInfo.SaveStackTrace(canAllocateMemory, pExInfo->m_hThrowable, /*bReplaceStack*/FALSE, /*bSkipLastElement*/FALSE);
-    pExInfo->m_frameIter.m_crawl.hasFaulted = hasFaulted;
+        // Compensate for a bug in the old EH that doesn't mark faulting instructions as faulting. The VS expects that behavior.
+        bool hasFaulted = pExInfo->m_frameIter.m_crawl.HasFaulted();
+        if (hasFaulted)
+        {
+            pExInfo->m_frameIter.m_crawl.hasFaulted = false;
+        }
+        pExInfo->m_StackTraceInfo.AppendElement(canAllocateMemory, ip, sp, pMD, &pExInfo->m_frameIter.m_crawl);
+        pExInfo->m_StackTraceInfo.SaveStackTrace(canAllocateMemory, pExInfo->m_hThrowable, /*bReplaceStack*/FALSE, /*bSkipLastElement*/FALSE);
+        pExInfo->m_frameIter.m_crawl.hasFaulted = hasFaulted;
     }
 
     // Notify the debugger that we are on the first pass for a managed exception.
@@ -8191,7 +8191,6 @@ static void NotifyFunctionEnter(StackFrameIterator *pThis, Thread *pThread, ExIn
         {
             EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionLeave(pExInfo->m_pMDToReportFunctionLeave);
         }
-
         EEToProfilerExceptionInterfaceWrapper::ExceptionSearchFunctionEnter(pMD);
     }
     else
@@ -8213,7 +8212,6 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
     bool result = false;
     Thread* pThread = GET_THREAD();
     ExInfo* pExInfo = (ExInfo*)pThread->GetExceptionState()->GetCurrentExceptionTracker();
-    bool isIntercepted = false;
 
     BEGIN_QCALL;
 
@@ -8288,11 +8286,6 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
     }
 
     NotifyFunctionEnter(pThis, pThread, pExInfo);
-    isIntercepted = CheckExceptionInterception(pThis, pExInfo);
-    if ((pExInfo->m_passNumber == 1) && !isIntercepted && !pExInfo->DeliveredFirstChanceNotification())
-    {
-        ExceptionNotifications::DeliverFirstChanceNotification();
-    }
 
     pExInfo->m_ScannedStackRange.ExtendLowerBound(GetRegdisplaySP(pThis->m_crawl.GetRegisterSet()));
 
@@ -8312,7 +8305,7 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
         pThis->SetAdjustedControlPC(controlPC);
         pThis->UpdateIsRuntimeWrappedExceptions();
 
-        *pfIsExceptionIntercepted = isIntercepted;
+        *pfIsExceptionIntercepted = CheckExceptionInterception(pThis, pExInfo);
     }
 
     return result;
