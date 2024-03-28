@@ -1932,7 +1932,7 @@ public:
         LIMITED_METHOD_CONTRACT;
     }
 
-    void Swap(StackTraceArray & rhs)
+    void Set(I1ARRAYREF array)
     {
         CONTRACTL
         {
@@ -1942,9 +1942,7 @@ public:
         }
         CONTRACTL_END;
         SUPPORTS_DAC;
-        I1ARRAYREF t = m_array;
-        m_array = rhs.m_array;
-        rhs.m_array = t;
+        m_array = array;
     }
 
     size_t Size() const
@@ -2138,11 +2136,6 @@ typedef PTR_LoaderAllocatorObject LOADERALLOCATORREF;
 
 #endif // FEATURE_COLLECTIBLE_TYPES
 
-#if !defined(DACCESS_COMPILE)
-// Define the lock used to access stacktrace from an exception object
-EXTERN_C SpinLock g_StackTraceArrayLock;
-#endif // !defined(DACCESS_COMPILE)
-
 // This class corresponds to Exception on the managed side.
 typedef DPTR(class ExceptionObject) PTR_ExceptionObject;
 #include "pshpack4.h"
@@ -2187,11 +2180,11 @@ public:
         return _xptrs;
     }
 
-    void SetStackTrace(I1ARRAYREF stackTrace, PTRARRAYREF dynamicMethodArray);
+    void SetStackTrace(OBJECTREF stackTrace);
 
     void GetStackTrace(StackTraceArray & stackTrace, PTRARRAYREF * outDynamicMethodArray = NULL) const;
 
-    I1ARRAYREF GetStackTraceArrayObject() const
+    OBJECTREF GetStackTraceArrayObject() const
     {
         LIMITED_METHOD_DAC_CONTRACT;
         return _stackTrace;
@@ -2345,11 +2338,10 @@ private:
     OBJECTREF   _data;
     OBJECTREF   _innerException;
     STRINGREF   _helpURL;
-    I1ARRAYREF  _stackTrace;
+    OBJECTREF   _stackTrace;
     U1ARRAYREF  _watsonBuckets;
     STRINGREF   _stackTraceString; //Needed for serialization.
     STRINGREF   _remoteStackTraceString;
-    PTRARRAYREF _dynamicMethods;
     STRINGREF   _source;         // Mainly used by VB.
 
     UINT_PTR    _ipForWatsonBuckets; // Contains the IP of exception for watson bucketing
