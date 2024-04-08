@@ -137,6 +137,12 @@ inline bool SafeToReportGenericParamContext(CrawlFrame* pCF)
     return true;
 }
 
+#define REPORT_TRACKING_SIZE 65536
+void *doubleReportTracking[REPORT_TRACKING_SIZE];
+void *prevReportTracking[REPORT_TRACKING_SIZE];
+int doubleReportTrackingIndex = 0;
+int prevReportTrackingIndex = 0;
+
 /*
  * GcEnumObject()
  *
@@ -148,6 +154,18 @@ void GcEnumObject(LPVOID pData, OBJECTREF *pObj, uint32_t flags)
 {
     Object ** ppObj = (Object **)pObj;
     GCCONTEXT   * pCtx  = (GCCONTEXT *) pData;
+
+    STRESS_LOG2(LF_GCROOTS, LL_INFO1000, "GcEnumObject at slot %p, pinned=%d\n", pObj, (flags & GC_CALL_PINNED) ? 1 : 0);
+    if ((flags & GC_CALL_PINNED) == 0)
+    {
+        for (int i = 0; i < doubleReportTrackingIndex; i++)
+        {
+            _ASSERTE_MSG(doubleReportTracking[i] != pObj, "Double reporting detected");
+        }
+
+        _ASSERTE_MSG(prevReportTrackingIndex < REPORT_TRACKING_SIZE, "Report tracking overflow");
+        doubleReportTracking[doubleReportTrackingIndex++] = pObj;
+    }
 
     // Since we may be asynchronously walking another thread's stack,
     // check (frequently) for stack-buffer-overrun corruptions after
