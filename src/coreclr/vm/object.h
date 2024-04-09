@@ -1968,6 +1968,12 @@ public:
     // Deep copies the array
     void CopyFrom(StackTraceArray const & src);
 
+    Thread * GetObjectThread() const
+    {
+        WRAPPER_NO_CONTRACT;
+        return GetHeader()->m_thread;
+    }
+
 private:
     StackTraceArray(StackTraceArray const & rhs) = delete;
 
@@ -1995,12 +2001,6 @@ private:
     {
         WRAPPER_NO_CONTRACT;
         GetHeader()->m_size = size;
-    }
-
-    Thread * GetObjectThread() const
-    {
-        WRAPPER_NO_CONTRACT;
-        return GetHeader()->m_thread;
     }
 
     void SetObjectThread()
