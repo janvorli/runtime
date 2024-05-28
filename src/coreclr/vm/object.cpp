@@ -1426,7 +1426,7 @@ void __fastcall ZeroMemoryInGCHeap(void* mem, size_t size)
         *memBytes++ = 0;
 }
 
-void StackTraceArray::Append(StackTraceElement const * begin, StackTraceElement const * end)
+void StackTraceArray::Append(StackTraceElement const * elem)
 {
     CONTRACTL
     {
@@ -1437,12 +1437,12 @@ void StackTraceArray::Append(StackTraceElement const * begin, StackTraceElement 
     }
     CONTRACTL_END;
 
-    // ensure that only one thread can write to the array
-    EnsureThreadAffinity();
+    // Only the thread that has created the array can append to it
+    assert(GetObjectThread() == GetThreadNULLOk());
 
-    size_t newsize = Size() + (end - begin);
-    Grow(newsize);
-    memcpyNoGCRefs(GetData() + Size(), begin, (end - begin) * sizeof(StackTraceElement));
+    size_t newsize = Size() + 1;
+    assert(newsize <= Capacity());
+    memcpyNoGCRefs(GetData() + Size(), elem, sizeof(StackTraceElement));
     MemoryBarrier();  // prevent the newsize from being reordered with the array copy
     SetSize(newsize);
 
@@ -1473,62 +1473,38 @@ void StackTraceArray::CheckState() const
         assert(p[i].pFunc != NULL);
 }
 
-void StackTraceArray::Grow(size_t grow_size)
+void StackTraceArray::Allocate(size_t size)
 {
     CONTRACTL
     {
         THROWS;
         GC_TRIGGERS;
         MODE_COOPERATIVE;
-        INJECT_FAULT(ThrowOutOfMemory(););
         PRECONDITION(IsProtectedByGCFrame((OBJECTREF*)this));
     }
     CONTRACTL_END;
 
-    size_t raw_size = grow_size * sizeof(StackTraceElement) + sizeof(ArrayHeader);
+    size_t raw_size = size * sizeof(StackTraceElement) + sizeof(ArrayHeader);
 
-    if (!m_array)
+    if (!FitsIn<DWORD>(raw_size))
     {
-        SetArray(I1ARRAYREF(AllocatePrimitiveArray(ELEMENT_TYPE_I1, static_cast<DWORD>(raw_size))));
-        SetSize(0);
-        SetObjectThread();
+        EX_THROW(EEMessageException, (kOverflowException, IDS_EE_ARRAY_DIMENSIONS_EXCEEDED));
     }
-    else
-    {
-        if (Capacity() >= raw_size)
-            return;
-
-        // allocate a new array, copy the data
-        size_t new_capacity = Max(Capacity() * 2, raw_size);
-
-        _ASSERTE(new_capacity >= grow_size * sizeof(StackTraceElement) + sizeof(ArrayHeader));
-
-        I1ARRAYREF newarr = (I1ARRAYREF) AllocatePrimitiveArray(ELEMENT_TYPE_I1, static_cast<DWORD>(new_capacity));
-        memcpyNoGCRefs(newarr->GetDirectPointerToNonObjectElements(),
-                       GetRaw(),
-                       Size() * sizeof(StackTraceElement) + sizeof(ArrayHeader));
-
-        SetArray(newarr);
-    }
+   
+    SetArray(I1ARRAYREF(AllocatePrimitiveArray(ELEMENT_TYPE_I1, static_cast<DWORD>(raw_size))));
+    SetSize(0);
+    SetObjectThread();
 }
 
-void StackTraceArray::EnsureThreadAffinity()
+size_t StackTraceArray::Capacity() const
 {
     WRAPPER_NO_CONTRACT;
-
     if (!m_array)
-        return;
-
-    if (GetObjectThread() != GetThreadNULLOk())
     {
-        // object is being changed by a thread different from the one which created it
-        // make a copy of the array to prevent a race condition when two different threads try to change it
-        StackTraceArray copy;
-        GCPROTECT_BEGIN(copy);
-            copy.CopyFrom(*this);
-            this->Set(copy.Get());
-        GCPROTECT_END();
+        return 0;
     }
+
+    return (m_array->GetNumComponents() - sizeof(ArrayHeader)) / sizeof(StackTraceElement);
 }
 
 // Deep copies the stack trace array
@@ -1545,7 +1521,23 @@ void StackTraceArray::CopyFrom(StackTraceArray const & src)
     }
     CONTRACTL_END;
 
-    m_array = (I1ARRAYREF) AllocatePrimitiveArray(ELEMENT_TYPE_I1, static_cast<DWORD>(src.Capacity()));
+    m_array = (I1ARRAYREF) AllocatePrimitiveArray(ELEMENT_TYPE_I1, static_cast<DWORD>(src.Get()->GetNumComponents()));
+
+    CopyDataFrom(src);
+}
+
+void StackTraceArray::CopyDataFrom(StackTraceArray const & src)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_COOPERATIVE;
+        INJECT_FAULT(ThrowOutOfMemory(););
+        PRECONDITION(IsProtectedByGCFrame((OBJECTREF*)this));
+        PRECONDITION(IsProtectedByGCFrame((OBJECTREF*)&src));
+    }
+    CONTRACTL_END;
 
     Volatile<size_t> size = src.Size();
     memcpyNoGCRefs(GetRaw(), src.GetRaw(), size * sizeof(StackTraceElement) + sizeof(ArrayHeader));
@@ -1921,18 +1913,35 @@ void ExceptionObject::GetStackTrace(StackTraceArray & stackTrace, PTRARRAYREF * 
     }
     CONTRACTL_END;
 
-    OBJECTREF actualStackTrace = _stackTrace;
+    ExceptionObject::GetStackTraceParts(_stackTrace, stackTrace, outDynamicMethodArray);
+}
 
-    if ((actualStackTrace != NULL) && ((dac_cast<PTR_ArrayBase>(OBJECTREFToObject(actualStackTrace)))->GetArrayElementType() != ELEMENT_TYPE_I1))
+/* static */
+void ExceptionObject::GetStackTraceParts(OBJECTREF stackTraceObj, StackTraceArray & stackTrace, PTRARRAYREF * outDynamicMethodArray /*= NULL*/)
+{
+    CONTRACTL
+    {
+        GC_NOTRIGGER;
+        NOTHROW;
+        MODE_COOPERATIVE;
+    }
+    CONTRACTL_END;
+
+    PTRARRAYREF keepaliveArray = NULL;
+    if ((stackTraceObj != NULL) && ((dac_cast<PTR_ArrayBase>(OBJECTREFToObject(stackTraceObj)))->GetArrayElementType() != ELEMENT_TYPE_I1))
     {
         // The stack trace object is the dynamic methods array with its first slot set to the stack trace I1Array.
-        PTR_PTRArray combinedArray = dac_cast<PTR_PTRArray>(OBJECTREFToObject(actualStackTrace));
-        actualStackTrace = combinedArray->GetAt(0);
-        if (outDynamicMethodArray != NULL)
-        {
-            *outDynamicMethodArray = dac_cast<PTRARRAYREF>(ObjectToOBJECTREF(combinedArray));
-        }
+        PTR_PTRArray combinedArray = dac_cast<PTR_PTRArray>(OBJECTREFToObject(stackTraceObj));
+        stackTrace.Set(dac_cast<I1ARRAYREF>(combinedArray->GetAt(0)));
+        keepaliveArray = dac_cast<PTRARRAYREF>(ObjectToOBJECTREF(combinedArray));
+    }
+    else
+    {
+        stackTrace.Set(dac_cast<I1ARRAYREF>(stackTraceObj));
     }
 
-    stackTrace.Set(dac_cast<I1ARRAYREF>(actualStackTrace));
+    if (outDynamicMethodArray != NULL)
+    {
+        *outDynamicMethodArray = keepaliveArray;
+    }
 }

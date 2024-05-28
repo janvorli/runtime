@@ -1957,7 +1957,9 @@ public:
     StackTraceElement const & operator[](size_t index) const;
     StackTraceElement & operator[](size_t index);
 
-    void Append(StackTraceElement const * begin, StackTraceElement const * end);
+    size_t Capacity() const;
+    void Append(StackTraceElement const * element);
+    void Allocate(size_t size);
 
     I1ARRAYREF Get() const
     {
@@ -1968,10 +1970,18 @@ public:
     // Deep copies the array
     void CopyFrom(StackTraceArray const & src);
 
+    void CopyDataFrom(StackTraceArray const & src);
+
     Thread * GetObjectThread() const
     {
         WRAPPER_NO_CONTRACT;
         return GetHeader()->m_thread;
+    }
+
+    void SetSize(size_t size)
+    {
+        WRAPPER_NO_CONTRACT;
+        GetHeader()->m_size = size;
     }
 
 private:
@@ -1979,28 +1989,12 @@ private:
 
     StackTraceArray & operator=(StackTraceArray const & rhs) = delete;
 
-    void Grow(size_t size);
-    void EnsureThreadAffinity();
     void CheckState() const;
-
-    size_t Capacity() const
-    {
-        WRAPPER_NO_CONTRACT;
-        assert(!!m_array);
-
-        return m_array->GetNumComponents();
-    }
 
     size_t GetSize() const
     {
         WRAPPER_NO_CONTRACT;
         return GetHeader()->m_size;
-    }
-
-    void SetSize(size_t size)
-    {
-        WRAPPER_NO_CONTRACT;
-        GetHeader()->m_size = size;
     }
 
     void SetObjectThread()
@@ -2183,6 +2177,8 @@ public:
     void SetStackTrace(OBJECTREF stackTrace);
 
     void GetStackTrace(StackTraceArray & stackTrace, PTRARRAYREF * outDynamicMethodArray = NULL) const;
+
+    static void GetStackTraceParts(OBJECTREF stackTraceObj, StackTraceArray & stackTrace, PTRARRAYREF * outDynamicMethodArray /*= NULL*/);
 
     OBJECTREF GetStackTraceArrayObject() const
     {

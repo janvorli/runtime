@@ -148,29 +148,13 @@ namespace System
                 // fields are modified, then EDI's references remain intact.
                 //
 
-                // The stack trace can either be a byte[] of the stack frames or an object[] where the first
-                // element contains reference to the byte[] of the stack frames and the following elements
-                // are references to dynamic methods.
-                object? stackTraceCopy = null;
-                if (dispatchState.StackTrace is object[])
-                {
-                    stackTraceCopy = ((object[])dispatchState.StackTrace).Clone();
-                    object[] combinedArray = (object[])stackTraceCopy;
-                    combinedArray[0] = ((byte[])combinedArray[0]).Clone();
-                }
-                else if (dispatchState.StackTrace is byte[])
-                {
-                    stackTraceCopy = ((byte[])dispatchState.StackTrace).Clone();
-                }
-
                 // Watson buckets and remoteStackTraceString fields are captured and restored without any locks. It is possible for them to
                 // get out of sync without violating overall integrity of the system.
                 _watsonBuckets = dispatchState.WatsonBuckets;
                 _ipForWatsonBuckets = dispatchState.IpForWatsonBuckets;
                 _remoteStackTraceString = dispatchState.RemoteStackTrace;
 
-                // The binary stack trace and references to dynamic methods have to be restored under a lock to guarantee integrity of the system.
-                SaveStackTracesFromDeepCopy(this, stackTraceCopy);
+                SaveStackTracesFromDeepCopy(this, dispatchState.StackTrace);
 
                 _stackTraceString = null;
 

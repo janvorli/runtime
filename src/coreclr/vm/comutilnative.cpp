@@ -76,6 +76,43 @@ FCIMPL0(VOID, ExceptionNative::PrepareForForeignExceptionRaise)
 }
 FCIMPLEND
 
+void DeepCopyStackTrace(StackTraceArray &stackTrace, StackTraceArray &stackTraceCopy, PTRARRAYREF *pKeepaliveArray, PTRARRAYREF *pKeepaliveArrayCopy)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_COOPERATIVE;
+    }
+    CONTRACTL_END;
+
+    if (stackTrace.Get() != NULL)
+    {
+        stackTraceCopy.CopyFrom(stackTrace);
+    }
+    else
+    {
+        // TODO: this is not needed, maybe just assert that the stackTraceCopy is NULL
+        stackTraceCopy.Set(NULL);
+    }
+
+    if (*pKeepaliveArray != NULL)
+    {
+        // The stack trace object is the keepalive array with its first slot set to the stack trace I1Array.
+        // Get the number of elements in the dynamic methods array
+        unsigned cOrigKeepalive = (*pKeepaliveArray)->GetNumComponents();
+
+        // ..and allocate a new array. This can trigger GC or throw under OOM.
+        *pKeepaliveArrayCopy = (PTRARRAYREF)AllocateObjectArray(cOrigKeepalive, g_pObjectClass);
+
+        // Deepcopy references to the new array we just allocated
+        memmoveGCRefs((*pKeepaliveArrayCopy)->GetDataPtr(), (*pKeepaliveArray)->GetDataPtr(),
+                      cOrigKeepalive * sizeof(Object *));
+
+        (*pKeepaliveArrayCopy)->SetAt(0, (PTRARRAYREF)stackTraceCopy.Get());
+    }
+}
+
 // Given an exception object, this method will extract the stacktrace and dynamic method array and set them up for return to the caller.
 FCIMPL2(VOID, ExceptionNative::GetStackTracesDeepCopy, Object* pExceptionObjectUnsafe, Object **pStackTraceUnsafe);
 {
@@ -92,13 +129,10 @@ FCIMPL2(VOID, ExceptionNative::GetStackTracesDeepCopy, Object* pExceptionObjectU
     {
         StackTraceArray stackTrace;
         StackTraceArray stackTraceCopy;
-        EXCEPTIONREF refException;
-        PTRARRAYREF dynamicMethodsArray; // Object array of Managed Resolvers
-        PTRARRAYREF dynamicMethodsArrayCopy; // Copy of the object array of Managed Resolvers
+        EXCEPTIONREF refException = NULL;
+        PTRARRAYREF keepaliveArray = NULL; // Object array of Managed Resolvers
+        PTRARRAYREF keepaliveArrayCopy = NULL; // Copy of the object array of Managed Resolvers
     } gc;
-    gc.refException = NULL;
-    gc.dynamicMethodsArray = NULL;
-    gc.dynamicMethodsArrayCopy = NULL;
 
     // GC protect the array reference
     HELPER_METHOD_FRAME_BEGIN_PROTECT(gc);
@@ -106,40 +140,21 @@ FCIMPL2(VOID, ExceptionNative::GetStackTracesDeepCopy, Object* pExceptionObjectU
     // Get the exception object reference
     gc.refException = (EXCEPTIONREF)(ObjectToOBJECTREF(pExceptionObjectUnsafe));
 
-    // Fetch the stacktrace details from the exception under a lock
-    gc.refException->GetStackTrace(gc.stackTrace, &gc.dynamicMethodsArray);
+    gc.refException->GetStackTrace(gc.stackTrace, &gc.keepaliveArray);
+    DeepCopyStackTrace(gc.stackTrace, gc.stackTraceCopy, &gc.keepaliveArray, &gc.keepaliveArrayCopy);
 
-    bool fHaveStackTrace = false;
-    bool fHaveDynamicMethodArray = false;
-
-    if ((unsigned)gc.stackTrace.Size() > 0)
+    if (gc.keepaliveArrayCopy != NULL)
     {
-        // Deepcopy the array
-        gc.stackTraceCopy.CopyFrom(gc.stackTrace);
-        fHaveStackTrace = true;
+        *pStackTraceUnsafe = OBJECTREFToObject(gc.keepaliveArrayCopy);
     }
-
-    if (gc.dynamicMethodsArray != NULL)
+    else if (gc.stackTrace.Get() != NULL)
     {
-        // Get the number of elements in the dynamic methods array
-        unsigned   cOrigDynamic = gc.dynamicMethodsArray->GetNumComponents();
-
-        // ..and allocate a new array. This can trigger GC or throw under OOM.
-        gc.dynamicMethodsArrayCopy = (PTRARRAYREF)AllocateObjectArray(cOrigDynamic, g_pObjectClass);
-
-        // Deepcopy references to the new array we just allocated
-        memmoveGCRefs(gc.dynamicMethodsArrayCopy->GetDataPtr(), gc.dynamicMethodsArray->GetDataPtr(),
-                                                  cOrigDynamic * sizeof(Object *));
-
-        gc.dynamicMethodsArrayCopy->SetAt(0, gc.stackTraceCopy.Get());
-        fHaveDynamicMethodArray = true;
-        *pStackTraceUnsafe = OBJECTREFToObject(gc.dynamicMethodsArrayCopy);
+        *pStackTraceUnsafe = OBJECTREFToObject(gc.stackTraceCopy.Get());
     }
     else
     {
-        *pStackTraceUnsafe = fHaveStackTrace?OBJECTREFToObject(gc.stackTraceCopy.Get()):NULL;
+        *pStackTraceUnsafe = NULL;
     }
-
     HELPER_METHOD_FRAME_END();
 }
 FCIMPLEND
@@ -152,12 +167,16 @@ FCIMPL2(VOID, ExceptionNative::SaveStackTracesFromDeepCopy, Object* pExceptionOb
         FCALL_CHECK;
     }
     CONTRACTL_END;
-
+    
     ASSERT(pExceptionObjectUnsafe != NULL);
 
     struct
     {
+        StackTraceArray stackTrace;
+        StackTraceArray stackTraceCopy;
         OBJECTREF refStackTrace = NULL;
+        PTRARRAYREF refKeepaliveArray = NULL;
+        PTRARRAYREF refKeepaliveArrayCopy = NULL;
         EXCEPTIONREF refException = NULL;
     } gc;
 
@@ -168,8 +187,21 @@ FCIMPL2(VOID, ExceptionNative::SaveStackTracesFromDeepCopy, Object* pExceptionOb
     gc.refException = (EXCEPTIONREF)(ObjectToOBJECTREF(pExceptionObjectUnsafe));
     gc.refStackTrace = (OBJECTREF)(ObjectToOBJECTREF(pStackTraceUnsafe));
 
-    // Save the stacktrace details in the exception
-    gc.refException->SetStackTrace(gc.refStackTrace);
+    ExceptionObject::GetStackTraceParts(gc.refStackTrace, gc.stackTrace, &gc.refKeepaliveArray);
+    DeepCopyStackTrace(gc.stackTrace, gc.stackTraceCopy, &gc.refKeepaliveArray, &gc.refKeepaliveArrayCopy);
+
+    if (gc.refKeepaliveArray != NULL)
+    {
+        // The stack trace object is the keepalive array with its first slot set to the stack trace I1Array.
+        // Save the stacktrace details in the exception
+        gc.refException->SetStackTrace(gc.refKeepaliveArrayCopy);
+    }
+    else
+    {
+        // The stack trace object is the stack trace I1Array.
+        // Save the stacktrace details in the exception
+        gc.refException->SetStackTrace(gc.stackTraceCopy.Get());
+    }
 
     HELPER_METHOD_FRAME_END();
 }

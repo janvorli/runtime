@@ -2125,377 +2125,6 @@ void UnwindFrames(                      // No return value.
 
 #endif // !defined(FEATURE_EH_FUNCLETS)
 
-void StackTraceInfo::SaveStackTrace(BOOL bAllowAllocMem, OBJECTHANDLE hThrowable, BOOL bReplaceStack, BOOL bSkipLastElement)
-{
-    CONTRACTL
-    {
-        NOTHROW;
-        GC_TRIGGERS;
-        MODE_COOPERATIVE;
-    }
-    CONTRACTL_END;
-
-    Thread *pThread = GetThread();
-
-    // Do not save stacktrace to preallocated exception.  These are shared.
-    if (CLRException::IsPreallocatedExceptionHandle(hThrowable))
-    {
-        // Preallocated exceptions will never have this flag set. However, its possible
-        // that after this flag is set for a regular exception but before we throw, we have an async
-        // exception like a RudeThreadAbort, which will replace the exception
-        // containing the restored stack trace.
-        //
-        // In such a case, we should clear the flag as the throwable representing the
-        // preallocated exception will not have the restored (or any) stack trace.
-        PTR_ThreadExceptionState pCurTES = pThread->GetExceptionState();
-        pCurTES->ResetRaisingForeignException();
-
-        return;
-    }
-
-    LOG((LF_EH, LL_INFO1000, "StackTraceInfo::SaveStackTrace (%p), alloc = %d, replace = %d, skiplast = %d\n", this, bAllowAllocMem, bReplaceStack, bSkipLastElement));
-
-    // if have bSkipLastElement, must also keep the stack
-    _ASSERTE(! bSkipLastElement || ! bReplaceStack);
-
-    bool         fSuccess = false;
-    MethodTable* pMT      = ObjectFromHandle(hThrowable)->GetMethodTable();
-
-    // Check if the flag indicating foreign exception raise has been setup or not,
-    // and then reset it so that subsequent processing of managed frames proceeds
-    // normally.
-    PTR_ThreadExceptionState pCurTES = pThread->GetExceptionState();
-    BOOL fRaisingForeignException = pCurTES->IsRaisingForeignException();
-    pCurTES->ResetRaisingForeignException();
-
-    if (bAllowAllocMem && m_dFrameCount != 0)
-    {
-        EX_TRY
-        {
-            // Only save stack trace info on exceptions
-            _ASSERTE(IsException(pMT));     // what is the pathway here?
-            if (!IsException(pMT))
-            {
-                fSuccess = true;
-            }
-            else
-            {
-                // If the stack trace contains DynamicMethodDescs, we need to save the corrosponding
-                // System.Resolver objects in the Exception._dynamicMethods field. Failing to do that
-                // will cause an AV in the runtime when we try to visit those MethodDescs in the
-                // Exception._stackTrace field, because they have been recycled or destroyed.
-                unsigned    iNumDynamics      = 0;
-
-                // How many DynamicMethodDescs do we need to keep alive?
-                for (unsigned iElement=0; iElement < m_dFrameCount; iElement++)
-                {
-                    MethodDesc *pMethod = m_pStackTrace[iElement].pFunc;
-                    _ASSERTE(pMethod);
-
-                    if (pMethod->IsLCGMethod())
-                    {
-                        // Increment the number of new dynamic methods we have found
-                        iNumDynamics++;
-                    }
-                    else
-                    if (pMethod->GetMethodTable()->Collectible())
-                    {
-                        iNumDynamics++;
-                    }
-                }
-
-                struct _gc
-                {
-                    StackTraceArray stackTrace;
-                    StackTraceArray stackTraceTemp;
-                    PTRARRAYREF dynamicMethodsArrayTemp;
-                    PTRARRAYREF dynamicMethodsArray; // Object array of Managed Resolvers
-                    PTRARRAYREF pOrigDynamicArray;
-
-                    _gc()
-                        : stackTrace()
-                        , stackTraceTemp()
-                        , dynamicMethodsArrayTemp(static_cast<PTRArray *>(NULL))
-                        , dynamicMethodsArray(static_cast<PTRArray *>(NULL))
-                        , pOrigDynamicArray(static_cast<PTRArray *>(NULL))
-                    {}
-                };
-
-                _gc gc;
-                GCPROTECT_BEGIN(gc);
-
-                // If the flag indicating foreign exception raise has been setup, then check
-                // if the exception object has stacktrace or not. If we have an async non-preallocated
-                // exception after setting this flag but before we throw, then the new
-                // exception will not have any stack trace set and thus, we should behave as if
-                // the flag was not setup.
-                if (fRaisingForeignException)
-                {
-                    // Get the reference to stack trace and reset our flag if applicable.
-                    ((EXCEPTIONREF)ObjectFromHandle(hThrowable))->GetStackTrace(gc.stackTraceTemp);
-                    if (gc.stackTraceTemp.Size() == 0)
-                    {
-                        fRaisingForeignException = FALSE;
-                    }
-                }
-
-                // Replace stack (i.e. build a new stack trace) only if we are not raising a foreign exception.
-                // If we are, then we will continue to extend the existing stack trace.
-                if (bReplaceStack
-                    && (!fRaisingForeignException)
-                    )
-                {
-                    // Cleanup previous info
-                    gc.stackTrace.Append(m_pStackTrace, m_pStackTrace + m_dFrameCount);
-
-                    if (iNumDynamics)
-                    {
-                        // Adjust the allocation size of the array, if required
-                        if (iNumDynamics > m_cDynamicMethodItems)
-                        {
-                            S_UINT32 cNewSize = S_UINT32(2) * S_UINT32(iNumDynamics);
-                            if (cNewSize.IsOverflow())
-                            {
-                                // Overflow here implies we cannot allocate memory anymore
-                                LOG((LF_EH, LL_INFO100, "StackTraceInfo::SaveStackTrace - Cannot calculate initial resolver array size due to overflow!\n"));
-                                COMPlusThrowOM();
-                            }
-
-                            m_cDynamicMethodItems = cNewSize.Value();
-                        }
-
-                        gc.dynamicMethodsArray = (PTRARRAYREF)AllocateObjectArray(m_cDynamicMethodItems, g_pObjectClass);
-                        LOG((LF_EH, LL_INFO100, "StackTraceInfo::SaveStackTrace - allocated dynamic array for first frame of size %lu\n",
-                            m_cDynamicMethodItems));
-                    }
-
-                    m_dCurrentDynamicIndex = 1;
-                }
-                else
-                {
-                    // Fetch the stacktrace and the dynamic method array
-                    ((EXCEPTIONREF)ObjectFromHandle(hThrowable))->GetStackTrace(gc.stackTrace, &gc.pOrigDynamicArray);
-                    Thread *pStackTraceCreatorThread = (gc.stackTrace.Get() != NULL) ?  gc.stackTrace.GetObjectThread() : NULL;
-
-                    if (fRaisingForeignException)
-                    {
-                        // Just before we append to the stack trace, mark the last recorded frame to be from
-                        // the foreign thread so that we can insert an annotation indicating so when building
-                        // the stack trace string.
-                        size_t numCurrentFrames = gc.stackTrace.Size();
-                        if (numCurrentFrames > 0)
-                        {
-                            // "numCurrentFrames" can be zero if the user created an EDI using
-                            // an unthrown exception.
-                            StackTraceElement & refLastElementFromForeignStackTrace = gc.stackTrace[numCurrentFrames - 1];
-                            refLastElementFromForeignStackTrace.flags |= STEF_LAST_FRAME_FROM_FOREIGN_STACK_TRACE;
-                        }
-                    }
-
-                    if (!bSkipLastElement)
-                        gc.stackTrace.Append(m_pStackTrace, m_pStackTrace + m_dFrameCount);
-
-                    //////////////////////////////
-
-                    unsigned   cOrigDynamic = 0;    // number of objects in the old array
-                    if (gc.pOrigDynamicArray != NULL)
-                    {
-                        cOrigDynamic = gc.pOrigDynamicArray->GetNumComponents();
-                    }
-                    else
-                    {
-                        // Since there is no dynamic method array, reset the corresponding state variables
-                        m_dCurrentDynamicIndex = 1;
-                        m_cDynamicMethodItems = 0;
-                    }
-
-                    if ((gc.pOrigDynamicArray != NULL)
-                    || (fRaisingForeignException)
-                    )
-                    {
-                        // Since we have just restored the dynamic method array as well,
-                        // calculate the dynamic array index which would be the total
-                        // number of dynamic methods present in the stack trace.
-                        //
-                        // In addition to the ForeignException scenario, we need to reset these
-                        // values incase the exception object in question is being thrown by
-                        // multiple threads in parallel and thus, could have potentially different
-                        // dynamic method array contents/size as opposed to the current state of
-                        // StackTraceInfo.
-
-                        unsigned iStackTraceElements = (unsigned)gc.stackTrace.Size();
-                        m_dCurrentDynamicIndex = 1;
-                        for (unsigned iIndex = 0; iIndex < iStackTraceElements; iIndex++)
-                        {
-                            MethodDesc *pMethod = gc.stackTrace[iIndex].pFunc;
-                            if (pMethod)
-                            {
-                                if ((pMethod->IsLCGMethod()) || (pMethod->GetMethodTable()->Collectible()))
-                                {
-                                    // Increment the number of new dynamic methods we have found
-                                    m_dCurrentDynamicIndex++;
-                                }
-                            }
-                        }
-
-                        // Total number of elements in the dynamic method array should also be
-                        // reset based upon the restored array size.
-                        m_cDynamicMethodItems = cOrigDynamic;
-                    }
-
-                    // Make the dynamic Array field reference the original array we got from the
-                    // Exception object. If, below, we have to add new entries, we will add it to the
-                    // array if it is allocated, or else, we will allocate it before doing so.
-                    gc.dynamicMethodsArray = gc.pOrigDynamicArray;
-
-                    // Create an object array if we have new dynamic method entries AND
-                    // if we are at the (or went past) the current size limit
-                    if ((iNumDynamics > 0) || (pStackTraceCreatorThread != pThread && gc.dynamicMethodsArray != NULL))
-                    {
-                        // Reallocate the array if we are at the (or went past) the current size limit
-                        unsigned cTotalDynamicMethodCount = m_dCurrentDynamicIndex;
-
-                        S_UINT32 cNewSum = S_UINT32(cTotalDynamicMethodCount) + S_UINT32(iNumDynamics);
-                        if (cNewSum.IsOverflow())
-                        {
-                            // If the current size is already the UINT32 max size, then we
-                            // cannot go further. Overflow here implies we cannot allocate memory anymore.
-                            LOG((LF_EH, LL_INFO100, "StackTraceInfo::SaveStackTrace - Cannot calculate resolver array size due to overflow!\n"));
-                            COMPlusThrowOM();
-                        }
-
-                        cTotalDynamicMethodCount = cNewSum.Value();
-
-                        // Create a new dynamic method array if there is more space needed or if the stack trace was created by another thread
-                        if ((cTotalDynamicMethodCount > m_cDynamicMethodItems) || (pStackTraceCreatorThread != pThread))
-                        {
-                            S_UINT32 cNewSize = S_UINT32(cTotalDynamicMethodCount);
-                            if (cTotalDynamicMethodCount > m_cDynamicMethodItems)
-                            {
-                                // Double the current limit of the array.
-                                cNewSize *= S_UINT32(2);
-                            }
-
-                            if (m_cDynamicMethodItems == 0)
-                            {
-                                // We are allocating the array for the first time, add one slot for the stack trace reference
-                                cNewSize += S_UINT32(1);
-                            }
-
-                            if (cNewSize.IsOverflow())
-                            {
-                                // Overflow here implies that we cannot allocate any more memory
-                                LOG((LF_EH, LL_INFO100, "StackTraceInfo::SaveStackTrace - Cannot resize resolver array beyond max size due to overflow!\n"));
-                                COMPlusThrowOM();
-                            }
-
-                            m_cDynamicMethodItems = cNewSize.Value();
-                            gc.dynamicMethodsArray = (PTRARRAYREF)AllocateObjectArray(m_cDynamicMethodItems,
-                                                                                      g_pObjectClass);
-
-                            _ASSERTE(!(cOrigDynamic && !gc.pOrigDynamicArray));
-
-                            LOG((LF_EH, LL_INFO100, "StackTraceInfo::SaveStackTrace - resized dynamic array to size %lu\n",
-                            m_cDynamicMethodItems));
-
-                            // Copy previous entries if there are any, and update iCurDynamic to point
-                            // to the following index.
-                            if (cOrigDynamic && (gc.pOrigDynamicArray != NULL))
-                            {
-                                memmoveGCRefs(gc.dynamicMethodsArray->GetDataPtr(),
-                                              gc.pOrigDynamicArray->GetDataPtr(),
-                                              min(m_cDynamicMethodItems, cOrigDynamic) * sizeof(Object *));
-
-                                // m_dCurrentDynamicIndex is already referring to the correct index
-                                // at which the next resolver object will be saved
-                            }
-                            else
-                            {
-                                _ASSERTE(m_dCurrentDynamicIndex == 1);
-                            }
-                        }
-                    }
-                }
-
-                // Update _dynamicMethods field
-                if (iNumDynamics)
-                {
-                    // At this point, we should be having a valid array for storage
-                    _ASSERTE(gc.dynamicMethodsArray != NULL);
-
-                    // Assert that we are in valid range of the array in which resolver objects will be saved.
-                    // We subtract 1 below since storage will start from m_dCurrentDynamicIndex onwards and not
-                    // from (m_dCurrentDynamicIndex + 1).
-                    _ASSERTE((m_dCurrentDynamicIndex + iNumDynamics - 1) < gc.dynamicMethodsArray->GetNumComponents());
-
-                    for (unsigned i=0; i < m_dFrameCount; i++)
-                    {
-                        MethodDesc *pMethod = m_pStackTrace[i].pFunc;
-                        _ASSERTE(pMethod);
-
-                        if (pMethod->IsLCGMethod())
-                        {
-                            // We need to append the corresponding System.Resolver for
-                            // this DynamicMethodDesc to keep it alive.
-                            DynamicMethodDesc *pDMD = (DynamicMethodDesc *) pMethod;
-                            OBJECTREF pResolver = pDMD->GetLCGMethodResolver()->GetManagedResolver();
-
-                            _ASSERTE(pResolver != NULL);
-
-                            // Store Resolver information in the array
-                            gc.dynamicMethodsArray->SetAt(m_dCurrentDynamicIndex++, pResolver);
-                        }
-                        else
-                        if (pMethod->GetMethodTable()->Collectible())
-                        {
-                            OBJECTREF pLoaderAllocator = pMethod->GetMethodTable()->GetLoaderAllocator()->GetExposedObject();
-                            _ASSERTE(pLoaderAllocator != NULL);
-                            gc.dynamicMethodsArray->SetAt (m_dCurrentDynamicIndex++, pLoaderAllocator);
-                        }
-                    }
-                }
-
-                if (gc.dynamicMethodsArray != NULL)
-                {
-                    gc.dynamicMethodsArray->SetAt(0, gc.stackTrace.Get());
-                    ((EXCEPTIONREF)ObjectFromHandle(hThrowable))->SetStackTrace(dac_cast<OBJECTREF>(gc.dynamicMethodsArray));
-                }
-                else
-                {
-                    ((EXCEPTIONREF)ObjectFromHandle(hThrowable))->SetStackTrace(dac_cast<OBJECTREF>(gc.stackTrace.Get()));
-                }
-
-                // Update _stackTraceString field.
-                ((EXCEPTIONREF)ObjectFromHandle(hThrowable))->SetStackTraceString(NULL);
-                fSuccess = true;
-
-                GCPROTECT_END();    // gc
-            }
-        }
-        EX_CATCH
-        {
-        }
-        EX_END_CATCH(SwallowAllExceptions)
-    }
-
-    ClearStackTrace();
-
-    if (!fSuccess)
-    {
-        EX_TRY
-        {
-            _ASSERTE(IsException(pMT));         // what is the pathway here?
-            if (bReplaceStack && IsException(pMT))
-                ((EXCEPTIONREF)ObjectFromHandle(hThrowable))->ClearStackTraceForThrow();
-        }
-        EX_CATCH
-        {
-            // Do nothing
-        }
-        EX_END_CATCH(SwallowAllExceptions);
-    }
-}
-
 // Copy a context record, being careful about whether or not the target
 // is large enough to support CONTEXT_EXTENDED_REGISTERS.
 //
@@ -3229,172 +2858,9 @@ void COMPlusCooperativeTransitionHandler(Frame* pFrame)
 
 
 
-void StackTraceInfo::Init()
-{
-    CONTRACTL
-    {
-        NOTHROW;
-        GC_NOTRIGGER;
-        MODE_ANY;
-        FORBID_FAULT;
-    }
-    CONTRACTL_END;
-
-    LOG((LF_EH, LL_INFO10000, "StackTraceInfo::Init (%p)\n", this));
-
-    m_pStackTrace = NULL;
-    m_cStackTrace = 0;
-    m_dFrameCount = 0;
-    m_cDynamicMethodItems = 0;
-    m_dCurrentDynamicIndex = 0;
-}
-
-void StackTraceInfo::FreeStackTrace()
-{
-    CONTRACTL
-    {
-        NOTHROW;
-        GC_NOTRIGGER;
-        MODE_ANY;
-        FORBID_FAULT;
-    }
-    CONTRACTL_END;
-
-    if (m_pStackTrace)
-    {
-        delete [] m_pStackTrace;
-        m_pStackTrace = NULL;
-        m_cStackTrace = 0;
-        m_dFrameCount = 0;
-        m_cDynamicMethodItems = 0;
-        m_dCurrentDynamicIndex = 0;
-    }
-}
-
-BOOL StackTraceInfo::IsEmpty()
-{
-    LIMITED_METHOD_CONTRACT;
-
-    return 0 == m_dFrameCount;
-}
-
-void StackTraceInfo::ClearStackTrace()
-{
-    LIMITED_METHOD_CONTRACT;
-
-    LOG((LF_EH, LL_INFO1000, "StackTraceInfo::ClearStackTrace (%p)\n", this));
-    m_dFrameCount = 0;
-}
-
-// allocate stack trace info. As each function is found in the stack crawl, it will be added
-// to this list. If the list is too small, it is reallocated.
-void StackTraceInfo::AllocateStackTrace()
-{
-    STATIC_CONTRACT_NOTHROW;
-    STATIC_CONTRACT_GC_NOTRIGGER;
-    STATIC_CONTRACT_MODE_ANY;
-    STATIC_CONTRACT_FORBID_FAULT;
-
-    LOG((LF_EH, LL_INFO1000, "StackTraceInfo::AllocateStackTrace (%p)\n", this));
-
-    if (!m_pStackTrace)
-    {
-#ifdef _DEBUG
-        unsigned int allocSize = 2;    // make small to exercise realloc
-#else
-        unsigned int allocSize = 30;
-#endif
-
-        SCAN_IGNORE_FAULT; // A fault of new is okay here. The rest of the system is cool if we don't have enough
-                           // memory to remember the stack as we run our first pass.
-        m_pStackTrace = new (nothrow) StackTraceElement[allocSize];
-
-        if (m_pStackTrace != NULL)
-        {
-            // Remember how much we allocated.
-            m_cStackTrace = allocSize;
-            m_cDynamicMethodItems = allocSize;
-        }
-        else
-        {
-            m_cStackTrace = 0;
-            m_cDynamicMethodItems = 0;
-        }
-    }
-}
-
-//
-// Returns true if it appended the element, false otherwise.
-//
-BOOL StackTraceInfo::AppendElement(BOOL bAllowAllocMem, UINT_PTR currentIP, UINT_PTR currentSP, MethodDesc* pFunc, CrawlFrame* pCf)
-{
-    CONTRACTL
-    {
-        GC_TRIGGERS;
-        NOTHROW;
-    }
-    CONTRACTL_END
-
-    LOG((LF_EH, LL_INFO10000, "StackTraceInfo::AppendElement (%p), IP = %p, SP = %p, %s::%s\n", this, currentIP, currentSP, pFunc ? pFunc->m_pszDebugClassName : "", pFunc ? pFunc->m_pszDebugMethodName : "" ));
-    BOOL bRetVal = FALSE;
-
-    if (pFunc != NULL && pFunc->IsILStub())
-        return FALSE;
-
-    // Save this function in the stack trace array, which we only build on the first pass. We'll try to expand the
-    // stack trace array if we don't have enough room. Note that we only try to expand if we're allowed to allocate
-    // memory (bAllowAllocMem).
-    if (bAllowAllocMem && (m_dFrameCount >= m_cStackTrace))
-    {
-        StackTraceElement* pTempElement = new (nothrow) StackTraceElement[m_cStackTrace*2];
-
-        if (pTempElement != NULL)
-        {
-            memcpy(pTempElement, m_pStackTrace, m_cStackTrace * sizeof(StackTraceElement));
-            delete [] m_pStackTrace;
-            m_pStackTrace = pTempElement;
-            m_cStackTrace *= 2;
-        }
-    }
-
-    // Add the function to the stack trace array if there's room.
-    if (m_dFrameCount < m_cStackTrace)
-    {
-        StackTraceElement* pStackTraceElem;
-
-        // If we get in here, we'd better have a stack trace array.
-        CONSISTENCY_CHECK(m_pStackTrace != NULL);
-
-        pStackTraceElem = &(m_pStackTrace[m_dFrameCount]);
-
-        pStackTraceElem->pFunc = pFunc;
-
-        pStackTraceElem->ip = currentIP;
-        pStackTraceElem->sp = currentSP;
-
-        // When we are building stack trace as we encounter managed frames during exception dispatch,
-        // then none of those frames represent a stack trace from a foreign exception (as they represent
-        // the current exception). Hence, set the corresponding flag to FALSE.
-        pStackTraceElem->flags = 0;
-
-        // This is a workaround to fix the generation of stack traces from exception objects so that
-        // they point to the line that actually generated the exception instead of the line
-        // following.
-        if (pCf->IsIPadjusted())
-        {
-            pStackTraceElem->flags |= STEF_IP_ADJUSTED;
-        }
-        else if (!pCf->HasFaulted() && pStackTraceElem->ip != 0)
-        {
-            pStackTraceElem->ip -= STACKWALK_CONTROLPC_ADJUST_OFFSET;
-            pStackTraceElem->flags |= STEF_IP_ADJUSTED;
-        }
-
-        ++m_dFrameCount;
-        bRetVal = TRUE;
-    }
-
 #ifndef TARGET_UNIX // Watson is supported on Windows only
+void SetupWatsonBucket(UINT_PTR currentIP, CrawlFrame* pCf)
+{
     Thread *pThread = GetThread();
 
     if (pThread && (currentIP != 0))
@@ -3416,9 +2882,455 @@ BOOL StackTraceInfo::AppendElement(BOOL bAllowAllocMem, UINT_PTR currentIP, UINT
             SetupInitialThrowBucketDetails(adjustedIp);
         }
     }
+}
 #endif // !TARGET_UNIX
 
-    return bRetVal;
+// Ensure that there is space for one more element in the stack trace array.
+// In case the alwaysCopy is true, make a copy of the original array even if 
+// there is enough space.
+void StackTraceInfo::EnsureStackTraceArray(StackTraceArray *pStackTrace, bool alwaysCopy, size_t neededSize)
+{
+    CONTRACTL
+    {
+        GC_TRIGGERS;
+        THROWS;
+        PRECONDITION(CheckPointer(pStackTrace));
+    }
+    CONTRACTL_END;
+
+    StackTraceArray newStackTrace;
+    GCPROTECT_BEGIN(newStackTrace);
+
+    size_t stackTraceCapacity = pStackTrace->Capacity();
+    if (alwaysCopy || (neededSize > stackTraceCapacity))
+    {
+        if (neededSize > stackTraceCapacity)
+        {
+            S_SIZE_T newCapacity = S_SIZE_T(stackTraceCapacity) * S_SIZE_T(2);
+            if (newCapacity.IsOverflow() || (neededSize > newCapacity.Value()))
+            {
+                newCapacity = S_SIZE_T(neededSize);
+            }
+
+            stackTraceCapacity = newCapacity.Value();
+        }
+
+        // Allocate a new array with the needed size
+        newStackTrace.Allocate(stackTraceCapacity);
+        if (pStackTrace->Get() != NULL)
+        {
+            STRESS_LOG3(LF_EH, LL_INFO1000, "EnsureStackTraceArray copying from stackTrace=%p to stackTrace=%p, owner thread was %04x\n", OBJECTREFToObject(pStackTrace->Get()), OBJECTREFToObject(newStackTrace.Get()), pStackTrace->GetObjectThread()->GetOSThreadId());
+            // Copy the original array to the new one
+            newStackTrace.CopyDataFrom(*pStackTrace);
+            // TODO: cleanup this - make the method have delta as the parameter instead
+            newStackTrace.SetSize(neededSize - 1);
+        }
+        else
+        {
+            STRESS_LOG1(LF_EH, LL_INFO1000, "EnsureStackTraceArray created a new clean array %p\n", OBJECTREFToObject(newStackTrace.Get()));
+        }
+        // Update the stack trace array
+        pStackTrace->Set(newStackTrace.Get());
+    }
+    GCPROTECT_END();
+}
+
+// Ensure that there is space for the neededSize elements in the keepalive array.
+// In case the alwaysCopy is true, make a copy of the original array even if 
+// there is enough space.
+void StackTraceInfo::EnsureKeepaliveArray(PTRARRAYREF *ppKeepaliveArray, bool alwaysCopy, size_t neededSize)
+{
+    CONTRACTL
+    {
+        GC_TRIGGERS;
+        THROWS;
+        PRECONDITION(CheckPointer(ppKeepaliveArray));
+    }
+    CONTRACTL_END;
+
+    PTRARRAYREF pNewKeepaliveArray = NULL;
+    GCPROTECT_BEGIN(pNewKeepaliveArray);
+
+    size_t keepaliveArrayCapacity = (*ppKeepaliveArray != NULL) ? (*ppKeepaliveArray)->GetNumComponents() : 0;
+    if (alwaysCopy || (neededSize > keepaliveArrayCapacity))
+    {
+        if (neededSize > keepaliveArrayCapacity)
+        {
+            S_SIZE_T newCapacity = S_SIZE_T(keepaliveArrayCapacity) * S_SIZE_T(2);
+            if (newCapacity.IsOverflow() || (neededSize > newCapacity.Value()))
+            {
+                newCapacity = S_SIZE_T(neededSize);
+            }
+
+            keepaliveArrayCapacity = newCapacity.Value();
+
+            if (!FitsIn<DWORD>(keepaliveArrayCapacity))
+            {
+                EX_THROW(EEMessageException, (kOverflowException, IDS_EE_ARRAY_DIMENSIONS_EXCEEDED));
+            }
+        }
+
+        // Allocate a new array with the needed size
+        pNewKeepaliveArray = (PTRARRAYREF)AllocateObjectArray(static_cast<DWORD>(keepaliveArrayCapacity), g_pObjectClass);
+        if ((*ppKeepaliveArray) != NULL)
+        {
+            memmoveGCRefs(pNewKeepaliveArray->GetDataPtr(),
+                          (*ppKeepaliveArray)->GetDataPtr(),
+                          neededSize * sizeof(Object *));        
+        }
+        // Update the keepalive array
+        *ppKeepaliveArray = pNewKeepaliveArray;
+    }
+
+    GCPROTECT_END();
+}
+
+// Get a keepalive object for the given method. The keepalive object is either a
+// Resolver object for DynamicMethodDesc or a LoaderAllocator object for methods in
+// collectible assemblies.
+// Returns NULL if the method code cannot be destroyed.
+OBJECTREF StackTraceInfo::GetKeepaliveObject(MethodDesc* pMethod)
+{
+    LIMITED_METHOD_CONTRACT;
+
+    if (pMethod->IsLCGMethod())
+    {
+        // We need to append the corresponding System.Resolver for
+        // this DynamicMethodDesc to keep it alive.
+        DynamicMethodDesc *pDMD = (DynamicMethodDesc *) pMethod;
+        OBJECTREF pResolver = pDMD->GetLCGMethodResolver()->GetManagedResolver();
+
+        _ASSERTE(pResolver != NULL);
+
+        // Store Resolver information in the array
+        return pResolver;
+    }
+    else if (pMethod->GetMethodTable()->Collectible())
+    {
+        OBJECTREF pLoaderAllocator = pMethod->GetMethodTable()->GetLoaderAllocator()->GetExposedObject();
+        _ASSERTE(pLoaderAllocator != NULL);
+        return pLoaderAllocator;
+    }
+
+    return NULL;
+}
+
+// Get number of methods in the stack trace that can be collected. We need to store keepalive
+// objects (Resolver / LoaderAllocator) for these methods.
+int StackTraceInfo::GetKeepaliveItemsCount(StackTraceArray *pStackTrace)
+{
+    LIMITED_METHOD_CONTRACT;
+
+    int count = 0;
+    for (size_t i = 0; i < pStackTrace->Size(); i++)
+    {
+        MethodDesc *pMethod = (*pStackTrace)[i].pFunc;
+        if (pMethod->IsLCGMethod() || pMethod->GetMethodTable()->Collectible())
+        {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+// void StackTraceInfo::SetKeepaliveItemsCount(StackTraceArray *pStackTrace)
+// {
+//     m_keepaliveItemsCount = GetKeepaliveItemsCount(pStackTrace);
+// }
+
+//
+// Append stack frame to an exception stack trace.
+// Returns true if it appended the element, false otherwise.
+//
+// TODO: verify that we do everything we did before
+BOOL StackTraceInfo::AppendElement(OBJECTHANDLE hThrowable, UINT_PTR currentIP, UINT_PTR currentSP, MethodDesc* pFunc, CrawlFrame* pCf)
+{
+    CONTRACTL
+    {
+        GC_TRIGGERS;
+        NOTHROW;
+        MODE_COOPERATIVE;
+    }
+    CONTRACTL_END
+
+    BOOL bRetVal = FALSE;
+    Thread *pThread = GetThread();
+    MethodTable* pMT = ObjectFromHandle(hThrowable)->GetMethodTable();
+    _ASSERTE(IsException(pMT));
+
+    PTR_ThreadExceptionState pCurTES = pThread->GetExceptionState();
+    // Check if the flag indicating foreign exception raise has been setup or not,
+    // and then reset it so that subsequent processing of managed frames proceeds
+    // normally.
+    BOOL fRaisingForeignException = pCurTES->IsRaisingForeignException();
+    pCurTES->ResetRaisingForeignException();
+
+    LOG((LF_EH, LL_INFO10000, "StackTraceInfo::AppendElement (%p), IP = %p, SP = %p, %s::%s\n", this, currentIP, currentSP, pFunc ? pFunc->m_pszDebugClassName : "", pFunc ? pFunc->m_pszDebugMethodName : "" ));
+
+    if (pFunc != NULL && pFunc->IsILStub())
+        return FALSE;
+
+    // Do not save stacktrace to preallocated exception.  These are shared.
+    if (CLRException::IsPreallocatedExceptionHandle(hThrowable))
+    {
+        // Preallocated exceptions will never have this flag set. However, its possible
+        // that after this flag is set for a regular exception but before we throw, we have an async
+        // exception like a RudeThreadAbort, which will replace the exception
+        // containing the restored stack trace.
+
+        return FALSE;
+    }
+
+    StackTraceElement stackTraceElem;
+
+    stackTraceElem.pFunc = pFunc;
+
+    stackTraceElem.ip = currentIP;
+    stackTraceElem.sp = currentSP;
+
+    // When we are building stack trace as we encounter managed frames during exception dispatch,
+    // then none of those frames represent a stack trace from a foreign exception (as they represent
+    // the current exception). Hence, set the corresponding flag to FALSE.
+    stackTraceElem.flags = 0;
+
+    // This is a workaround to fix the generation of stack traces from exception objects so that
+    // they point to the line that actually generated the exception instead of the line
+    // following.
+    if (pCf->IsIPadjusted())
+    {
+        stackTraceElem.flags |= STEF_IP_ADJUSTED;
+    }
+    else if (!pCf->HasFaulted() && stackTraceElem.ip != 0)
+    {
+        stackTraceElem.ip -= STACKWALK_CONTROLPC_ADJUST_OFFSET;
+        stackTraceElem.flags |= STEF_IP_ADJUSTED;
+    }
+
+#ifndef TARGET_UNIX // Watson is supported on Windows only
+    SetupWatsonBucket(currentIP, pCf);
+#endif // !TARGET_UNIX
+
+    EX_TRY
+    {
+        struct
+        {
+            StackTraceArray stackTrace;
+            PTRARRAYREF pKeepaliveArray = NULL; // Object array of Managed Resolvers / Loader Allocators of methods that can be collected
+            OBJECTREF keepaliveObject = NULL;
+        } gc;
+
+        GCPROTECT_BEGIN_THREAD(pThread, gc);
+
+        // Fetch the stacktrace and the keepalive array from the exception object
+        ((EXCEPTIONREF)ObjectFromHandle(hThrowable))->GetStackTrace(gc.stackTrace, &gc.pKeepaliveArray);
+        STRESS_LOG3(LF_EH, LL_INFO1000, "AppendElement read from exception stackTrace=%p, pKeepaliveArray=%p, the m_keepAliveItemsCount is %d\n", OBJECTREFToObject(gc.stackTrace.Get()), OBJECTREFToObject(gc.pKeepaliveArray), (int)m_keepaliveItemsCount);
+
+        // // TODO: we can remove this
+        // if (gc.stackTrace.Get() == NULL)
+        // {
+        //     _ASSERTE(m_keepaliveItemsCount == -1);
+        //     m_keepaliveItemsCount = 0;
+        // }
+
+        bool originalKeepAliveArrayWasEmpty = (gc.pKeepaliveArray == NULL);
+        size_t originalKeepAliveItemsCountPlusOne = (gc.pKeepaliveArray != NULL) ? gc.pKeepaliveArray->GetNumComponents() : 0;
+        Thread *pStackTraceCreatorThread = (gc.stackTrace.Get() != NULL) ?  gc.stackTrace.GetObjectThread() : NULL;
+        bool wasCreatedByForeignThread = (pStackTraceCreatorThread != pThread);
+
+        STRESS_LOG5(LF_EH, LL_INFO1000, "AppendElement wasCreatedByForeignThread=%d, creator=%04x, originalKeepAliveArrayWasEmpty=%d, originalKeepAliveItemsCount=%d, originalStackTraceSize=%d\n", wasCreatedByForeignThread ? 1 : 0, pStackTraceCreatorThread ? pStackTraceCreatorThread->GetOSThreadId() : 0, originalKeepAliveArrayWasEmpty ? 1 : 0, (int)originalKeepAliveItemsCountPlusOne, (int)gc.stackTrace.Size());
+
+        EnsureStackTraceArray(&gc.stackTrace, wasCreatedByForeignThread, gc.stackTrace.Size() + 1);
+        STRESS_LOG1(LF_EH, LL_INFO1000, "Ensured StackTraceArray=%p\n", OBJECTREFToObject(gc.stackTrace.Get()));
+
+        if (wasCreatedByForeignThread)
+        {
+            // TODO: is this really needed?
+            MemoryBarrier();
+            // Scan the stack trace to get number of methods that can be collected. The keepalive array needs to
+            // store references to keep these alive.
+            m_keepaliveItemsCount = GetKeepaliveItemsCount(&gc.stackTrace);
+            STRESS_LOG1(LF_EH, LL_INFO1000, "Set m_keepaliveItemsCount=%d\n", (int)m_keepaliveItemsCount);
+        }
+        else
+        {
+            if (m_keepaliveItemsCount == -1)
+            {
+                m_keepaliveItemsCount = GetKeepaliveItemsCount(&gc.stackTrace);
+            }
+            _ASSERTE(m_keepaliveItemsCount == GetKeepaliveItemsCount(&gc.stackTrace));
+        }
+
+        int prevKeepaliveItemsCount = m_keepaliveItemsCount;
+
+        gc.keepaliveObject = GetKeepaliveObject(pFunc);
+        if (gc.keepaliveObject != NULL)
+        {
+            m_keepaliveItemsCount++;
+            STRESS_LOG1(LF_EH, LL_INFO1000, "Incremented m_keepaliveItemsCount to %d\n", (int)m_keepaliveItemsCount);
+        }
+
+        if (m_keepaliveItemsCount != 0)
+        {
+            // One extra slot is added for the stack trace array
+            EnsureKeepaliveArray(&gc.pKeepaliveArray, wasCreatedByForeignThread, m_keepaliveItemsCount + 1);
+            STRESS_LOG2(LF_EH, LL_INFO1000, "Ensured KeepAliveArray=%p, m_keepaliveItemsCount=%d\n", OBJECTREFToObject(gc.pKeepaliveArray), (int)m_keepaliveItemsCount);
+        }
+        else
+        {
+            //_ASSERTE(gc.pKeepaliveArray == NULL);
+            // Another thread has published the keepalive array, but haven't updated the stack trace yet.
+            STRESS_LOG0(LF_EH, LL_INFO1000, "Setting KeepAliveArray to NULL\n");
+            gc.pKeepaliveArray = NULL;
+        }
+
+        if (wasCreatedByForeignThread)
+        {
+            int j = 0;
+            unsigned count = (unsigned)gc.stackTrace.Size();
+            unsigned i;
+            for (i = 0; i < count; i++)
+            {
+                MethodDesc *pMethod = gc.stackTrace[i].pFunc;
+                if (pMethod->IsLCGMethod() || pMethod->GetMethodTable()->Collectible())
+                {
+                    _ASSERTE(j < m_keepaliveItemsCount);
+                    if (j >= prevKeepaliveItemsCount || (gc.pKeepaliveArray->GetAt(j + 1) == NULL))
+                    {
+                        // TODO: what if we just always built a new keepalive array in case of wasCreatedByForeignThread? That sounds like a much cleaner way.
+                        // Trim the stackTrace array from the first non-protected entry till the end.
+                        gc.stackTrace.SetSize(i);
+                        m_keepaliveItemsCount = j;
+                        if (gc.keepaliveObject != NULL)
+                        {
+                            m_keepaliveItemsCount++;
+                        }
+                        if (m_keepaliveItemsCount == 0)
+                        {
+                            gc.pKeepaliveArray = NULL;
+                        }
+                        break;
+                    }
+                    // OBJECTREF keepaliveObject1 = GetKeepaliveObject(gc.stackTrace[i].pFunc);
+                    // OBJECTREF keepaliveObject2 = gc.pKeepaliveArray->GetAt(j + 1);
+                    _ASSERTE(GetKeepaliveObject(gc.stackTrace[i].pFunc) == gc.pKeepaliveArray->GetAt(j + 1));
+                    j++;
+                }
+
+            }
+
+//            _ASSERTE(((m_keepaliveItemsCount == 0) && (j==0)) || j == m_keepaliveItemsCount - 1);
+        }
+
+        if (wasCreatedByForeignThread)
+        {
+            int j = 0;
+            unsigned count = (unsigned)gc.stackTrace.Size();
+            for (unsigned i = 0; i < count; i++)
+            {
+                MethodDesc *pMethod = gc.stackTrace[i].pFunc;
+                if ((pMethod->IsLCGMethod() || pMethod->GetMethodTable()->Collectible()))
+//                 {
+//                     _ASSERTE(j < m_keepaliveItemsCount);
+//                     // The stackTrace array we have fetched from the exception didn't contain any element that needed
+//                     // a keepalive object when we have fetched it from the exception (the keepalive array was not present).
+//                     // But it was updated before we made the copy by one or more elements that needed a keepalive object. 
+//                     // So we add the missing keepalive objects here.
+//                     if (gc.pKeepaliveArray->GetAt(j + 1) == NULL)
+//                     {
+//                         _ASSERTE(originalKeepAliveArrayWasEmpty);
+//                         gc.pKeepaliveArray->SetAt(j + 1, GetKeepaliveObject(gc.stackTrace[i].pFunc));
+//                     }
+// #ifdef _DEBUG
+//                     else
+//                     {
+//                         _ASSERTE(GetKeepaliveObject(gc.stackTrace[i].pFunc) == gc.pKeepaliveArray->GetAt(j + 1));    
+//                     }   
+// #endif // _DEBUG                                     
+//                     j++;
+//                 }
+                {
+                    _ASSERTE(j < m_keepaliveItemsCount);
+                    OBJECTREF keepaliveObject1 = GetKeepaliveObject(gc.stackTrace[i].pFunc);
+                    OBJECTREF keepaliveObject2 = gc.pKeepaliveArray->GetAt(j + 1);
+                    _ASSERTE(GetKeepaliveObject(gc.stackTrace[i].pFunc) == gc.pKeepaliveArray->GetAt(j + 1));
+                    j++;
+                }
+            }
+        }
+
+#ifdef _DEBUG
+        if (wasCreatedByForeignThread)
+        {
+            int j = 0;
+            unsigned count = (unsigned)gc.stackTrace.Size();
+            for (unsigned i = 0; i < count; i++)
+            {
+                MethodDesc *pMethod = gc.stackTrace[i].pFunc;
+                if (pMethod->IsLCGMethod() || pMethod->GetMethodTable()->Collectible())
+                {
+                    _ASSERTE(j < m_keepaliveItemsCount);
+                    OBJECTREF keepaliveObject1 = GetKeepaliveObject(gc.stackTrace[i].pFunc);
+                    OBJECTREF keepaliveObject2 = gc.pKeepaliveArray->GetAt(j + 1);
+                    _ASSERTE(GetKeepaliveObject(gc.stackTrace[i].pFunc) == gc.pKeepaliveArray->GetAt(j + 1));
+                    j++;
+                }
+            }
+        }
+#endif // _DEBUG
+
+        if (gc.keepaliveObject != NULL)
+        {
+            _ASSERTE(m_keepaliveItemsCount > 0);
+            // Add the method to the keepalive array
+            gc.pKeepaliveArray->SetAt(m_keepaliveItemsCount, gc.keepaliveObject);
+            // Make sure the stack trace element is appended after the keepalive array is updated to prevent race when
+            // other thread would read the stack trace and the keepalive array where the stack trace would contain frames of
+            // methods that can be collected and there would be no protection in the keepalive array.
+            MemoryBarrier();
+        }
+
+        _ASSERTE(gc.stackTrace.GetObjectThread() == pThread);
+
+        if (gc.pKeepaliveArray != NULL)
+        {
+            _ASSERTE(m_keepaliveItemsCount > 0);
+            for (int i = 1; i < m_keepaliveItemsCount; i++)
+            {
+                OBJECTREF keepaliveObject = gc.pKeepaliveArray->GetAt(i);
+                _ASSERTE(keepaliveObject != NULL);
+            }
+//            ClrSleepEx(2000,FALSE);
+            STRESS_LOG2(LF_EH, LL_INFO1000, "Setting stackTrace %p in keepalive array %p on exception\n", OBJECTREFToObject(gc.stackTrace.Get()), OBJECTREFToObject(gc.pKeepaliveArray));
+            gc.pKeepaliveArray->SetAt(0, gc.stackTrace.Get());
+            ((EXCEPTIONREF)ObjectFromHandle(hThrowable))->SetStackTrace(dac_cast<OBJECTREF>(gc.pKeepaliveArray));
+        }
+        else
+        {
+            _ASSERTE(m_keepaliveItemsCount == 0);
+            STRESS_LOG1(LF_EH, LL_INFO1000, "Setting pure stackTrace %p on exception\n", OBJECTREFToObject(gc.stackTrace.Get()));
+            ((EXCEPTIONREF)ObjectFromHandle(hThrowable))->SetStackTrace(dac_cast<OBJECTREF>(gc.stackTrace.Get()));
+        }
+
+        // It is important to add the stack frame after publishing the stack trace / keep alive arrays to ensure that
+        // the stack frame is never visible to other threads before a corresponding entry is visible in the keep alive
+        // array (for frames that need it). 
+        // This prevents a problem in case when the AppendElement creates a new keepalive array, but the stack trace array
+        // stayed the same.
+        STRESS_LOG0(LF_EH, LL_INFO1000, "Appending stack trace element\n");
+        gc.stackTrace.Append(&stackTraceElem);
+
+        // Clear the _stackTraceString field as it no longer matches the stack trace
+        ((EXCEPTIONREF)ObjectFromHandle(hThrowable))->SetStackTraceString(NULL);
+
+        GCPROTECT_END();    // gc
+    }
+    EX_CATCH
+    {
+    }
+    EX_END_CATCH(SwallowAllExceptions)
+
+    return TRUE;
 }
 
 void UnwindFrameChain(Thread* pThread, LPVOID pvLimitSP)

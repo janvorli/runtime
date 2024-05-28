@@ -45,7 +45,6 @@ public:
     static FCDECL2(VOID, GetStackTracesDeepCopy, Object* pExceptionObjectUnsafe, Object **pStackTraceUnsafe);
     static FCDECL2(VOID, SaveStackTracesFromDeepCopy, Object* pExceptionObjectUnsafe, Object *pStackTraceUnsafe);
 
-
 #ifdef FEATURE_COMINTEROP
     // NOTE: caller cleans up any partially initialized BSTRs in pED
     static void      GetExceptionData(OBJECTREF, ExceptionData *);
