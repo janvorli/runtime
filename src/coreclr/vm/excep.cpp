@@ -3156,12 +3156,11 @@ BOOL StackTraceInfo::AppendElement(OBJECTHANDLE hThrowable, UINT_PTR currentIP, 
         {
             if (m_keepaliveItemsCount == -1)
             {
+                // The m_keepaliveItemsCount was not initialized yet, so we need to calculate it.
                 m_keepaliveItemsCount = GetKeepaliveItemsCount(&gc.stackTrace);
             }
             _ASSERTE(m_keepaliveItemsCount == GetKeepaliveItemsCount(&gc.stackTrace));
         }
-
-        int prevKeepaliveItemsCount = m_keepaliveItemsCount;
 
         gc.keepaliveObject = GetKeepaliveObject(pFunc);
         if (gc.keepaliveObject != NULL)
@@ -3186,6 +3185,8 @@ BOOL StackTraceInfo::AppendElement(OBJECTHANDLE hThrowable, UINT_PTR currentIP, 
 
         if (wasCreatedByForeignThread)
         {
+            // Rebuild the keepalive array in case it came from a foreign thread.
+            // TODO: build this into the EnsureKeepaliveArray or alternatively into ExceptionObject::GetStackTrace
             int j = 0;
             unsigned count = (unsigned)gc.stackTrace.Size();
             unsigned i;
@@ -3195,32 +3196,14 @@ BOOL StackTraceInfo::AppendElement(OBJECTHANDLE hThrowable, UINT_PTR currentIP, 
                 if (pMethod->IsLCGMethod() || pMethod->GetMethodTable()->Collectible())
                 {
                     _ASSERTE(j < m_keepaliveItemsCount);
-                    if (j >= prevKeepaliveItemsCount || (gc.pKeepaliveArray->GetAt(j + 1) == NULL))
-                    {
-                        // TODO: what if we just always built a new keepalive array in case of wasCreatedByForeignThread? That sounds like a much cleaner way.
-                        // Trim the stackTrace array from the first non-protected entry till the end.
-                        gc.stackTrace.SetSize(i);
-                        m_keepaliveItemsCount = j;
-                        if (gc.keepaliveObject != NULL)
-                        {
-                            m_keepaliveItemsCount++;
-                        }
-                        if (m_keepaliveItemsCount == 0)
-                        {
-                            gc.pKeepaliveArray = NULL;
-                        }
-                        break;
-                    }
-                    // OBJECTREF keepaliveObject1 = GetKeepaliveObject(gc.stackTrace[i].pFunc);
-                    // OBJECTREF keepaliveObject2 = gc.pKeepaliveArray->GetAt(j + 1);
-                    _ASSERTE(GetKeepaliveObject(gc.stackTrace[i].pFunc) == gc.pKeepaliveArray->GetAt(j + 1));
+                    gc.pKeepaliveArray->SetAt(j + 1, GetKeepaliveObject(pMethod));
                     j++;
                 }
 
             }
-
-//            _ASSERTE(((m_keepaliveItemsCount == 0) && (j==0)) || j == m_keepaliveItemsCount - 1);
         }
+
+#ifdef _DEBUG
 
         if (wasCreatedByForeignThread)
         {
@@ -3259,7 +3242,6 @@ BOOL StackTraceInfo::AppendElement(OBJECTHANDLE hThrowable, UINT_PTR currentIP, 
             }
         }
 
-#ifdef _DEBUG
         if (wasCreatedByForeignThread)
         {
             int j = 0;
