@@ -8289,13 +8289,6 @@ extern "C" bool QCALLTYPE SfiInit(StackFrameIterator* pThis, CONTEXT* pStackwalk
     {
         GCX_COOP();
         UpdatePerformanceMetrics(&pThis->m_crawl, false, ((uint8_t)pExInfo->m_kind & (uint8_t)ExKind::RethrowFlag) == 0);
-        StackTraceArray stackTrace;
-        PTRARRAYREF keepaliveArray;
-        ((ExceptionObject*)OBJECTREFToObject(pExInfo->m_exception))->GetStackTrace(stackTrace, &keepaliveArray);
-        // if (stackTrace.Get() != NULL && stackTrace.GetObjectThread() == pThread)
-        // {
-        //     pExInfo->m_StackTraceInfo.SetKeepaliveItemsCount(&stackTrace);
-        // }
     }
 
     // Walk the stack until it finds the first managed method

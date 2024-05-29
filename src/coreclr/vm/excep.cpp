@@ -3123,24 +3123,13 @@ BOOL StackTraceInfo::AppendElement(OBJECTHANDLE hThrowable, UINT_PTR currentIP, 
         GCPROTECT_BEGIN_THREAD(pThread, gc);
 
         // Fetch the stacktrace and the keepalive array from the exception object
-        ((EXCEPTIONREF)ObjectFromHandle(hThrowable))->GetStackTrace(gc.stackTrace, &gc.pKeepaliveArray);
+        bool wasCreatedByForeignThread = ((EXCEPTIONREF)ObjectFromHandle(hThrowable))->GetStackTrace(gc.stackTrace, &gc.pKeepaliveArray);
         STRESS_LOG3(LF_EH, LL_INFO1000, "AppendElement read from exception stackTrace=%p, pKeepaliveArray=%p, the m_keepAliveItemsCount is %d\n", OBJECTREFToObject(gc.stackTrace.Get()), OBJECTREFToObject(gc.pKeepaliveArray), (int)m_keepaliveItemsCount);
-
-        // // TODO: we can remove this
-        // if (gc.stackTrace.Get() == NULL)
-        // {
-        //     _ASSERTE(m_keepaliveItemsCount == -1);
-        //     m_keepaliveItemsCount = 0;
-        // }
 
         bool originalKeepAliveArrayWasEmpty = (gc.pKeepaliveArray == NULL);
         size_t originalKeepAliveItemsCountPlusOne = (gc.pKeepaliveArray != NULL) ? gc.pKeepaliveArray->GetNumComponents() : 0;
-        Thread *pStackTraceCreatorThread = (gc.stackTrace.Get() != NULL) ?  gc.stackTrace.GetObjectThread() : NULL;
-        bool wasCreatedByForeignThread = (pStackTraceCreatorThread != pThread);
 
-        STRESS_LOG5(LF_EH, LL_INFO1000, "AppendElement wasCreatedByForeignThread=%d, creator=%04x, originalKeepAliveArrayWasEmpty=%d, originalKeepAliveItemsCount=%d, originalStackTraceSize=%d\n", wasCreatedByForeignThread ? 1 : 0, pStackTraceCreatorThread ? pStackTraceCreatorThread->GetOSThreadId() : 0, originalKeepAliveArrayWasEmpty ? 1 : 0, (int)originalKeepAliveItemsCountPlusOne, (int)gc.stackTrace.Size());
-
-        EnsureStackTraceArray(&gc.stackTrace, wasCreatedByForeignThread, gc.stackTrace.Size() + 1);
+        EnsureStackTraceArray(&gc.stackTrace, false/*wasCreatedByForeignThread*/, gc.stackTrace.Size() + 1);
         STRESS_LOG1(LF_EH, LL_INFO1000, "Ensured StackTraceArray=%p\n", OBJECTREFToObject(gc.stackTrace.Get()));
 
         if (wasCreatedByForeignThread)
@@ -3172,7 +3161,7 @@ BOOL StackTraceInfo::AppendElement(OBJECTHANDLE hThrowable, UINT_PTR currentIP, 
         if (m_keepaliveItemsCount != 0)
         {
             // One extra slot is added for the stack trace array
-            EnsureKeepaliveArray(&gc.pKeepaliveArray, wasCreatedByForeignThread, m_keepaliveItemsCount + 1);
+            EnsureKeepaliveArray(&gc.pKeepaliveArray, false /*wasCreatedByForeignThread*/, m_keepaliveItemsCount + 1);
             STRESS_LOG2(LF_EH, LL_INFO1000, "Ensured KeepAliveArray=%p, m_keepaliveItemsCount=%d\n", OBJECTREFToObject(gc.pKeepaliveArray), (int)m_keepaliveItemsCount);
         }
         else
@@ -3181,26 +3170,6 @@ BOOL StackTraceInfo::AppendElement(OBJECTHANDLE hThrowable, UINT_PTR currentIP, 
             // Another thread has published the keepalive array, but haven't updated the stack trace yet.
             STRESS_LOG0(LF_EH, LL_INFO1000, "Setting KeepAliveArray to NULL\n");
             gc.pKeepaliveArray = NULL;
-        }
-
-        if (wasCreatedByForeignThread)
-        {
-            // Rebuild the keepalive array in case it came from a foreign thread.
-            // TODO: build this into the EnsureKeepaliveArray or alternatively into ExceptionObject::GetStackTrace
-            int j = 0;
-            unsigned count = (unsigned)gc.stackTrace.Size();
-            unsigned i;
-            for (i = 0; i < count; i++)
-            {
-                MethodDesc *pMethod = gc.stackTrace[i].pFunc;
-                if (pMethod->IsLCGMethod() || pMethod->GetMethodTable()->Collectible())
-                {
-                    _ASSERTE(j < m_keepaliveItemsCount);
-                    gc.pKeepaliveArray->SetAt(j + 1, GetKeepaliveObject(pMethod));
-                    j++;
-                }
-
-            }
         }
 
 #ifdef _DEBUG
@@ -3213,25 +3182,6 @@ BOOL StackTraceInfo::AppendElement(OBJECTHANDLE hThrowable, UINT_PTR currentIP, 
             {
                 MethodDesc *pMethod = gc.stackTrace[i].pFunc;
                 if ((pMethod->IsLCGMethod() || pMethod->GetMethodTable()->Collectible()))
-//                 {
-//                     _ASSERTE(j < m_keepaliveItemsCount);
-//                     // The stackTrace array we have fetched from the exception didn't contain any element that needed
-//                     // a keepalive object when we have fetched it from the exception (the keepalive array was not present).
-//                     // But it was updated before we made the copy by one or more elements that needed a keepalive object. 
-//                     // So we add the missing keepalive objects here.
-//                     if (gc.pKeepaliveArray->GetAt(j + 1) == NULL)
-//                     {
-//                         _ASSERTE(originalKeepAliveArrayWasEmpty);
-//                         gc.pKeepaliveArray->SetAt(j + 1, GetKeepaliveObject(gc.stackTrace[i].pFunc));
-//                     }
-// #ifdef _DEBUG
-//                     else
-//                     {
-//                         _ASSERTE(GetKeepaliveObject(gc.stackTrace[i].pFunc) == gc.pKeepaliveArray->GetAt(j + 1));    
-//                     }   
-// #endif // _DEBUG                                     
-//                     j++;
-//                 }
                 {
                     _ASSERTE(j < m_keepaliveItemsCount);
                     OBJECTREF keepaliveObject1 = GetKeepaliveObject(gc.stackTrace[i].pFunc);

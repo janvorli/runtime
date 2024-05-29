@@ -1903,45 +1903,151 @@ void ExceptionObject::SetStackTrace(OBJECTREF stackTrace)
 }
 #endif // !defined(DACCESS_COMPILE)
 
-void ExceptionObject::GetStackTrace(StackTraceArray & stackTrace, PTRARRAYREF * outDynamicMethodArray /*= NULL*/) const
+bool ExceptionObject::GetStackTrace(StackTraceArray & stackTrace, PTRARRAYREF * outDynamicMethodArray /*= NULL*/) const
 {
     CONTRACTL
     {
-        GC_NOTRIGGER;
-        NOTHROW;
+        GC_TRIGGERS;
+        THROWS;
         MODE_COOPERATIVE;
     }
     CONTRACTL_END;
 
-    ExceptionObject::GetStackTraceParts(_stackTrace, stackTrace, outDynamicMethodArray);
+    return ExceptionObject::GetStackTraceParts(_stackTrace, stackTrace, outDynamicMethodArray);
 }
 
+#ifndef DACCESS_COMPILE
+int GetKeepaliveItemsCount(StackTraceArray *pStackTrace)
+{
+    LIMITED_METHOD_CONTRACT;
+
+    int count = 0;
+    for (size_t i = 0; i < pStackTrace->Size(); i++)
+    {
+        MethodDesc *pMethod = (*pStackTrace)[i].pFunc;
+        if (pMethod->IsLCGMethod() || pMethod->GetMethodTable()->Collectible())
+        {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+// Get a keepalive object for the given method. The keepalive object is either a
+// Resolver object for DynamicMethodDesc or a LoaderAllocator object for methods in
+// collectible assemblies.
+// Returns NULL if the method code cannot be destroyed.
+OBJECTREF GetKeepaliveObject(MethodDesc* pMethod)
+{
+    LIMITED_METHOD_CONTRACT;
+
+    if (pMethod->IsLCGMethod())
+    {
+        // We need to append the corresponding System.Resolver for
+        // this DynamicMethodDesc to keep it alive.
+        DynamicMethodDesc *pDMD = (DynamicMethodDesc *) pMethod;
+        OBJECTREF pResolver = pDMD->GetLCGMethodResolver()->GetManagedResolver();
+
+        _ASSERTE(pResolver != NULL);
+
+        // Store Resolver information in the array
+        return pResolver;
+    }
+    else if (pMethod->GetMethodTable()->Collectible())
+    {
+        OBJECTREF pLoaderAllocator = pMethod->GetMethodTable()->GetLoaderAllocator()->GetExposedObject();
+        _ASSERTE(pLoaderAllocator != NULL);
+        return pLoaderAllocator;
+    }
+
+    return NULL;
+}
+#endif // DACCESS_COMPILE
+
 /* static */
-void ExceptionObject::GetStackTraceParts(OBJECTREF stackTraceObj, StackTraceArray & stackTrace, PTRARRAYREF * outDynamicMethodArray /*= NULL*/)
+bool ExceptionObject::GetStackTraceParts(OBJECTREF stackTraceObj, StackTraceArray & stackTrace, PTRARRAYREF * outDynamicMethodArray /*= NULL*/)
 {
     CONTRACTL
     {
-        GC_NOTRIGGER;
-        NOTHROW;
+        GC_TRIGGERS;
+        THROWS;
         MODE_COOPERATIVE;
     }
     CONTRACTL_END;
 
-    PTRARRAYREF keepaliveArray = NULL;
+    Thread *pThread = GetThread();
+
+    struct
+    {
+        StackTraceArray newStackTrace;
+        PTRARRAYREF keepaliveArray = NULL;
+        PTR_PTRArray combinedArray = NULL;
+    } gc;
+
+    bool wasCreatedByForeignThread = false;
+    
+    GCPROTECT_BEGIN_THREAD(pThread, gc);
+
     if ((stackTraceObj != NULL) && ((dac_cast<PTR_ArrayBase>(OBJECTREFToObject(stackTraceObj)))->GetArrayElementType() != ELEMENT_TYPE_I1))
     {
         // The stack trace object is the dynamic methods array with its first slot set to the stack trace I1Array.
-        PTR_PTRArray combinedArray = dac_cast<PTR_PTRArray>(OBJECTREFToObject(stackTraceObj));
-        stackTrace.Set(dac_cast<I1ARRAYREF>(combinedArray->GetAt(0)));
-        keepaliveArray = dac_cast<PTRARRAYREF>(ObjectToOBJECTREF(combinedArray));
+        gc.combinedArray = dac_cast<PTR_PTRArray>(OBJECTREFToObject(stackTraceObj));
+        stackTrace.Set(dac_cast<I1ARRAYREF>(gc.combinedArray->GetAt(0)));
+        gc.keepaliveArray = dac_cast<PTRARRAYREF>(ObjectToOBJECTREF(gc.combinedArray));
     }
     else
     {
         stackTrace.Set(dac_cast<I1ARRAYREF>(stackTraceObj));
     }
 
+#ifndef DACCESS_COMPILE
+    // TODO: Consider making both arrays 1 entry larger. That would ensure that when used in the StackTraceInfo::AppendElement, we won't need to re-relocate the arrays
+    // again right away.
+    if (stackTrace.Get() != NULL && stackTrace.GetObjectThread() != pThread)
+    {
+        wasCreatedByForeignThread = true;
+        if (stackTrace.Get() != NULL)
+        {
+            // The stack trace was created by another thread, we need to return deep copies of both the stack trace and the keepalive array to ensure they are in sync.
+            // Allocate a new array with the needed size
+            gc.newStackTrace.Allocate(stackTrace.Capacity());
+            // Copy the original array to the new one
+            gc.newStackTrace.CopyDataFrom(stackTrace);
+            stackTrace.Set(gc.newStackTrace.Get());
+        }
+
+         // Don't bother getting the keepalive array if we're not going to return it.
+        if (outDynamicMethodArray != NULL)
+        {
+            // If the stack trace was created by a foreign thread, return a deep copy of the keepalive array. The keepalive array
+            // might not contain entries for all the stackTrace elements in case the other thread has grown the keepalive array
+            // and added a stack trace element since we've obtained the stackTraceObj. 
+            int keepaliveArrayCapacity = GetKeepaliveItemsCount(&stackTrace);
+            gc.keepaliveArray = (PTRARRAYREF)AllocateObjectArray(static_cast<DWORD>(keepaliveArrayCapacity + 1), g_pObjectClass);
+
+            int j = 0;
+            unsigned count = (unsigned)stackTrace.Size();
+            for (unsigned i = 0; i < count; i++)
+            {
+                MethodDesc *pMethod = stackTrace[i].pFunc;
+                if (pMethod->IsLCGMethod() || pMethod->GetMethodTable()->Collectible())
+                {
+                    _ASSERTE(j < keepaliveArrayCapacity);
+                    gc.keepaliveArray->SetAt(j + 1, GetKeepaliveObject(pMethod));
+                    j++;
+                }
+            }
+            gc.keepaliveArray->SetAt(0, stackTrace.Get());
+        }
+    }
+#endif // DACCESS_COMPILE            
+ 
     if (outDynamicMethodArray != NULL)
     {
-        *outDynamicMethodArray = keepaliveArray;
+        *outDynamicMethodArray = gc.keepaliveArray;
     }
+    GCPROTECT_END();
+
+    return wasCreatedByForeignThread;
 }

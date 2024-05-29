@@ -2176,9 +2176,9 @@ public:
 
     void SetStackTrace(OBJECTREF stackTrace);
 
-    void GetStackTrace(StackTraceArray & stackTrace, PTRARRAYREF * outDynamicMethodArray = NULL) const;
+    bool GetStackTrace(StackTraceArray & stackTrace, PTRARRAYREF * outDynamicMethodArray = NULL) const;
 
-    static void GetStackTraceParts(OBJECTREF stackTraceObj, StackTraceArray & stackTrace, PTRARRAYREF * outDynamicMethodArray /*= NULL*/);
+    static bool GetStackTraceParts(OBJECTREF stackTraceObj, StackTraceArray & stackTrace, PTRARRAYREF * outDynamicMethodArray /*= NULL*/);
 
     OBJECTREF GetStackTraceArrayObject() const
     {
