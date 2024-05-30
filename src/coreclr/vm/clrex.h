@@ -60,8 +60,8 @@ class StackTraceInfo
 
     static OBJECTREF GetKeepaliveObject(MethodDesc* pMethod);
     static int GetKeepaliveItemsCount(StackTraceArray *pStackTrace);
-    static void EnsureStackTraceArray(StackTraceArray *pStackTrace, bool alwaysCopy, size_t neededSize);
-    static void EnsureKeepaliveArray(PTRARRAYREF *ppKeepaliveArray, bool alwaysCopy, size_t neededSize);
+    static void EnsureStackTraceArray(StackTraceArray *pStackTrace, size_t neededSize);
+    static void EnsureKeepaliveArray(PTRARRAYREF *ppKeepaliveArray, size_t neededSize);
 public:
     BOOL AppendElement(OBJECTHANDLE hThrowable, UINT_PTR currentIP, UINT_PTR currentSP, MethodDesc* pFunc, CrawlFrame* pCf);
     //void SetKeepaliveItemsCount(StackTraceArray *pStackTrace);

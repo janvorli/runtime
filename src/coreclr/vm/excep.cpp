@@ -2886,9 +2886,7 @@ void SetupWatsonBucket(UINT_PTR currentIP, CrawlFrame* pCf)
 #endif // !TARGET_UNIX
 
 // Ensure that there is space for one more element in the stack trace array.
-// In case the alwaysCopy is true, make a copy of the original array even if 
-// there is enough space.
-void StackTraceInfo::EnsureStackTraceArray(StackTraceArray *pStackTrace, bool alwaysCopy, size_t neededSize)
+void StackTraceInfo::EnsureStackTraceArray(StackTraceArray *pStackTrace, size_t neededSize)
 {
     CONTRACTL
     {
@@ -2902,18 +2900,15 @@ void StackTraceInfo::EnsureStackTraceArray(StackTraceArray *pStackTrace, bool al
     GCPROTECT_BEGIN(newStackTrace);
 
     size_t stackTraceCapacity = pStackTrace->Capacity();
-    if (alwaysCopy || (neededSize > stackTraceCapacity))
+    if (neededSize > stackTraceCapacity)
     {
-        if (neededSize > stackTraceCapacity)
+        S_SIZE_T newCapacity = S_SIZE_T(stackTraceCapacity) * S_SIZE_T(2);
+        if (newCapacity.IsOverflow() || (neededSize > newCapacity.Value()))
         {
-            S_SIZE_T newCapacity = S_SIZE_T(stackTraceCapacity) * S_SIZE_T(2);
-            if (newCapacity.IsOverflow() || (neededSize > newCapacity.Value()))
-            {
-                newCapacity = S_SIZE_T(neededSize);
-            }
-
-            stackTraceCapacity = newCapacity.Value();
+            newCapacity = S_SIZE_T(neededSize);
         }
+
+        stackTraceCapacity = newCapacity.Value();
 
         // Allocate a new array with the needed size
         newStackTrace.Allocate(stackTraceCapacity);
@@ -2936,9 +2931,7 @@ void StackTraceInfo::EnsureStackTraceArray(StackTraceArray *pStackTrace, bool al
 }
 
 // Ensure that there is space for the neededSize elements in the keepalive array.
-// In case the alwaysCopy is true, make a copy of the original array even if 
-// there is enough space.
-void StackTraceInfo::EnsureKeepaliveArray(PTRARRAYREF *ppKeepaliveArray, bool alwaysCopy, size_t neededSize)
+void StackTraceInfo::EnsureKeepaliveArray(PTRARRAYREF *ppKeepaliveArray, size_t neededSize)
 {
     CONTRACTL
     {
@@ -2952,22 +2945,19 @@ void StackTraceInfo::EnsureKeepaliveArray(PTRARRAYREF *ppKeepaliveArray, bool al
     GCPROTECT_BEGIN(pNewKeepaliveArray);
 
     size_t keepaliveArrayCapacity = (*ppKeepaliveArray != NULL) ? (*ppKeepaliveArray)->GetNumComponents() : 0;
-    if (alwaysCopy || (neededSize > keepaliveArrayCapacity))
+    if (neededSize > keepaliveArrayCapacity)
     {
-        if (neededSize > keepaliveArrayCapacity)
+        S_SIZE_T newCapacity = S_SIZE_T(keepaliveArrayCapacity) * S_SIZE_T(2);
+        if (newCapacity.IsOverflow() || (neededSize > newCapacity.Value()))
         {
-            S_SIZE_T newCapacity = S_SIZE_T(keepaliveArrayCapacity) * S_SIZE_T(2);
-            if (newCapacity.IsOverflow() || (neededSize > newCapacity.Value()))
-            {
-                newCapacity = S_SIZE_T(neededSize);
-            }
+            newCapacity = S_SIZE_T(neededSize);
+        }
 
-            keepaliveArrayCapacity = newCapacity.Value();
+        keepaliveArrayCapacity = newCapacity.Value();
 
-            if (!FitsIn<DWORD>(keepaliveArrayCapacity))
-            {
-                EX_THROW(EEMessageException, (kOverflowException, IDS_EE_ARRAY_DIMENSIONS_EXCEEDED));
-            }
+        if (!FitsIn<DWORD>(keepaliveArrayCapacity))
+        {
+            EX_THROW(EEMessageException, (kOverflowException, IDS_EE_ARRAY_DIMENSIONS_EXCEEDED));
         }
 
         // Allocate a new array with the needed size
@@ -3126,10 +3116,11 @@ BOOL StackTraceInfo::AppendElement(OBJECTHANDLE hThrowable, UINT_PTR currentIP, 
         bool wasCreatedByForeignThread = ((EXCEPTIONREF)ObjectFromHandle(hThrowable))->GetStackTrace(gc.stackTrace, &gc.pKeepaliveArray);
         STRESS_LOG3(LF_EH, LL_INFO1000, "AppendElement read from exception stackTrace=%p, pKeepaliveArray=%p, the m_keepAliveItemsCount is %d\n", OBJECTREFToObject(gc.stackTrace.Get()), OBJECTREFToObject(gc.pKeepaliveArray), (int)m_keepaliveItemsCount);
 
+#ifdef _DEBUG
         bool originalKeepAliveArrayWasEmpty = (gc.pKeepaliveArray == NULL);
         size_t originalKeepAliveItemsCountPlusOne = (gc.pKeepaliveArray != NULL) ? gc.pKeepaliveArray->GetNumComponents() : 0;
-
-        EnsureStackTraceArray(&gc.stackTrace, false/*wasCreatedByForeignThread*/, gc.stackTrace.Size() + 1);
+#endif // _DEBUG
+        EnsureStackTraceArray(&gc.stackTrace, gc.stackTrace.Size() + 1);
         STRESS_LOG1(LF_EH, LL_INFO1000, "Ensured StackTraceArray=%p\n", OBJECTREFToObject(gc.stackTrace.Get()));
 
         if (wasCreatedByForeignThread)
@@ -3161,7 +3152,7 @@ BOOL StackTraceInfo::AppendElement(OBJECTHANDLE hThrowable, UINT_PTR currentIP, 
         if (m_keepaliveItemsCount != 0)
         {
             // One extra slot is added for the stack trace array
-            EnsureKeepaliveArray(&gc.pKeepaliveArray, false /*wasCreatedByForeignThread*/, m_keepaliveItemsCount + 1);
+            EnsureKeepaliveArray(&gc.pKeepaliveArray, m_keepaliveItemsCount + 1);
             STRESS_LOG2(LF_EH, LL_INFO1000, "Ensured KeepAliveArray=%p, m_keepaliveItemsCount=%d\n", OBJECTREFToObject(gc.pKeepaliveArray), (int)m_keepaliveItemsCount);
         }
         else
@@ -3222,6 +3213,14 @@ BOOL StackTraceInfo::AppendElement(OBJECTHANDLE hThrowable, UINT_PTR currentIP, 
             MemoryBarrier();
         }
 
+        // It is important to add the stack frame after publishing the stack trace / keep alive arrays to ensure that
+        // the stack frame is never visible to other threads before a corresponding entry is visible in the keep alive
+        // array (for frames that need it). 
+        // This prevents a problem in case when the AppendElement creates a new keepalive array, but the stack trace array
+        // stayed the same.
+        STRESS_LOG0(LF_EH, LL_INFO1000, "Appending stack trace element\n");
+        gc.stackTrace.Append(&stackTraceElem);
+
         _ASSERTE(gc.stackTrace.GetObjectThread() == pThread);
 
         if (gc.pKeepaliveArray != NULL)
@@ -3243,14 +3242,6 @@ BOOL StackTraceInfo::AppendElement(OBJECTHANDLE hThrowable, UINT_PTR currentIP, 
             STRESS_LOG1(LF_EH, LL_INFO1000, "Setting pure stackTrace %p on exception\n", OBJECTREFToObject(gc.stackTrace.Get()));
             ((EXCEPTIONREF)ObjectFromHandle(hThrowable))->SetStackTrace(dac_cast<OBJECTREF>(gc.stackTrace.Get()));
         }
-
-        // It is important to add the stack frame after publishing the stack trace / keep alive arrays to ensure that
-        // the stack frame is never visible to other threads before a corresponding entry is visible in the keep alive
-        // array (for frames that need it). 
-        // This prevents a problem in case when the AppendElement creates a new keepalive array, but the stack trace array
-        // stayed the same.
-        STRESS_LOG0(LF_EH, LL_INFO1000, "Appending stack trace element\n");
-        gc.stackTrace.Append(&stackTraceElem);
 
         // Clear the _stackTraceString field as it no longer matches the stack trace
         ((EXCEPTIONREF)ObjectFromHandle(hThrowable))->SetStackTraceString(NULL);
