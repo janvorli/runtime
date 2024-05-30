@@ -64,7 +64,6 @@ class StackTraceInfo
     static void EnsureKeepaliveArray(PTRARRAYREF *ppKeepaliveArray, size_t neededSize);
 public:
     BOOL AppendElement(OBJECTHANDLE hThrowable, UINT_PTR currentIP, UINT_PTR currentSP, MethodDesc* pFunc, CrawlFrame* pCf);
-    //void SetKeepaliveItemsCount(StackTraceArray *pStackTrace);
 };
 
 

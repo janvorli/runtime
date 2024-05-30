@@ -3024,16 +3024,10 @@ int StackTraceInfo::GetKeepaliveItemsCount(StackTraceArray *pStackTrace)
     return count;
 }
 
-// void StackTraceInfo::SetKeepaliveItemsCount(StackTraceArray *pStackTrace)
-// {
-//     m_keepaliveItemsCount = GetKeepaliveItemsCount(pStackTrace);
-// }
-
 //
 // Append stack frame to an exception stack trace.
 // Returns true if it appended the element, false otherwise.
 //
-// TODO: verify that we do everything we did before
 BOOL StackTraceInfo::AppendElement(OBJECTHANDLE hThrowable, UINT_PTR currentIP, UINT_PTR currentSP, MethodDesc* pFunc, CrawlFrame* pCf)
 {
     CONTRACTL
@@ -3112,25 +3106,19 @@ BOOL StackTraceInfo::AppendElement(OBJECTHANDLE hThrowable, UINT_PTR currentIP, 
 
         GCPROTECT_BEGIN_THREAD(pThread, gc);
 
-        // Fetch the stacktrace and the keepalive array from the exception object
+        // Fetch the stacktrace and the keepalive array from the exception object. It returns clones of those arrays in case the
+        // stack trace was created by a different thread.
         bool wasCreatedByForeignThread = ((EXCEPTIONREF)ObjectFromHandle(hThrowable))->GetStackTrace(gc.stackTrace, &gc.pKeepaliveArray);
-        STRESS_LOG3(LF_EH, LL_INFO1000, "AppendElement read from exception stackTrace=%p, pKeepaliveArray=%p, the m_keepAliveItemsCount is %d\n", OBJECTREFToObject(gc.stackTrace.Get()), OBJECTREFToObject(gc.pKeepaliveArray), (int)m_keepaliveItemsCount);
 
-#ifdef _DEBUG
-        bool originalKeepAliveArrayWasEmpty = (gc.pKeepaliveArray == NULL);
-        size_t originalKeepAliveItemsCountPlusOne = (gc.pKeepaliveArray != NULL) ? gc.pKeepaliveArray->GetNumComponents() : 0;
-#endif // _DEBUG
+        // The stack trace returned by the GetStackTrace has to be created by the current thread or be NULL.
+        _ASSERTE((gc.stackTrace.Get() == NULL) || (gc.stackTrace.GetObjectThread() == pThread));
+
         EnsureStackTraceArray(&gc.stackTrace, gc.stackTrace.Size() + 1);
-        STRESS_LOG1(LF_EH, LL_INFO1000, "Ensured StackTraceArray=%p\n", OBJECTREFToObject(gc.stackTrace.Get()));
 
         if (wasCreatedByForeignThread)
         {
-            // TODO: is this really needed?
-            MemoryBarrier();
-            // Scan the stack trace to get number of methods that can be collected. The keepalive array needs to
-            // store references to keep these alive.
+            // If the stack trace was created by a foreign thread, we need to update the cached keepalive items count.
             m_keepaliveItemsCount = GetKeepaliveItemsCount(&gc.stackTrace);
-            STRESS_LOG1(LF_EH, LL_INFO1000, "Set m_keepaliveItemsCount=%d\n", (int)m_keepaliveItemsCount);
         }
         else
         {
@@ -3145,101 +3133,37 @@ BOOL StackTraceInfo::AppendElement(OBJECTHANDLE hThrowable, UINT_PTR currentIP, 
         gc.keepaliveObject = GetKeepaliveObject(pFunc);
         if (gc.keepaliveObject != NULL)
         {
+            // The new frame to be added is a method that can be collected, so we need to update the keepalive items count.
             m_keepaliveItemsCount++;
-            STRESS_LOG1(LF_EH, LL_INFO1000, "Incremented m_keepaliveItemsCount to %d\n", (int)m_keepaliveItemsCount);
         }
 
         if (m_keepaliveItemsCount != 0)
         {
             // One extra slot is added for the stack trace array
             EnsureKeepaliveArray(&gc.pKeepaliveArray, m_keepaliveItemsCount + 1);
-            STRESS_LOG2(LF_EH, LL_INFO1000, "Ensured KeepAliveArray=%p, m_keepaliveItemsCount=%d\n", OBJECTREFToObject(gc.pKeepaliveArray), (int)m_keepaliveItemsCount);
+            if (gc.keepaliveObject != NULL)
+            {
+                // Add the method to the keepalive array
+                gc.pKeepaliveArray->SetAt(m_keepaliveItemsCount, gc.keepaliveObject);
+            }
         }
         else
         {
-            //_ASSERTE(gc.pKeepaliveArray == NULL);
-            // Another thread has published the keepalive array, but haven't updated the stack trace yet.
-            STRESS_LOG0(LF_EH, LL_INFO1000, "Setting KeepAliveArray to NULL\n");
+            // There are no methods that can be collected, so we don't need the keepalive array
             gc.pKeepaliveArray = NULL;
         }
 
-#ifdef _DEBUG
-
-        if (wasCreatedByForeignThread)
-        {
-            int j = 0;
-            unsigned count = (unsigned)gc.stackTrace.Size();
-            for (unsigned i = 0; i < count; i++)
-            {
-                MethodDesc *pMethod = gc.stackTrace[i].pFunc;
-                if ((pMethod->IsLCGMethod() || pMethod->GetMethodTable()->Collectible()))
-                {
-                    _ASSERTE(j < m_keepaliveItemsCount);
-                    OBJECTREF keepaliveObject1 = GetKeepaliveObject(gc.stackTrace[i].pFunc);
-                    OBJECTREF keepaliveObject2 = gc.pKeepaliveArray->GetAt(j + 1);
-                    _ASSERTE(GetKeepaliveObject(gc.stackTrace[i].pFunc) == gc.pKeepaliveArray->GetAt(j + 1));
-                    j++;
-                }
-            }
-        }
-
-        if (wasCreatedByForeignThread)
-        {
-            int j = 0;
-            unsigned count = (unsigned)gc.stackTrace.Size();
-            for (unsigned i = 0; i < count; i++)
-            {
-                MethodDesc *pMethod = gc.stackTrace[i].pFunc;
-                if (pMethod->IsLCGMethod() || pMethod->GetMethodTable()->Collectible())
-                {
-                    _ASSERTE(j < m_keepaliveItemsCount);
-                    OBJECTREF keepaliveObject1 = GetKeepaliveObject(gc.stackTrace[i].pFunc);
-                    OBJECTREF keepaliveObject2 = gc.pKeepaliveArray->GetAt(j + 1);
-                    _ASSERTE(GetKeepaliveObject(gc.stackTrace[i].pFunc) == gc.pKeepaliveArray->GetAt(j + 1));
-                    j++;
-                }
-            }
-        }
-#endif // _DEBUG
-
-        if (gc.keepaliveObject != NULL)
-        {
-            _ASSERTE(m_keepaliveItemsCount > 0);
-            // Add the method to the keepalive array
-            gc.pKeepaliveArray->SetAt(m_keepaliveItemsCount, gc.keepaliveObject);
-            // Make sure the stack trace element is appended after the keepalive array is updated to prevent race when
-            // other thread would read the stack trace and the keepalive array where the stack trace would contain frames of
-            // methods that can be collected and there would be no protection in the keepalive array.
-            MemoryBarrier();
-        }
-
-        // It is important to add the stack frame after publishing the stack trace / keep alive arrays to ensure that
-        // the stack frame is never visible to other threads before a corresponding entry is visible in the keep alive
-        // array (for frames that need it). 
-        // This prevents a problem in case when the AppendElement creates a new keepalive array, but the stack trace array
-        // stayed the same.
-        STRESS_LOG0(LF_EH, LL_INFO1000, "Appending stack trace element\n");
         gc.stackTrace.Append(&stackTraceElem);
-
-        _ASSERTE(gc.stackTrace.GetObjectThread() == pThread);
 
         if (gc.pKeepaliveArray != NULL)
         {
             _ASSERTE(m_keepaliveItemsCount > 0);
-            for (int i = 1; i < m_keepaliveItemsCount; i++)
-            {
-                OBJECTREF keepaliveObject = gc.pKeepaliveArray->GetAt(i);
-                _ASSERTE(keepaliveObject != NULL);
-            }
-//            ClrSleepEx(2000,FALSE);
-            STRESS_LOG2(LF_EH, LL_INFO1000, "Setting stackTrace %p in keepalive array %p on exception\n", OBJECTREFToObject(gc.stackTrace.Get()), OBJECTREFToObject(gc.pKeepaliveArray));
             gc.pKeepaliveArray->SetAt(0, gc.stackTrace.Get());
             ((EXCEPTIONREF)ObjectFromHandle(hThrowable))->SetStackTrace(dac_cast<OBJECTREF>(gc.pKeepaliveArray));
         }
         else
         {
             _ASSERTE(m_keepaliveItemsCount == 0);
-            STRESS_LOG1(LF_EH, LL_INFO1000, "Setting pure stackTrace %p on exception\n", OBJECTREFToObject(gc.stackTrace.Get()));
             ((EXCEPTIONREF)ObjectFromHandle(hThrowable))->SetStackTrace(dac_cast<OBJECTREF>(gc.stackTrace.Get()));
         }
 

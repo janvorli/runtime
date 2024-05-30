@@ -1903,7 +1903,7 @@ void ExceptionObject::SetStackTrace(OBJECTREF stackTrace)
 }
 #endif // !defined(DACCESS_COMPILE)
 
-bool ExceptionObject::GetStackTrace(StackTraceArray & stackTrace, PTRARRAYREF * outDynamicMethodArray /*= NULL*/) const
+bool ExceptionObject::GetStackTrace(StackTraceArray & stackTrace, PTRARRAYREF * outKeepaliveArray /*= NULL*/) const
 {
     CONTRACTL
     {
@@ -1913,44 +1913,13 @@ bool ExceptionObject::GetStackTrace(StackTraceArray & stackTrace, PTRARRAYREF * 
     }
     CONTRACTL_END;
 
-    return ExceptionObject::GetStackTraceParts(_stackTrace, stackTrace, outDynamicMethodArray);
+    return ExceptionObject::GetStackTraceParts(_stackTrace, stackTrace, outKeepaliveArray);
 }
 
-#ifndef DACCESS_COMPILE
-
-// Get a keepalive object for the given method. The keepalive object is either a
-// Resolver object for DynamicMethodDesc or a LoaderAllocator object for methods in
-// collectible assemblies.
-// Returns NULL if the method code cannot be destroyed.
-OBJECTREF GetKeepaliveObject(MethodDesc* pMethod)
-{
-    LIMITED_METHOD_CONTRACT;
-
-    if (pMethod->IsLCGMethod())
-    {
-        // We need to append the corresponding System.Resolver for
-        // this DynamicMethodDesc to keep it alive.
-        DynamicMethodDesc *pDMD = (DynamicMethodDesc *) pMethod;
-        OBJECTREF pResolver = pDMD->GetLCGMethodResolver()->GetManagedResolver();
-
-        _ASSERTE(pResolver != NULL);
-
-        // Store Resolver information in the array
-        return pResolver;
-    }
-    else if (pMethod->GetMethodTable()->Collectible())
-    {
-        OBJECTREF pLoaderAllocator = pMethod->GetMethodTable()->GetLoaderAllocator()->GetExposedObject();
-        _ASSERTE(pLoaderAllocator != NULL);
-        return pLoaderAllocator;
-    }
-
-    return NULL;
-}
-#endif // DACCESS_COMPILE
-
+// Get the stack trace and the dynamic method array from the stack trace object. 
+// If the stack trace was created by another thread, it returns clones of both arrays.
 /* static */
-bool ExceptionObject::GetStackTraceParts(OBJECTREF stackTraceObj, StackTraceArray & stackTrace, PTRARRAYREF * outDynamicMethodArray /*= NULL*/)
+bool ExceptionObject::GetStackTraceParts(OBJECTREF stackTraceObj, StackTraceArray & stackTrace, PTRARRAYREF * outKeepaliveArray /*= NULL*/)
 {
     CONTRACTL
     {
@@ -1988,27 +1957,26 @@ bool ExceptionObject::GetStackTraceParts(OBJECTREF stackTraceObj, StackTraceArra
     }
 
 #ifndef DACCESS_COMPILE
-    // TODO: Consider making both arrays 1 entry larger. That would ensure that when used in the StackTraceInfo::AppendElement, we won't need to re-relocate the arrays
-    // again right away.
-    if (stackTrace.Get() != NULL && stackTrace.GetObjectThread() != pThread)
+    if ((stackTrace.Get() != NULL) && (stackTrace.GetObjectThread() != pThread))
     {
         // When the stack trace was created by other thread than the current one, we create a copy of both the stack trace and the keepalive arrays to make sure
-        // they are not changing while we are using them.
+        // they are not changing while the caller is accessing them.
         wasCreatedByForeignThread = true;
         gc.newStackTrace.Allocate(stackTrace.Capacity());
-        // Copy the original array to the new one
         gc.newStackTrace.CopyDataFrom(stackTrace);
         stackTrace.Set(gc.newStackTrace.Get());
 
+        int keepaliveArrayCapacity = (gc.keepaliveArray == NULL) ? 0 : gc.keepaliveArray->GetNumComponents();
+
         int j = 0;
-        unsigned count = (unsigned)stackTrace.Size();
-        for (unsigned i = 0; i < count; i++)
+        size_t count = stackTrace.Size();
+        for (size_t i = 0; i < count; i++)
         {
             MethodDesc *pMethod = stackTrace[i].pFunc;
             if (pMethod->IsLCGMethod() || pMethod->GetMethodTable()->Collectible())
             {
                 OBJECTREF keepaliveObject = NULL;
-                if (gc.keepaliveArray != NULL && (j + 1) < (int)gc.keepaliveArray->GetNumComponents())
+                if ((j + 1) < keepaliveArrayCapacity)
                 {
                     keepaliveObject = gc.keepaliveArray->GetAt(j + 1);
                 }
@@ -2018,20 +1986,17 @@ bool ExceptionObject::GetStackTraceParts(OBJECTREF stackTraceObj, StackTraceArra
                     stackTrace.SetSize(i);
                     break;
                 }
-                _ASSERTE(keepaliveObject == GetKeepaliveObject(pMethod));
                 j++;
             }
         }
 
-        int keepaliveArrayCapacity = gc.keepaliveArray == NULL ? 0 : gc.keepaliveArray->GetNumComponents() - 1;
-
         if (keepaliveArrayCapacity != 0)
         {
-            gc.newKeepaliveArray = (PTRARRAYREF)AllocateObjectArray(static_cast<DWORD>(keepaliveArrayCapacity + 1), g_pObjectClass);
+            gc.newKeepaliveArray = (PTRARRAYREF)AllocateObjectArray(static_cast<DWORD>(keepaliveArrayCapacity), g_pObjectClass);
             _ASSERTE(gc.keepaliveArray != NULL);
             memmoveGCRefs(gc.newKeepaliveArray->GetDataPtr() + 1,
                           gc.keepaliveArray->GetDataPtr() + 1,
-                          keepaliveArrayCapacity * sizeof(Object *));
+                          (keepaliveArrayCapacity - 1) * sizeof(Object *));
             gc.newKeepaliveArray->SetAt(0, stackTrace.Get());
             gc.keepaliveArray = gc.newKeepaliveArray;
         }
@@ -2042,9 +2007,9 @@ bool ExceptionObject::GetStackTraceParts(OBJECTREF stackTraceObj, StackTraceArra
     }
 #endif // DACCESS_COMPILE            
  
-    if (outDynamicMethodArray != NULL)
+    if (outKeepaliveArray != NULL)
     {
-        *outDynamicMethodArray = gc.keepaliveArray;
+        *outKeepaliveArray = gc.keepaliveArray;
     }
     GCPROTECT_END();
 
