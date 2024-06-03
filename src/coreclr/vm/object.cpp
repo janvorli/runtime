@@ -1929,8 +1929,6 @@ bool ExceptionObject::GetStackTraceParts(OBJECTREF stackTraceObj, StackTraceArra
     }
     CONTRACTL_END;
 
-    Thread *pThread = GetThread();
-
     struct
     {
         StackTraceArray newStackTrace;
@@ -1941,7 +1939,7 @@ bool ExceptionObject::GetStackTraceParts(OBJECTREF stackTraceObj, StackTraceArra
 
     bool wasCreatedByForeignThread = false;
     
-    GCPROTECT_BEGIN_THREAD(pThread, gc);
+    GCPROTECT_BEGIN(gc);
 
     // Extract the stack trace and keepalive arrays from the stack trace object.
     if ((stackTraceObj != NULL) && ((dac_cast<PTR_ArrayBase>(OBJECTREFToObject(stackTraceObj)))->GetArrayElementType() != ELEMENT_TYPE_I1))
@@ -1957,6 +1955,8 @@ bool ExceptionObject::GetStackTraceParts(OBJECTREF stackTraceObj, StackTraceArra
     }
 
 #ifndef DACCESS_COMPILE
+    Thread *pThread = GetThread();
+
     if ((stackTrace.Get() != NULL) && (stackTrace.GetObjectThread() != pThread))
     {
         // When the stack trace was created by other thread than the current one, we create a copy of both the stack trace and the keepalive arrays to make sure
