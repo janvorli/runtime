@@ -1154,8 +1154,7 @@ public:
 class SoftwareExceptionFrame : public Frame
 {
     TADDR                           m_ReturnAddress;
-    T_CONTEXT                       m_Context;
-    T_KNONVOLATILE_CONTEXT_POINTERS m_ContextPointers;
+    PTR_CONTEXT                     m_pContext;
 
     VPTR_VTABLE_CLASS(SoftwareExceptionFrame, Frame)
 
@@ -1172,8 +1171,8 @@ public:
         return PTR_HOST_MEMBER_TADDR(SoftwareExceptionFrame, this, m_ReturnAddress);
     }
 
-    void Init();
-    void InitAndLink(Thread *pThread);
+    void Init(CONTEXT *pContext);
+    void InitAndLink(Thread *pThread, CONTEXT *pContext);
 
     Interception GetInterception()
     {
@@ -1191,12 +1190,6 @@ public:
     {
         LIMITED_METHOD_DAC_CONTRACT;
         return FRAME_ATTR_EXCEPTION;
-    }
-
-    T_CONTEXT* GetContext()
-    {
-        LIMITED_METHOD_DAC_CONTRACT;
-        return &m_Context;
     }
 
     virtual BOOL NeedsUpdateRegDisplay()
@@ -3256,7 +3249,7 @@ public:
     void Poll() { WRAPPER_NO_CONTRACT; m_frame.Poll(); }
     void SetStackPointerPtr(TADDR sp) { WRAPPER_NO_CONTRACT; m_frame.SetStackPointerPtr(sp); }
     void InitAndLink(T_CONTEXT *pContext) { WRAPPER_NO_CONTRACT; m_frame.InitAndLink(pContext); }
-    void InitAndLink(Thread *pThread) { WRAPPER_NO_CONTRACT; m_frame.InitAndLink(pThread); }
+    void InitAndLink(Thread *pThread, T_CONTEXT *pContext) { WRAPPER_NO_CONTRACT; m_frame.InitAndLink(pThread, pContext); }
     void Init(Thread *pThread, OBJECTREF *pObjRefs, UINT numObjRefs, BOOL maybeInterior)
         { WRAPPER_NO_CONTRACT; m_frame.Init(pThread, pObjRefs, numObjRefs, maybeInterior); }
     ValueClassInfo ** GetValueClassInfoList() { WRAPPER_NO_CONTRACT; return m_frame.GetValueClassInfoList(); }

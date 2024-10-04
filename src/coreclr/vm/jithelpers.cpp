@@ -2675,7 +2675,9 @@ HCIMPLEND
 
 /*************************************************************/
 
-HCIMPL1(void, IL_Throw,  Object* obj)
+extern "C" void IL_Throw(Object *obj);
+
+HCIMPL2(void, IL_Throw_New, Object* obj, CONTEXT *pContext)
 {
     FCALL_CONTRACT;
 
@@ -2693,8 +2695,7 @@ HCIMPL1(void, IL_Throw,  Object* obj)
 
         FrameWithCookie<SoftwareExceptionFrame> exceptionFrame;
         *(&exceptionFrame)->GetGSCookiePtr() = GetProcessGSCookie();
-        RtlCaptureContext(exceptionFrame.GetContext());
-        exceptionFrame.InitAndLink(pThread);
+        exceptionFrame.InitAndLink(pThread, pContext);
 
         FC_CAN_TRIGGER_GC();
 
@@ -2724,7 +2725,7 @@ HCIMPL1(void, IL_Throw,  Object* obj)
             }
         }
 
-        DispatchManagedException(oref, exceptionFrame.GetContext());
+        DispatchManagedException(oref, pContext);
         FC_CAN_TRIGGER_GC_END();
         UNREACHABLE();
     }
@@ -2771,7 +2772,9 @@ HCIMPLEND
 
 /*************************************************************/
 
-HCIMPL0(void, IL_Rethrow)
+extern "C" void IL_Rethrow();
+
+HCIMPL1(void, IL_Rethrow_New, CONTEXT *pContext)
 {
     FCALL_CONTRACT;
 
@@ -2784,12 +2787,11 @@ HCIMPL0(void, IL_Rethrow)
 
         FrameWithCookie<SoftwareExceptionFrame> exceptionFrame;
         *(&exceptionFrame)->GetGSCookiePtr() = GetProcessGSCookie();
-        RtlCaptureContext(exceptionFrame.GetContext());
-        exceptionFrame.InitAndLink(pThread);
+        exceptionFrame.InitAndLink(pThread, pContext);
 
         ExInfo *pActiveExInfo = (ExInfo*)pThread->GetExceptionState()->GetCurrentExceptionTracker();
 
-        ExInfo exInfo(pThread, pActiveExInfo->m_ptrs.ExceptionRecord, exceptionFrame.GetContext(), ExKind::None);
+        ExInfo exInfo(pThread, pActiveExInfo->m_ptrs.ExceptionRecord, pContext, ExKind::None);
 
         FC_CAN_TRIGGER_GC();
 

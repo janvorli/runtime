@@ -579,6 +579,123 @@ NESTED_ENTRY OnCallCountThresholdReachedStub, _TEXT
         TAILJMP_RAX
 NESTED_END OnCallCountThresholdReachedStub, _TEXT
 
+extern ?IL_Throw_New@@YAXPEAVObject@@PEAU_CONTEXT@@@Z:proc
+
+CONTEXT_CONTROL equ 1h
+CONTEXT_INTEGER equ 2h
+CONTEXT_FLOATING_POINT equ 8h
+CONTEXT_AMD64 equ 100000h
+
+NESTED_ENTRY IL_Throw, _TEXT
+
+        mov rax, rsp
+        alloc_stack SIZEOF__CONTEXT + 8
+
+        add rax, 8
+        mov [rsp + OFFSETOF__CONTEXT__Rsp], rax
+        mov rax, [rax - 8]
+        mov [rsp + OFFSETOF__CONTEXT__Rip], rax
+        mov eax, CONTEXT_CONTROL or CONTEXT_INTEGER or CONTEXT_FLOATING_POINT
+        mov [rsp + OFFSETOF__CONTEXT__ContextFlags], eax
+        push_eflags
+        pop rax
+        mov  [rsp + OFFSETOF__CONTEXT__EFlags], eax
+
+        ; Store non-volatile registers to the CONTEXT
+        save_reg_postrsp rdi, OFFSETOF__CONTEXT__Rdi
+        save_reg_postrsp rsi, OFFSETOF__CONTEXT__Rsi
+        save_reg_postrsp rbx, OFFSETOF__CONTEXT__Rbx
+        save_reg_postrsp rbp, OFFSETOF__CONTEXT__Rbp
+        save_reg_postrsp r12, OFFSETOF__CONTEXT__R12
+        save_reg_postrsp r13, OFFSETOF__CONTEXT__R13
+        save_reg_postrsp r14, OFFSETOF__CONTEXT__R14
+        save_reg_postrsp r15, OFFSETOF__CONTEXT__R15
+
+        ;mov [rsp + OFFSETOF__CONTEXT__Rdi], rdi
+        ;mov [rsp + OFFSETOF__CONTEXT__Rsi], rsi
+        ;mov [rsp + OFFSETOF__CONTEXT__Rbx], rbx
+        ;mov [rsp + OFFSETOF__CONTEXT__Rbp], rbp
+        ;mov [rsp + OFFSETOF__CONTEXT__R12], r12
+        ;mov [rsp + OFFSETOF__CONTEXT__R13], r13
+        ;mov [rsp + OFFSETOF__CONTEXT__R14], r14
+        ;mov [rsp + OFFSETOF__CONTEXT__R15], r15
+
+        fxsave [rsp + OFFSETOF__CONTEXT__FltSave]
+
+        save_xmm128_postrsp xmm7, OFFSETOF__CONTEXT__Xmm7
+        save_xmm128_postrsp xmm8, OFFSETOF__CONTEXT__Xmm8
+        save_xmm128_postrsp xmm9, OFFSETOF__CONTEXT__Xmm9
+        save_xmm128_postrsp xmm10, OFFSETOF__CONTEXT__Xmm10
+        save_xmm128_postrsp xmm11, OFFSETOF__CONTEXT__Xmm11
+        save_xmm128_postrsp xmm12, OFFSETOF__CONTEXT__Xmm12
+        save_xmm128_postrsp xmm13, OFFSETOF__CONTEXT__Xmm13
+        save_xmm128_postrsp xmm14, OFFSETOF__CONTEXT__Xmm14
+        save_xmm128_postrsp xmm15, OFFSETOF__CONTEXT__Xmm15
+
+        END_PROLOGUE
+
+        mov rdx, rsp
+        call ?IL_Throw_New@@YAXPEAVObject@@PEAU_CONTEXT@@@Z
+        int 3
+
+NESTED_END IL_Throw, _TEXT
+
+extern ?IL_Rethrow_New@@YAXPEAU_CONTEXT@@@Z:proc
+
+NESTED_ENTRY IL_Rethrow, _TEXT
+
+        mov rax, rsp
+        alloc_stack SIZEOF__CONTEXT + 8
+
+        add rax, 8
+        mov [rsp + OFFSETOF__CONTEXT__Rsp], rax
+        mov rax, [rax - 8]
+        mov [rsp + OFFSETOF__CONTEXT__Rip], rax
+        mov eax, CONTEXT_CONTROL or CONTEXT_INTEGER or CONTEXT_FLOATING_POINT
+        mov [rsp + OFFSETOF__CONTEXT__ContextFlags], eax
+        push_eflags
+        pop rax
+        mov  [rsp + OFFSETOF__CONTEXT__EFlags], eax
+    
+        ; Store non-volatile registers to the CONTEXT
+        save_reg_postrsp rdi, OFFSETOF__CONTEXT__Rdi
+        save_reg_postrsp rsi, OFFSETOF__CONTEXT__Rsi
+        save_reg_postrsp rbx, OFFSETOF__CONTEXT__Rbx
+        save_reg_postrsp rbp, OFFSETOF__CONTEXT__Rbp
+        save_reg_postrsp r12, OFFSETOF__CONTEXT__R12
+        save_reg_postrsp r13, OFFSETOF__CONTEXT__R13
+        save_reg_postrsp r14, OFFSETOF__CONTEXT__R14
+        save_reg_postrsp r15, OFFSETOF__CONTEXT__R15
+
+        ;mov [rsp + OFFSETOF__CONTEXT__Rdi], rdi
+        ;mov [rsp + OFFSETOF__CONTEXT__Rsi], rsi
+        ;mov [rsp + OFFSETOF__CONTEXT__Rbx], rbx
+        ;mov [rsp + OFFSETOF__CONTEXT__Rbp], rbp
+        ;mov [rsp + OFFSETOF__CONTEXT__R12], r12
+        ;mov [rsp + OFFSETOF__CONTEXT__R13], r13
+        ;mov [rsp + OFFSETOF__CONTEXT__R14], r14
+        ;mov [rsp + OFFSETOF__CONTEXT__R15], r15
+
+        fxsave [rsp + OFFSETOF__CONTEXT__FltSave]
+
+        save_xmm128_postrsp xmm7, OFFSETOF__CONTEXT__Xmm7
+        save_xmm128_postrsp xmm8, OFFSETOF__CONTEXT__Xmm8
+        save_xmm128_postrsp xmm9, OFFSETOF__CONTEXT__Xmm9
+        save_xmm128_postrsp xmm10, OFFSETOF__CONTEXT__Xmm10
+        save_xmm128_postrsp xmm11, OFFSETOF__CONTEXT__Xmm11
+        save_xmm128_postrsp xmm12, OFFSETOF__CONTEXT__Xmm12
+        save_xmm128_postrsp xmm13, OFFSETOF__CONTEXT__Xmm13
+        save_xmm128_postrsp xmm14, OFFSETOF__CONTEXT__Xmm14
+        save_xmm128_postrsp xmm15, OFFSETOF__CONTEXT__Xmm15
+
+        END_PROLOGUE
+
+        mov rcx, rsp
+        call ?IL_Rethrow_New@@YAXPEAU_CONTEXT@@@Z
+        int 3
+
+NESTED_END IL_Rethrow, _TEXT
+
 endif ; FEATURE_TIERED_COMPILATION
 
         end

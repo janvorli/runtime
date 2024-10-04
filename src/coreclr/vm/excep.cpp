@@ -11561,23 +11561,23 @@ void SoftwareExceptionFrame::UpdateRegDisplay(const PREGDISPLAY pRD, bool update
 {
     LIMITED_METHOD_DAC_CONTRACT;
 
-#define CALLEE_SAVED_REGISTER(regname) pRD->pCurrentContext->regname = *dac_cast<PTR_SIZE_T>((TADDR)m_ContextPointers.regname);
+#define CALLEE_SAVED_REGISTER(regname) pRD->pCurrentContext->regname = m_pContext->regname;
     ENUM_CALLEE_SAVED_REGISTERS();
 #undef CALLEE_SAVED_REGISTER
 
-#define CALLEE_SAVED_REGISTER(regname) pRD->pCurrentContextPointers->regname = m_ContextPointers.regname;
+#define CALLEE_SAVED_REGISTER(regname) pRD->pCurrentContextPointers->regname = &m_pContext->regname;
     ENUM_CALLEE_SAVED_REGISTERS();
 #undef CALLEE_SAVED_REGISTER
 
-#define CALLEE_SAVED_REGISTER(regname) pRD->pCurrentContext->regname = m_Context.regname;
+#define CALLEE_SAVED_REGISTER(regname) pRD->pCurrentContext->regname = m_pContext->regname;
     ENUM_FP_CALLEE_SAVED_REGISTERS();
 #undef CALLEE_SAVED_REGISTER
 
-    SetIP(pRD->pCurrentContext, ::GetIP(&m_Context));
-    SetSP(pRD->pCurrentContext, ::GetSP(&m_Context));
+    SetIP(pRD->pCurrentContext, ::GetIP(m_pContext));
+    SetSP(pRD->pCurrentContext, ::GetSP(m_pContext));
 
-    pRD->ControlPC = ::GetIP(&m_Context);
-    pRD->SP = ::GetSP(&m_Context);
+    pRD->ControlPC = ::GetIP(m_pContext);
+    pRD->SP = ::GetSP(m_pContext);
 
     pRD->IsCallerContextValid = FALSE;
     pRD->IsCallerSPValid      = FALSE;        // Don't add usage of this field.  This is only temporary.
@@ -11587,42 +11587,44 @@ void SoftwareExceptionFrame::UpdateRegDisplay(const PREGDISPLAY pRD, bool update
 //
 // Init a new frame
 //
-void SoftwareExceptionFrame::Init()
+void SoftwareExceptionFrame::Init(CONTEXT *pContext)
 {
     WRAPPER_NO_CONTRACT;
 
-#define CALLEE_SAVED_REGISTER(regname) m_ContextPointers.regname = NULL;
-    ENUM_CALLEE_SAVED_REGISTERS();
-#undef CALLEE_SAVED_REGISTER
+    m_pContext = pContext;
 
-#ifndef TARGET_UNIX
-    Thread::VirtualUnwindCallFrame(&m_Context, &m_ContextPointers);
-#else // !TARGET_UNIX
-    BOOL success = PAL_VirtualUnwind(&m_Context, &m_ContextPointers);
-    if (!success)
-    {
-        _ASSERTE(!"SoftwareExceptionFrame::Init failed");
-        EEPOLICY_HANDLE_FATAL_ERROR(COR_E_EXECUTIONENGINE);
-    }
-#endif // !TARGET_UNIX
+// #define CALLEE_SAVED_REGISTER(regname) m_ContextPointers.regname = NULL;
+//     ENUM_CALLEE_SAVED_REGISTERS();
+// #undef CALLEE_SAVED_REGISTER
 
-#define CALLEE_SAVED_REGISTER(regname) if (m_ContextPointers.regname == NULL) m_ContextPointers.regname = &m_Context.regname;
-    ENUM_CALLEE_SAVED_REGISTERS();
-#undef CALLEE_SAVED_REGISTER
+// #ifndef TARGET_UNIX
+//     Thread::VirtualUnwindCallFrame(&m_Context, &m_ContextPointers);
+// #else // !TARGET_UNIX
+//     BOOL success = PAL_VirtualUnwind(&m_Context, &m_ContextPointers);
+//     if (!success)
+//     {
+//         _ASSERTE(!"SoftwareExceptionFrame::Init failed");
+//         EEPOLICY_HANDLE_FATAL_ERROR(COR_E_EXECUTIONENGINE);
+//     }
+// #endif // !TARGET_UNIX
 
-    _ASSERTE(ExecutionManager::IsManagedCode(::GetIP(&m_Context)));
+// #define CALLEE_SAVED_REGISTER(regname) if (m_ContextPointers.regname == NULL) m_ContextPointers.regname = &m_Context.regname;
+//     ENUM_CALLEE_SAVED_REGISTERS();
+// #undef CALLEE_SAVED_REGISTER
 
-    m_ReturnAddress = ::GetIP(&m_Context);
+    _ASSERTE(ExecutionManager::IsManagedCode(::GetIP(pContext)));
+
+    m_ReturnAddress = ::GetIP(pContext);
 }
 
 //
 // Init and Link in a new frame
 //
-void SoftwareExceptionFrame::InitAndLink(Thread *pThread)
+void SoftwareExceptionFrame::InitAndLink(Thread *pThread, CONTEXT *pContext)
 {
     WRAPPER_NO_CONTRACT;
 
-    Init();
+    Init(pContext);
 
     Push(pThread);
 }
