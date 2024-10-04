@@ -310,4 +310,70 @@ LEAF_ENTRY GetTlsIndexObjectDescOffset, _TEXT
         call    EXTERNAL_C_FUNC(__tls_get_addr)                      # dummy call to have linker see the code pattern to replace the offset
         int 3
 LEAF_END GetTlsIndexObjectDescOffset, _TEXT
+
+#define CONTEXT_CONTROL 1
+#define CONTEXT_INTEGER 2
+#define CONTEXT_FLOATING_POINT 8
+#define CONTEXT_AMD64 0x100000
+
+NESTED_ENTRY IL_Throw, _TEXT, NoHandler
+
+        lea rax, [rsp + 8]
+        alloc_stack SIZEOF__CONTEXT + 8
+
+        mov [rsp + OFFSETOF__CONTEXT__Rsp], rax
+        mov rax, [rax - 8]
+        mov [rsp + OFFSETOF__CONTEXT__Rip], rax
+        mov eax, CONTEXT_CONTROL or CONTEXT_INTEGER
+        mov [rsp + OFFSETOF__CONTEXT__ContextFlags], eax
+        push_eflags
+        pop_register rax
+        mov  [rsp + OFFSETOF__CONTEXT__EFlags], eax
+
+        // Store non-volatile registers to the CONTEXT
+        save_reg_postrsp rdi, OFFSETOF__CONTEXT__Rdi
+        save_reg_postrsp rsi, OFFSETOF__CONTEXT__Rsi
+        save_reg_postrsp rbx, OFFSETOF__CONTEXT__Rbx
+        save_reg_postrsp rbp, OFFSETOF__CONTEXT__Rbp
+        save_reg_postrsp r12, OFFSETOF__CONTEXT__R12
+        save_reg_postrsp r13, OFFSETOF__CONTEXT__R13
+        save_reg_postrsp r14, OFFSETOF__CONTEXT__R14
+        save_reg_postrsp r15, OFFSETOF__CONTEXT__R15
+
+        mov rsi, rsp
+        call _Z12IL_Throw_NewP6ObjectP8_CONTEXT
+        int 3
+
+NESTED_END IL_Throw, _TEXT
+
+NESTED_ENTRY IL_Rethrow, _TEXT, NoHandler
+
+        lea rax, [rsp + 8]
+        alloc_stack SIZEOF__CONTEXT + 8
+
+        mov [rsp + OFFSETOF__CONTEXT__Rsp], rax
+        mov rax, [rax - 8]
+        mov [rsp + OFFSETOF__CONTEXT__Rip], rax
+        mov eax, CONTEXT_CONTROL or CONTEXT_INTEGER
+        mov [rsp + OFFSETOF__CONTEXT__ContextFlags], eax
+        push_eflags
+        pop_register rax
+        mov  [rsp + OFFSETOF__CONTEXT__EFlags], eax
+    
+        // Store non-volatile registers to the CONTEXT
+        save_reg_postrsp rdi, OFFSETOF__CONTEXT__Rdi
+        save_reg_postrsp rsi, OFFSETOF__CONTEXT__Rsi
+        save_reg_postrsp rbx, OFFSETOF__CONTEXT__Rbx
+        save_reg_postrsp rbp, OFFSETOF__CONTEXT__Rbp
+        save_reg_postrsp r12, OFFSETOF__CONTEXT__R12
+        save_reg_postrsp r13, OFFSETOF__CONTEXT__R13
+        save_reg_postrsp r14, OFFSETOF__CONTEXT__R14
+        save_reg_postrsp r15, OFFSETOF__CONTEXT__R15
+
+        mov rdi, rsp
+        call _Z14IL_Rethrow_NewP8_CONTEXT
+        int 3
+
+NESTED_END IL_Rethrow, _TEXT
+
 #endif
