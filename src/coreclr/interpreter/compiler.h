@@ -137,12 +137,37 @@ enum InterpBBState
     BBStateEmitted
 };
 
+// TODO: Try is not a funclet - rename this
+enum FuncletType
+{
+    NOT_A_FUNCLET,
+    TRY_ENTRY,
+    FILTER_ENTRY,
+    CATCH_ENTRY,
+    FINALLY_ENTRY,
+    TRY,
+    FILTER,
+    CATCH,
+    FINALLY,
+};
+
+// The idea of this constant is that by plus or minus 4, you stay in the same funclet type
+const int funclet_leave_entry = 4;
+
 struct InterpBasicBlock
 {
     int32_t index;
     int32_t ilOffset, nativeOffset;
     int32_t stackHeight;
     StackInfo *pStackState;
+
+    FuncletType funclet_type;
+    int32_t funclet_exit_count;
+    int32_t funclet_exit_current;
+    int32_t* funclet_exits;
+    InterpBasicBlock** funclet_handlers;
+    InterpBasicBlock* funclet_exit_block;
+    InterpBasicBlock* try_exit_block;
 
     InterpInst *pFirstIns, *pLastIns;
     InterpBasicBlock *pNextBB;
@@ -167,6 +192,13 @@ struct InterpBasicBlock
 
         inCount = 0;
         outCount = 0;
+        funclet_type = NOT_A_FUNCLET;
+        funclet_exit_count = 0;
+        funclet_exit_current = 0;
+        funclet_exits = nullptr;
+        funclet_handlers = nullptr;
+        funclet_exit_block = nullptr;
+        try_exit_block = nullptr;
 
         emitState = BBStateNotEmitted;
     }
@@ -263,6 +295,9 @@ class InterpIAllocator;
 
 class InterpCompiler
 {
+#ifdef DEBUG
+    bool m_interesting;
+#endif
     friend class InterpIAllocator;
 
 private:
@@ -331,6 +366,9 @@ private:
     // Basic blocks
     int m_BBCount = 0;
     InterpBasicBlock**  m_ppOffsetToBB;
+#ifdef DEBUG
+    bool m_generatedAllBasicBlocks = false;
+#endif
 
     ICorDebugInfo::OffsetMapping* m_pILToNativeMap = NULL;
     int32_t m_ILToNativeMapSize = 0;
@@ -382,7 +420,11 @@ private:
     // Code emit
     void    EmitConv(StackInfo *sp, InterpInst *prevIns, StackType type, InterpOpcode convOp);
     void    EmitLoadVar(int var);
+    void    EmitLoadFrameVar(int var);
+    void    EmitLoadVarHelper(int var, int mode);
     void    EmitStoreVar(int var);
+    void    EmitStoreFrameVar(int var);
+    void    EmitStoreVarHelper(int var, int mode);
     void    EmitBinaryArithmeticOp(int32_t opBase);
     void    EmitUnaryArithmeticOp(int32_t opBase);
     void    EmitShiftOp(int32_t opBase);
@@ -417,7 +459,7 @@ private:
     int32_t ComputeCodeSize();
     uint32_t ConvertOffset(int32_t offset);
     void EmitCode();
-    int32_t* EmitCodeIns(int32_t *ip, InterpInst *pIns, TArray<Reloc*> *relocs);
+    int32_t* EmitCodeIns(int32_t *ip, InterpInst *pIns, TArray<Reloc*> *relocs, bool enteringFunclet);
     void PatchRelocations(TArray<Reloc*> *relocs);
     InterpMethod* CreateInterpMethod();
     bool CreateBasicBlocks(CORINFO_METHOD_INFO* methodInfo);
@@ -437,6 +479,7 @@ public:
 
     InterpMethod* CompileMethod();
     void BuildGCInfo(InterpMethod *pInterpMethod);
+    void BuildEHInfo();
 
     int32_t* GetCode(int32_t *pCodeSize);
 };

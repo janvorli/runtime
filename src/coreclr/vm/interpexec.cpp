@@ -9,6 +9,7 @@
 #include "interpexec.h"
 
 typedef void* (*HELPER_FTN_PP)(void*);
+typedef void* (*HELPER_FTN_PP_2)(void*, void*);
 
 thread_local InterpThreadContext *t_pThreadContext = NULL;
 
@@ -41,21 +42,73 @@ static void InterpBreakpoint()
 
 #define LOCAL_VAR_ADDR(offset,type) ((type*)(stack + (offset)))
 #define LOCAL_VAR(offset,type) (*LOCAL_VAR_ADDR(offset, type))
+#define FRAME_VAR_ADDR(offset,type) ((type*)(frame + (offset)))
+#define FRAME_VAR(offset,type) (*FRAME_VAR_ADDR(offset, type))
 // TODO once we have basic EH support
 #define NULL_CHECK(o)
 
-void InterpExecMethod(InterpreterFrame *pInterpreterFrame, InterpMethodContextFrame *pFrame, InterpThreadContext *pThreadContext)
+DWORD_PTR ExecuteInterpretedCode(TransitionBlock* pTransitionBlock, TADDR byteCodeAddr, OBJECTREF throwable, void* pHandler, InterpMethodContextFrame* handlerFrame, bool isFilter)
 {
+    // Argument registers are in the TransitionBlock
+    // The stack arguments are right after the pTransitionBlock
+    InterpThreadContext *threadContext = InterpGetThreadContext();
+    int8_t *sp = threadContext->pStackPointer;
+
+    if (handlerFrame)
+    {
+        InterpreterFrame interpreterFrame(pTransitionBlock, handlerFrame);
+        int8_t* original = handlerFrame->pStack;
+        int8_t* framePointer = nullptr;
+        if (isFilter)
+        {
+            framePointer = original;
+            handlerFrame->pStack = sp;
+        }
+        DWORD_PTR funcletResult = (DWORD_PTR)InterpExecMethod(&interpreterFrame, handlerFrame, throwable, (const int32_t*)pHandler, framePointer, threadContext);
+        handlerFrame->pStack = original;
+        interpreterFrame.Pop();
+        return funcletResult;
+    }
+
+    // This construct ensures that the InterpreterFrame is always stored at a higher address than the
+    // InterpMethodContextFrame. This is important for the stack walking code.
+    struct Frames
+    {
+        InterpMethodContextFrame interpMethodContextFrame = {0};
+        InterpreterFrame interpreterFrame;
+
+        Frames(TransitionBlock* pTransitionBlock)
+        : interpreterFrame(pTransitionBlock, &interpMethodContextFrame)
+        {
+        }
+    }
+    frames(pTransitionBlock);
+
+    frames.interpMethodContextFrame.pStack = sp;
+    frames.interpMethodContextFrame.pRetVal = sp;
+    frames.interpMethodContextFrame.startIp = (int32_t*)byteCodeAddr;
+
+    InterpExecMethod(&frames.interpreterFrame, &frames.interpMethodContextFrame, throwable, nullptr, nullptr, threadContext);
+
+    frames.interpreterFrame.Pop();
+    return (DWORD_PTR)nullptr;
+}
+
+void* InterpExecMethod(InterpreterFrame *pInterpreterFrame, InterpMethodContextFrame *pFrame, OBJECTREF throwable, const int32_t *ip, int8_t *frame, InterpThreadContext *pThreadContext)
+{
+    bool non_exceptional_finally = false;
 #if defined(HOST_AMD64) && defined(HOST_WINDOWS)
     pInterpreterFrame->SetInterpExecMethodSSP((TADDR)_rdsspq());
 #endif // HOST_AMD64 && HOST_WINDOWS
 
-    const int32_t *ip;
     int8_t *stack;
 
     InterpMethod *pMethod = *(InterpMethod**)pFrame->startIp;
     pThreadContext->pStackPointer = pFrame->pStack + pMethod->allocaSize;
-    ip = pFrame->startIp + sizeof(InterpMethod*) / sizeof(int32_t);
+    if (ip == nullptr)
+    {
+        ip = pFrame->startIp + sizeof(InterpMethod*) / sizeof(int32_t);
+    }
     stack = pFrame->pStack;
 
     int32_t returnOffset, callArgsOffset, methodSlot;
@@ -70,6 +123,11 @@ MAIN_LOOP:
         // It will be useful for testing e.g. the debug info at various locations in the current method, so let's
         // keep it for such purposes until we don't need it anymore.
         pFrame->ip = (int32_t*)ip;
+
+#ifdef DEBUG
+        // int offset = (int)(ip - (pFrame->startIp + sizeof(InterpMethod*) / sizeof(int32_t)));
+        // printf("Executing %s IR_%04x\n", ((MethodDesc*)pMethod->methodHnd)->GetName(), offset);
+#endif
 
         switch (*ip)
         {
@@ -133,6 +191,15 @@ MAIN_LOOP:
 #define MOV(argtype1,argtype2) \
     LOCAL_VAR(ip [1], argtype1) = LOCAL_VAR(ip [2], argtype2); \
     ip += 3;
+
+#define LOAD(argtype1,argtype2) \
+    LOCAL_VAR(ip [1], argtype1) = FRAME_VAR(ip [2], argtype2); \
+    ip += 3;
+
+#define STORE(argtype1,argtype2) \
+    FRAME_VAR(ip [1], argtype1) = LOCAL_VAR(ip [2], argtype2); \
+    ip += 3;
+
             // When loading from a local, we might need to sign / zero extend to 4 bytes
             // which is our minimum "register" size in interp. They are only needed when
             // the address of the local is taken and we should try to optimize them out
@@ -141,12 +208,32 @@ MAIN_LOOP:
             case INTOP_MOV_I4_U1: MOV(int32_t, uint8_t); break;
             case INTOP_MOV_I4_I2: MOV(int32_t, int16_t); break;
             case INTOP_MOV_I4_U2: MOV(int32_t, uint16_t); break;
-            // Normal moves between vars
             case INTOP_MOV_4: MOV(int32_t, int32_t); break;
             case INTOP_MOV_8: MOV(int64_t, int64_t); break;
-
             case INTOP_MOV_VT:
                 memmove(stack + ip[1], stack + ip[2], ip[3]);
+                ip += 4;
+                break;
+
+            case INTOP_LOAD_I4_I1: LOAD(int32_t, int8_t); break;
+            case INTOP_LOAD_I4_U1: LOAD(int32_t, uint8_t); break;
+            case INTOP_LOAD_I4_I2: LOAD(int32_t, int16_t); break;
+            case INTOP_LOAD_I4_U2: LOAD(int32_t, uint16_t); break;
+            case INTOP_LOAD_4: LOAD(int32_t, int32_t); break;
+            case INTOP_LOAD_8: LOAD(int64_t, int64_t); break;
+            case INTOP_LOAD_VT:
+                memmove(stack + ip[1], frame + ip[2], ip[3]);
+                ip += 4;
+                break;
+
+            case INTOP_STORE_I4_I1: STORE(int32_t, int8_t); break;
+            case INTOP_STORE_I4_U1: STORE(int32_t, uint8_t); break;
+            case INTOP_STORE_I4_I2: STORE(int32_t, int16_t); break;
+            case INTOP_STORE_I4_U2: STORE(int32_t, uint16_t); break;
+            case INTOP_STORE_4: STORE(int32_t, int32_t); break;
+            case INTOP_STORE_8: STORE(int64_t, int64_t); break;
+            case INTOP_STORE_VT:
+                memmove(frame + ip[1], stack + ip[2], ip[3]);
                 ip += 4;
                 break;
 
@@ -963,19 +1050,28 @@ MAIN_LOOP:
             }
 
             case INTOP_CALL_HELPER_PP:
+            case INTOP_CALL_HELPER_PP_2:
             {
-                HELPER_FTN_PP helperFtn = (HELPER_FTN_PP)pMethod->pDataItems[ip[2]];
-                HELPER_FTN_PP* helperFtnSlot = (HELPER_FTN_PP*)pMethod->pDataItems[ip[3]];
-                void* helperArg = pMethod->pDataItems[ip[4]];
+                int base = (*ip == INTOP_CALL_HELPER_PP) ? 2 : 3;
+                void* helperFtn = pMethod->pDataItems[ip[base]];
+                void** helperFtnSlot = (void**)pMethod->pDataItems[ip[base + 1]];
+                void* helperArg = pMethod->pDataItems[ip[base + 2]];
 
                 if (!helperFtn)
                     helperFtn = *helperFtnSlot;
                 // This can call either native or compiled managed code. For an interpreter
                 // only configuration, this might be problematic, at least performance wise.
                 // FIXME We will need to handle exception throwing here.
-                LOCAL_VAR(ip[1], void*) = helperFtn(helperArg);
-
-                ip += 5;
+                if (*ip == INTOP_CALL_HELPER_PP)
+                {
+                    LOCAL_VAR(ip[1], void*) = ((HELPER_FTN_PP)helperFtn)(helperArg);
+                    ip += 5;
+                }
+                else
+                {
+                    LOCAL_VAR(ip[1], void*) = ((HELPER_FTN_PP_2)helperFtn)(helperArg, LOCAL_VAR(ip[2], void*));
+                    ip += 6;
+                }
                 break;
             }
             case INTOP_CALLVIRT:
@@ -1168,11 +1264,53 @@ CALL_TARGET_IP:
                 ip++;
                 break;
             }
+
+            case INTOP_ENTER_FUNCLET:
+                // This opcode loads the exception object coming from the caller to a variable.
+                LOCAL_VAR(ip[1], OBJECTREF) = throwable;
+                ip += 2;
+                break;
+
+            case INTOP_LEAVE_CATCH:
+                // This opcode temporarily return the control back to InterpreterCodeManager::CallFunclet
+                // The VM will resume execution on the address we return here.
+                return (void*)(ip + 1);
+
+            case INTOP_LEAVE_FILTER:
+                // This opcode temporarily return the control back to InterpreterCodeManager::CallFunclet
+                // The VM will either continue the search for another exception handler or execute the handler.
+                // depending on the result we return here.
+                return (void*)(int64_t)((LOCAL_VAR(ip[1], int32_t) != 0) ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH);
+
+            case INTOP_CALL_FINALLY:
+                // This opcode calls the finally block by putting the return address to a variable and then
+                // jumping to the finally block.
+                non_exceptional_finally = true;
+                LOCAL_VAR(ip[1], const int32_t*) = ip + 3;
+                ip += ip[2];
+                break;
+
+            case INTOP_RET_FINALLY:
+                if (non_exceptional_finally)
+                {
+                    // This opcode returns from the finally block by jumping to the return address
+                    // stored in the variable.
+                    non_exceptional_finally = false;
+                    ip = LOCAL_VAR(ip[1], const int32_t*);
+                }
+                else
+                {
+                    // The finally is called by CallFinallyFunclet, this is time to return the control back
+                    // to the VM
+                    return nullptr;
+                }
+                break;
+
             case INTOP_FAILFAST:
                 assert(0);
                 break;
             default:
-                assert(0);
+                assert(!"NYI - Unsupported interp bytecode");
                 break;
         }
     }
@@ -1193,6 +1331,7 @@ EXIT_FRAME:
     }
 
     pThreadContext->pStackPointer = pFrame->pStack;
+    return nullptr;
 }
 
 #endif // FEATURE_INTERPRETER
