@@ -2485,21 +2485,9 @@ HeapList* LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
     // this first allocation is critical as it sets up correctly the loader heap info
     HeapList *pHp = new HeapList;
 
-#if defined(TARGET_AMD64) || defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
-    if (pInfo->IsInterpreted())
-    {
-        pHp->CLRPersonalityRoutine = NULL;
-        pCodeHeap->m_LoaderHeap.ReservePages(1);
-    }
-    else
-    {
-        pHp->CLRPersonalityRoutine = (BYTE *)pCodeHeap->m_LoaderHeap.AllocMemForCode_NoThrow(0, JUMP_ALLOCATE_SIZE, sizeof(void*), 0);
-    }
-#else
     // Ensure that the heap has a reserved block of memory and so the GetReservedBytesFree()
     // and GetAllocPtr() calls below return nonzero values.
     pCodeHeap->m_LoaderHeap.ReservePages(1);
-#endif
 
     pHp->pHeap = pCodeHeap;
 
@@ -2526,14 +2514,6 @@ HeapList* LoaderCodeHeap::CreateCodeHeap(CodeHeapRequestInfo *pInfo, LoaderHeap 
     pHp->mapBase         = ROUND_DOWN_TO_PAGE(pHp->startAddress);  // round down to next lower page align
     size_t nibbleMapSize = HEAP2MAPSIZE(ROUND_UP_TO_PAGE(heapSize));
     pHp->pHdrMap         = (DWORD*)(void*)pJitMetaHeap->AllocMem(S_SIZE_T(nibbleMapSize));
-#ifdef TARGET_64BIT
-    if (pHp->CLRPersonalityRoutine != NULL)
-    {
-        ExecutableWriterHolder<BYTE> personalityRoutineWriterHolder(pHp->CLRPersonalityRoutine, 12);
-        emitJump(pHp->CLRPersonalityRoutine, personalityRoutineWriterHolder.GetRW(), (void *)ProcessCLRException);
-    }
-#endif // TARGET_64BIT
-
     pHp->pLoaderAllocator = pInfo->m_pAllocator;
 
     LOG((LF_JIT, LL_INFO100,

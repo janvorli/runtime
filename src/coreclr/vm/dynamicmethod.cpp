@@ -404,10 +404,6 @@ HeapList* HostCodeHeap::InitializeHeapList(CodeHeapRequestInfo *pInfo)
     // Add TrackAllocation, HeapList and very conservative padding to make sure we have enough for the allocation
     ReserveBlockSize += sizeof(TrackAllocation) + HOST_CODEHEAP_SIZE_ALIGN + 0x100;
 
-#if defined(TARGET_AMD64) || defined(TARGET_ARM64)
-    ReserveBlockSize += JUMP_ALLOCATE_SIZE;
-#endif
-
     // reserve ReserveBlockSize rounded-up to VIRTUAL_ALLOC_RESERVE_GRANULARITY of memory
     ReserveBlockSize = ALIGN_UP(ReserveBlockSize, VIRTUAL_ALLOC_RESERVE_GRANULARITY);
 
@@ -440,30 +436,6 @@ HeapList* HostCodeHeap::InitializeHeapList(CodeHeapRequestInfo *pInfo)
 
     TrackAllocation *pTracker = NULL;
 
-#ifdef FEATURE_INTERPRETER
-    if (pInfo->IsInterpreted())
-    {
-        pHp->CLRPersonalityRoutine = NULL;
-    }
-    else
-#endif // FEATURE_INTERPRETER
-    {
-#if defined(TARGET_AMD64) || defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
-
-        pTracker = AllocMemory_NoThrow(0, JUMP_ALLOCATE_SIZE, sizeof(void*), 0);
-        if (pTracker == NULL)
-        {
-            // This should only ever happen with fault injection
-            _ASSERTE(g_pConfig->ShouldInjectFault(INJECTFAULT_DYNAMICCODEHEAP));
-            delete pHp;
-            ThrowOutOfMemory();
-        }
-
-        pHp->CLRPersonalityRoutine = (BYTE *)(pTracker + 1);
-
-#endif
-    }
-
     pHp->hpNext = NULL;
     pHp->pHeap = (PTR_CodeHeap)this;
     // wire it back
@@ -472,7 +444,6 @@ HeapList* HostCodeHeap::InitializeHeapList(CodeHeapRequestInfo *pInfo)
     LOG((LF_BCL, LL_INFO100, "Level2 - CodeHeap creation {0x%p} - size available 0x%p, private data ptr [0x%p, 0x%p]\n",
         (HostCodeHeap*)this, m_TotalBytesAvailable, pTracker, (pTracker ? pTracker->size : 0)));
 
-    // It is important to exclude the CLRPersonalityRoutine from the tracked range
     pHp->startAddress = dac_cast<TADDR>(m_pBaseAddr) + (pTracker ? pTracker->size : 0);
     pHp->mapBase = ROUND_DOWN_TO_PAGE(pHp->startAddress);  // round down to next lower page align
     pHp->pHdrMap = NULL;
@@ -480,14 +451,6 @@ HeapList* HostCodeHeap::InitializeHeapList(CodeHeapRequestInfo *pInfo)
 
     pHp->maxCodeHeapSize = m_TotalBytesAvailable - (pTracker ? pTracker->size : 0);
     pHp->reserveForJumpStubs = 0;
-
-#ifdef HOST_64BIT
-    if (pHp->CLRPersonalityRoutine != NULL)
-    {
-        ExecutableWriterHolder<BYTE> personalityRoutineWriterHolder(pHp->CLRPersonalityRoutine, 12);
-        emitJump(pHp->CLRPersonalityRoutine, personalityRoutineWriterHolder.GetRW(), (void *)ProcessCLRException);
-    }
-#endif
 
     size_t nibbleMapSize = HEAP2MAPSIZE(ROUND_UP_TO_PAGE(pHp->maxCodeHeapSize));
     pHp->pHdrMap = new DWORD[nibbleMapSize / sizeof(DWORD)];
