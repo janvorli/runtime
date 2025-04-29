@@ -22,6 +22,7 @@
 #endif // FEATURE_INTERPRETER
 
 #include "exinfo.h"
+#include "excep.h"
 
 #ifdef TARGET_X86
 
@@ -2075,21 +2076,68 @@ DWORD_PTR EECodeManager::CallFunclet(OBJECTREF throwable, void* pHandler, REGDIS
     return dwResult;
 }
 
+void EECodeManager::ResumeAfterCatch(CONTEXT *pContext, size_t targetSSP, bool fIntercepted)
+{
+    Thread *pThread = GetThread();
+    DWORD_PTR dwResumePC = GetIP(pContext);
+    UINT_PTR uAbortAddr = 0;
+    if (!fIntercepted)
+    {
+        CopyOSContext(pThread->m_OSContext, pContext);
+        uAbortAddr = (UINT_PTR)COMPlusCheckForAbort(dwResumePC);
+    }
+
+    if (uAbortAddr)
+    {
+        STRESS_LOG2(LF_EH, LL_INFO10, "Thread abort in progress, resuming under control: IP=%p, SP=%p\n", dwResumePC, GetSP(pContext));
+
+        // The dwResumePC is passed to the THROW_CONTROL_FOR_THREAD_FUNCTION ASM helper so that
+        // it can establish it as its return address and native stack unwinding can work properly.
+#ifdef TARGET_AMD64
+#ifdef TARGET_UNIX
+        pContext->Rdi = dwResumePC;
+#else
+        pContext->Rcx = dwResumePC;
+#endif
+#elif defined(TARGET_ARM) || defined(TARGET_ARM64)
+        // On ARM & ARM64, we save off the original PC in Lr. This is the same as done
+        // in HandleManagedFault for H/W generated exceptions.
+        pContext->Lr = dwResumePC;
+#elif defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+        pContext->Ra = dwResumePC;
+#endif
+
+        SetIP(pContext, uAbortAddr);
+    }
+    else
+    {
+        STRESS_LOG2(LF_EH, LL_INFO100, "Resuming after exception at IP=%p, SP=%p\n", GetIP(pContext), GetSP(pContext));
+    }
+
+    ClrRestoreNonvolatileContext(pContext, targetSSP);
+}
+
 #if defined(HOST_AMD64) && defined(HOST_WINDOWS)
-void EECodeManager::UpdateSSP(PREGDISPLAY pRD)
+
+size_t GetSSPForFrameOnCurrentStack(TADDR ip)
 {
     size_t *targetSSP = (size_t *)_rdsspq();
     // The SSP we search is pointing to the return address of the frame represented
-    // by the pRD->ControlPC. So we search for the instruction pointer from
+    // by the passed in IP. So we search for the instruction pointer from
     // the context and return one slot up from there.
     if (targetSSP != NULL)
     {
-        while (*targetSSP++ != pRD->ControlPC)
+        while (*targetSSP++ != ip)
         {
         }
     }
 
-    pRD->SSP = (size_t)targetSSP;
+    return (size_t)targetSSP;
+}
+
+void EECodeManager::UpdateSSP(PREGDISPLAY pRD)
+{
+    pRD->SSP = GetSSPForFrameOnCurrentStack(pRD->ControlPC);
 }
 #endif // HOST_AMD64 && HOST_WINDOWS
 
@@ -2106,13 +2154,111 @@ DWORD_PTR InterpreterCodeManager::CallFunclet(OBJECTREF throwable, void* pHandle
     return ExecuteInterpretedCode(nullptr, 0, throwable, pHandler, faultingFrame, isFilter);
 }
 
-void InterpreterCodeManager::PrepareForResumeAfterCatch(CONTEXT *pContext)
+void ThrowResumeAfterCatchException(TADDR resumeSP, TADDR resumeIP);
+// {
+//     throw ResumeAfterCatchException(resumeSP, resumeIP);
+// }
+
+#define OPTIMIZED_RESUME
+#ifdef OPTIMIZED_RESUME
+void InterpreterCodeManager::ResumeAfterCatch(CONTEXT *pContext, size_t targetSSP, bool fIntercepted)
 {
     Thread *pThread = GetThread();
     InterpreterFrame * pInterpreterFrame = (InterpreterFrame*)pThread->GetFrame();
-    pInterpreterFrame->SetResumeContext(GetSP(pContext), GetIP(pContext));
-    pInterpreterFrame->RestoreInterpExecMethodContext(pContext);
+    TADDR resumeSP = GetSP(pContext);
+    TADDR resumeIP = GetIP(pContext);
+
+    ClrCaptureContext(pContext);
+
+    // Unwind to the caller of the Ex.RhThrowEx / Ex.RhThrowHwEx
+    Thread::VirtualUnwindToFirstManagedCallFrame(pContext);
+
+#if defined(HOST_AMD64) && defined(HOST_WINDOWS)
+    targetSSP = GetSSPForFrameOnCurrentStack(GetIP(pContext));
+#endif // HOST_AMD64 && HOST_WINDOWS
+
+    CONTEXT firstNativeContext;
+    size_t firstNativeSSP;
+
+    // Find the native frames chain that contains the resumeSP
+    do
+    {
+        // Skip all managed frames upto a native frame
+        while (ExecutionManager::IsManagedCode(GetIP(pContext)))
+        {
+            Thread::VirtualUnwindCallFrame(pContext);
+#if defined(HOST_AMD64) && defined(HOST_WINDOWS)
+            if (targetSSP != 0)
+            {
+                targetSSP += sizeof(size_t);
+            }
+#endif
+        }
+
+        // Save the first native context after managed frames. This will be the context where we throw the resume after catch exception from.
+        firstNativeContext = *pContext;
+        firstNativeSSP = targetSSP;
+        // Move over all native frames until we move over the resumeSP
+        while ((GetSP(pContext) < resumeSP) && !ExecutionManager::IsManagedCode(GetIP(pContext)))
+        {
+#ifdef TARGET_UNIX
+            PAL_VirtualUnwind(pContext, NULL);
+#else
+            Thread::VirtualUnwindCallFrame(pContext);
+#endif
+#if defined(HOST_AMD64) && defined(HOST_WINDOWS)
+            if (targetSSP != 0)
+            {
+                targetSSP += sizeof(size_t);
+            }        
+#endif
+        }
+    }
+    while (GetSP(pContext) < resumeSP);
+
+    ExecuteFunctionBelowContext((PCODE)ThrowResumeAfterCatchException, &firstNativeContext, firstNativeSSP, resumeSP, resumeIP);
 }
+#else
+void InterpreterCodeManager::ResumeAfterCatch(CONTEXT *pContext, size_t targetSSP, bool fIntercepted)
+{
+    TADDR resumeSP = GetSP(pContext);
+    TADDR resumeIP = GetIP(pContext);
+
+    throw ResumeAfterCatchException(resumeSP, resumeIP);
+}
+
+// void InterpreterCodeManager::ResumeAfterCatch(CONTEXT *pContext, size_t targetSSP, bool fIntercepted)
+// {
+//     Thread *pThread = G	etThread();
+//     InterpreterFrame * pInterpreterFrame = (InterpreterFrame*)pThread->GetFrame();
+//     TADDR resumeSP = GetSP(pContext);
+//     TADDR resumeIP = GetIP(pContext);
+
+//     ClrCaptureContext(pContext);
+
+//     // Unwind to the caller of the Ex.RhThrowEx / Ex.RhThrowHwEx
+//     Thread::VirtualUnwindToFirstManagedCallFrame(pContext);
+
+// #if defined(HOST_AMD64) && defined(HOST_WINDOWS)
+//     targetSSP = GetSSPForFrameOnCurrentStack(GetIP(pContext));
+// #endif // HOST_AMD64 && HOST_WINDOWS
+
+//     // Skip all managed frames upto a native frame
+//     while (ExecutionManager::IsManagedCode(GetIP(pContext)))
+//     {
+//         Thread::VirtualUnwindCallFrame(pContext);
+// #if defined(HOST_AMD64) && defined(HOST_WINDOWS)
+//         if (targetSSP != 0)
+//         {
+//             targetSSP += sizeof(size_t);
+//         }
+// #endif
+//     }
+
+//     ExecuteFunctionBelowContext((PCODE)ThrowResumeAfterCatchException, pContext, targetSSP, resumeSP, resumeIP);
+// }
+#endif // OPTIMIZED_RESUME
+
 #if defined(HOST_AMD64) && defined(HOST_WINDOWS)
 void InterpreterCodeManager::UpdateSSP(PREGDISPLAY pRD)
 {

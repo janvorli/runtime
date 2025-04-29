@@ -269,6 +269,7 @@ VOID DECLSPEC_NORETURN RaiseTheExceptionInternalOnly(OBJECTREF throwable, BOOL r
 
 void UnwindAndContinueRethrowHelperInsideCatch(Frame* pEntryFrame, Exception* pException);
 VOID DECLSPEC_NORETURN UnwindAndContinueRethrowHelperAfterCatch(Frame* pEntryFrame, Exception* pException, bool nativeRethrow);
+VOID DECLSPEC_NORETURN UnwindAndContinueResumeAfterCatch(TADDR resumeSP, TADDR resumeIP);
 
 #ifdef TARGET_UNIX
 VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHardwareException);
@@ -371,6 +372,9 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
         Exception* __pUnCException  = NULL;                                                 \
         Frame*     __pUnCEntryFrame = CURRENT_THREAD->GetFrame();                           \
         bool       __fExceptionCaught = false;                                             \
+        bool       __fResumeAfterCatchExceptionCaught = false;                              \
+        TADDR      __interpreterResumeSP = 0;                                                      \
+        TADDR      __interpreterResumeIP = 0;                                                  \
         SCAN_EHMARKER();                                                                    \
         if (true) PAL_CPP_TRY {                                                             \
             SCAN_EHMARKER_TRY();
@@ -420,6 +424,27 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
 
 #define UNINSTALL_UNWIND_AND_CONTINUE_HANDLER                                               \
     UNINSTALL_UNWIND_AND_CONTINUE_HANDLER_EX(false);
+
+#define INSTALL_RESUME_AFTER_CATCH_HANDLER \
+{                                                                                       \
+    bool       __fResumeAfterCatchExceptionCaught = false;                              \
+    TADDR      __interpreterResumeSP = 0;                                               \
+    TADDR      __interpreterResumeIP = 0;                                               \
+    PAL_CPP_TRY {                                                                       \
+
+#define UNINSTALL_RESUME_AFTER_CATCH_HANDLER                                            \
+    }                                                                                   \
+    PAL_CPP_CATCH_NON_DERIVED_NOARG (const ResumeAfterCatchException& ex)               \
+    {                                                                                   \
+        __fResumeAfterCatchExceptionCaught = true;                                      \
+        ex.GetResumeContext(&__interpreterResumeSP, &__interpreterResumeIP);            \
+    }                                                                                   \
+    PAL_CPP_ENDTRY                                                                      \
+    if (__fResumeAfterCatchExceptionCaught)                                             \
+    {                                                                                   \
+        UnwindAndContinueResumeAfterCatch(__interpreterResumeSP, __interpreterResumeIP);\
+    } \
+}
 
 #endif // DACCESS_COMPILE
 

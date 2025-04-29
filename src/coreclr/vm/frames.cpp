@@ -1136,19 +1136,25 @@ GCFrame::~GCFrame()
     }
     CONTRACTL_END;
 
-    // Do a manual switch to the GC cooperative mode instead of using the GCX_COOP_THREAD_EXISTS
-    // macro so that this function isn't slowed down by having to deal with FS:0 chain on x86 Windows.
-    BOOL wasCoop = m_pCurThread->PreemptiveGCDisabled();
-    if (!wasCoop)
+    // m_pNext is NULL when the frame was already popped from the stack. 
+    if (m_Next != NULL)
     {
-        m_pCurThread->DisablePreemptiveGC();
-    }
+        // This is a GCFrame that was not popped.  This is a problem.
+        // We should have popped it before we destruct
+        // Do a manual switch to the GC cooperative mode instead of using the GCX_COOP_THREAD_EXISTS
+        // macro so that this function isn't slowed down by having to deal with FS:0 chain on x86 Windows.
+        BOOL wasCoop = m_pCurThread->PreemptiveGCDisabled();
+        if (!wasCoop)
+        {
+            m_pCurThread->DisablePreemptiveGC();
+        }
 
-    Pop();
+        Pop();
 
-    if (!wasCoop)
-    {
-        m_pCurThread->EnablePreemptiveGC();
+        if (!wasCoop)
+        {
+            m_pCurThread->EnablePreemptiveGC();
+        }
     }
 }
 
@@ -1174,7 +1180,7 @@ void GCFrame::Push(Thread* pThread)
     // in which the compiler will lay them out in the stack frame.
     // So GetOsPageSize() is a guess of the maximum stack frame size of any method
     // with multiple GCFrames in coreclr.dll
-    _ASSERTE(((m_Next == NULL) ||
+    _ASSERTE(((m_Next == GCFRAME_TOP) ||
               (PBYTE(m_Next) + (2 * GetOsPageSize())) > PBYTE(this)) &&
              "Pushing a GCFrame out of order ?");
 
@@ -1221,7 +1227,7 @@ void GCFrame::Remove()
 
     GCFrame *pPrevFrame = NULL;
     GCFrame *pFrame = m_pCurThread->GetGCFrame();
-    while (pFrame != NULL)
+    while (pFrame != GCFRAME_TOP)
     {
         if (pFrame == this)
         {
@@ -1333,7 +1339,7 @@ BOOL IsProtectedByGCFrame(OBJECTREF *ppObjectRef)
     GetThread()->StackWalkFrames(IsProtectedByGCFrameStackWalkFramesCallback, &d);
 
     GCFrame* pGCFrame = GetThread()->GetGCFrame();
-    while (pGCFrame != NULL)
+    while (pGCFrame != GCFRAME_TOP)
     {
         if (pGCFrame->Protects(ppObjectRef)) {
             d.count++;

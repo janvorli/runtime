@@ -1272,7 +1272,7 @@ bool InterpCompiler::CreateBasicBlocks(CORINFO_METHOD_INFO* methodInfo)
         if (tryBB->funclet_exit_current == 0)
         {
             tryBB->funclet_exits = (int*)AllocMemPool0(sizeof(int) * (tryBB->funclet_exit_count));
-            tryBB->funclet_handlers = (InterpBasicBlock**)AllocMemPool0(sizeof(int) * (tryBB->funclet_exit_count));
+            tryBB->funclet_handlers = (InterpBasicBlock**)AllocMemPool0(sizeof(InterpBasicBlock**) * (tryBB->funclet_exit_count));
         }
         tryBB->funclet_exits[tryBB->funclet_exit_current] = clause.TryOffset + clause.TryLength;
         tryBB->funclet_handlers[tryBB->funclet_exit_current] = GetBB(clause.HandlerOffset);
