@@ -148,6 +148,11 @@ IF NOT "%spmi_enable_collection%"=="" (
 )
       ]]></BatchCLRTestEnvironmentCompatibilityCheck>
 
+      <BatchCLRTestEnvironmentCompatibilityCheck Condition="'$(RunInterpreter)' != ''"><![CDATA[
+$(BatchCLRTestEnvironmentCompatibilityCheck)
+SET DOTNET_Interpreter=TestEntryPoint
+      ]]></BatchCLRTestEnvironmentCompatibilityCheck>
+
       <BatchCLRTestExitCodePrep Condition="$(_CLRTestNeedsToRun)">
         <![CDATA[
 set CLRTestExpectedExitCode=$(CLRTestExitCode)
@@ -334,6 +339,11 @@ IF NOT "%CLRCustomTestLauncher%"=="" (
 
 if defined RunCrossGen2 (
   call :TakeLock
+)
+
+if defined RunInterpreter (
+  REM $(InputAssemblyName)
+  SET DOTNET_Interpreter=TestEntryPoint
 )
 
 ECHO %LAUNCHER% %ExePath% %CLRTestExecutionArguments%

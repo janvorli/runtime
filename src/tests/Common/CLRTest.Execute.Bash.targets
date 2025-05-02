@@ -140,6 +140,10 @@ then
   exit $(IncompatibleTestBashScriptExitCode)
 fi
       ]]></BashCLRTestEnvironmentCompatibilityCheck>
+      <BashCLRTestEnvironmentCompatibilityCheck Condition="'$(RunInterpreter)' != ''"><![CDATA[
+$(BashCLRTestEnvironmentCompatibilityCheck)
+export DOTNET_Interpreter=$(InputAssemblyName)
+      ]]></BashCLRTestEnvironmentCompatibilityCheck>
 
       <BashCLRTestExitCodePrep Condition="$(_CLRTestNeedsToRun)">
 <![CDATA[
@@ -398,6 +402,11 @@ if [ ! -z ${RunCrossGen2+x} ]%3B then
   TakeLock
 fi
 
+if [ ! -z "$RunInterpreter" ]; then
+# $(InputAssemblyName)
+  export DOTNET_Interpreter=TestEntryPoint
+fi
+
 echo $LAUNCHER $ExePath %24(printf "'%s' " "${CLRTestExecutionArguments[@]}")
 $LAUNCHER $ExePath "${CLRTestExecutionArguments[@]}"
 
@@ -425,6 +434,10 @@ fi
 
 if [ ! -z ${RunCrossGen2+x} ]%3B then
   TakeLock
+fi
+
+if [ ! -z "$RunInterpreter" ]; then
+  export DOTNET_Interpreter=$(InputAssemblyName)
 fi
 
 echo $LAUNCHER $ExePath %24(printf "'%s' " "${CLRTestExecutionArguments[@]}")

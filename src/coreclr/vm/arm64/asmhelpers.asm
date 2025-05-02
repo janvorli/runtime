@@ -1245,5 +1245,265 @@ JIT_PollGCRarePath
         EPILOG_BRANCH_REG x12
     LEAF_END
 
+    LEAF_ENTRY Load_X0
+        ldr x0, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X0
+    LEAF_ENTRY Load_X0_X1
+        ldp x0, x1, [x9], #16
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X0_X1
+
+    LEAF_ENTRY Load_X0_X1_X2
+        ldp x0, x1, [x9], #16
+        ldr x2, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X0_X1_X2
+
+    LEAF_ENTRY Load_X0_X1_X2_X3
+        ldp x0, x1, [x9], #16
+        ldp x2, x3, [x9], #16
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X0_X1_X2_X3
+
+    LEAF_ENTRY Load_X0_X1_X2_X3_X4
+        ldp x0, x1, [x9], #16
+        ldp x2, x3, [x9], #16
+        ldr x4, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X0_X1_X2_X3_X4
+
+    LEAF_ENTRY Load_X0_X1_X2_X3_X4_X5
+        ldp x0, x1, [x9], #16
+        ldp x2, x3, [x9], #16
+        ldp x4, x5, [x9], #16
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X0_X1_X2_X3_X4_X5
+
+    LEAF_ENTRY Load_X0_X1_X2_X3_X4_X5_X6
+        ldp x0, x1, [x9], #16
+        ldp x2, x3, [x9], #16
+        ldp x4, x5, [x9], #16
+        ldr x6, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X0_X1_X2_X3_X4_X5_X6
+
+    LEAF_ENTRY Load_X0_X1_X2_X3_X4_X5_X6_X7
+        ldp x0, x1, [x9], #16
+        ldp x2, x3, [x9], #16
+        ldp x4, x5, [x9], #16
+        ldp x6, x7, [x9], #16
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X0_X1_X2_X3_X4_X5_X6_X7
+
+    LEAF_ENTRY Load_X1
+        ldr x1, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X1
+
+    LEAF_ENTRY Load_X1_X2
+        ldr x1, [x9], #8
+        ldr x2, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X1_X2
+
+    LEAF_ENTRY Load_X1_X2_X3
+        ldr x1, [x9], #8
+        ldp x2, x3, [x9], #16
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X1_X2_X3
+
+    LEAF_ENTRY Load_X1_X2_X3_X4
+        ldr x1, [x9], #8
+        ldp x2, x3, [x9], #16
+        ldr x4, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X1_X2_X3_X4
+
+    LEAF_ENTRY Load_X1_X2_X3_X4_X5
+        ldr x1, [x9], #8
+        ldp x2, x3, [x9], #16
+        ldp x4, x5, [x9], #16
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X1_X2_X3_X4_X5
+
+    LEAF_ENTRY Load_X1_X2_X3_X4_X5_X6
+        ldr x1, [x9], #8
+        ldp x2, x3, [x9], #16
+        ldp x4, x5, [x9], #16
+        ldr x6, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X1_X2_X3_X4_X5_X6
+
+    LEAF_ENTRY Load_X1_X2_X3_X4_X5_X6_X7
+        ldr x1, [x9], #8
+        ldp x2, x3, [x9], #16
+        ldp x4, x5, [x9], #16
+        ldp x6, x7, [x9], #16
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X1_X2_X3_X4_X5_X6_X7
+
+    LEAF_ENTRY Load_X2
+        ldr x2, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X2
+
+    LEAF_ENTRY Load_X2_X3
+        ldr x2, [x9], #8
+        ldr x3, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X2_X3
+
+    LEAF_ENTRY Load_X2_X3_X4
+        ldr x2, [x9], #8
+        ldp x3, x4, [x9], #16
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X2_X3_X4
+
+    LEAF_ENTRY Load_X2_X3_X4_X5
+        ldr x2, [x9], #8
+        ldp x3, x4, [x9], #16
+        ldr x5, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X2_X3_X4_X5
+
+    LEAF_ENTRY Load_X2_X3_X4_X5_X6
+        ldr x2, [x9], #8
+        ldp x3, x4, [x9], #16
+        ldp x5, x6, [x9], #16
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X2_X3_X4_X5_X6
+
+    LEAF_ENTRY Load_X2_X3_X4_X5_X6_X7
+        ldr x2, [x9], #8
+        ldp x3, x4, [x9], #16
+        ldp x5, x6, [x9], #16
+        ldr x7, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X2_X3_X4_X5_X6_X7
+
+    LEAF_ENTRY Load_X3
+        ldr x3, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X3
+
+    LEAF_ENTRY Load_X3_X4
+        ldr x3, [x9], #8
+        ldr x4, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X3_X4
+
+    LEAF_ENTRY Load_X3_X4_X5
+        ldr x3, [x9], #8
+        ldp x4, x5, [x9], #16
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X3_X4_X5
+
+    LEAF_ENTRY Load_X3_X4_X5_X6
+        ldr x3, [x9], #8
+        ldp x4, x5, [x9], #16
+        ldr x6, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X3_X4_X5_X6
+
+    LEAF_ENTRY Load_X3_X4_X5_X6_X7
+        ldr x3, [x9], #8
+        ldp x4, x5, [x9], #16
+        ldp x6, x7, [x9], #16
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X3_X4_X5_X6_X7
+
+    LEAF_ENTRY Load_X4
+        ldr x4, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X4
+
+    LEAF_ENTRY Load_X4_X5
+        ldr x4, [x9], #8
+        ldr x5, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X4_X5
+
+    LEAF_ENTRY Load_X4_X5_X6
+        ldr x4, [x9], #8
+        ldp x5, x6, [x9], #16
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X4_X5_X6
+
+    LEAF_ENTRY Load_X4_X5_X6_X7
+        ldr x4, [x9], #8
+        ldp x5, x6, [x9], #16
+        ldr x7, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X4_X5_X6_X7
+
+    LEAF_ENTRY Load_X5
+        ldr x5, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X5
+
+    LEAF_ENTRY Load_X5_X6
+        ldr x5, [x9], #8
+        ldr x6, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X5_X6
+
+    LEAF_ENTRY Load_X5_X6_X7
+        ldr x5, [x9], #8
+        ldp x6, x7, [x9], #16
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X5_X6_X7
+
+    LEAF_ENTRY Load_X6
+        ldr x6, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X6
+
+    LEAF_ENTRY Load_X6_X7
+        ldr x6, [x9], #8
+        ldr x7, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X6_X7
+
+    LEAF_ENTRY Load_X7
+        ldr x7, [x9], #8
+        ldr x11, [x10, #8]!
+        EPILOG_BRANCH_REG x11
+    LEAF_END Load_X7    
 ; Must be at very end of file
     END

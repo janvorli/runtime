@@ -40,6 +40,21 @@ extern "C" INTERP_API ICorJitCompiler* getJit()
     return &g_CILInterp;
 }
 
+#ifdef _DEBUG
+
+static ICorJitInfo *g_compHndForAssert = NULL;
+
+void Assert(const char* why, const char* file, unsigned line)
+{
+    if (g_compHndForAssert && g_compHndForAssert->doAssert(file, line, why))
+    {
+        __debugbreak();
+    }
+}
+
+#endif // _DEBUG
+
+
 
 static CORINFO_MODULE_HANDLE g_interpModule = NULL;
 
@@ -53,6 +68,8 @@ CorJitResult CILInterp::compileMethod(ICorJitInfo*         compHnd,
 
     bool doInterpret;
 
+    g_compHndForAssert = compHnd;;
+    
     if (g_interpModule != NULL)
     {
         if (methodInfo->scope == g_interpModule)
@@ -62,15 +79,33 @@ CorJitResult CILInterp::compileMethod(ICorJitInfo*         compHnd,
     }
     else
     {
-        const char *methodName = compHnd->getMethodNameFromMetadata(methodInfo->ftn, nullptr, nullptr, nullptr, 0);
+        const char *filter = g_interpHost->getStringConfigValue("Interpreter");
+        const char *dllExt = strstr(filter, ".dll");
+        if (dllExt != NULL)
+        {
+            // Assembly specified as the filter
+            const char *assemblyName = compHnd->getClassAssemblyName(compHnd->getMethodClass(methodInfo->ftn));
+            if (assemblyName != NULL && strncmp(assemblyName, filter, dllExt - filter) == 0)
+            {
+                doInterpret = true;
+                g_interpModule = methodInfo->scope;
+            }
+            else
+            {
+                doInterpret = false;
+            }
+        }
+        else
+        {
+            const char *methodName = compHnd->getMethodNameFromMetadata(methodInfo->ftn, nullptr, nullptr, nullptr, 0);
 
-        // TODO: replace this by something like the JIT does to support multiple methods being specified and we don't
-        // keep fetching it on each call to compileMethod
-        const char *methodToInterpret = g_interpHost->getStringConfigValue("Interpreter");
-        doInterpret = (methodName != NULL && strcmp(methodName, methodToInterpret) == 0);
-        g_interpHost->freeStringConfigValue(methodToInterpret);
-        if (doInterpret)
-            g_interpModule = methodInfo->scope;
+            // TODO: replace this by something like the JIT does to support multiple methods being specified and we don't
+            // keep fetching it on each call to compileMethod
+            doInterpret = (methodName != NULL && strcmp(methodName, filter) == 0);
+            if (doInterpret)
+                g_interpModule = methodInfo->scope;
+        }
+        g_interpHost->freeStringConfigValue(filter);
     }
 
     if (!doInterpret)

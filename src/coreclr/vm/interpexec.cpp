@@ -7,6 +7,726 @@
 
 #include "interpexec.h"
 
+#ifdef _DEBUG
+#undef assert
+#define assert(p) _ASSERTE(p)
+#endif // _DEBUG
+
+extern "C" void Load_Stack();
+
+#ifdef TARGET_AMD64
+
+#ifdef TARGET_WINDOWS
+extern "C" void Load_RCX();
+extern "C" void Load_RCX_RDX();
+extern "C" void Load_RCX_RDX_R8();
+extern "C" void Load_RCX_RDX_R8_R9();
+extern "C" void Load_RDX();
+extern "C" void Load_RDX_R8();
+extern "C" void Load_RDX_R8_R9();
+extern "C" void Load_R8();
+extern "C" void Load_R8_R9();
+extern "C" void Load_R9();
+extern "C" void Load_XMM0();
+extern "C" void Load_XMM0_XMM1();
+extern "C" void Load_XMM0_XMM1_XMM2();
+extern "C" void Load_XMM0_XMM1_XMM2_XMM3();
+extern "C" void Load_XMM1();
+extern "C" void Load_XMM1_XMM2();
+extern "C" void Load_XMM1_XMM2_XMM3();
+extern "C" void Load_XMM2();
+extern "C" void Load_XMM2_XMM3();
+extern "C" void Load_XMM3();
+extern "C" void Load_Ref_RCX();
+extern "C" void Load_Ref_RDX();
+extern "C" void Load_Ref_R8();
+extern "C" void Load_Ref_R9();
+
+PCODE GPRegsRoutines[] =
+{
+    (PCODE)Load_RCX,            // 00
+    (PCODE)Load_RCX_RDX,        // 01
+    (PCODE)Load_RCX_RDX_R8,     // 02
+    (PCODE)Load_RCX_RDX_R8_R9,  // 03
+    (PCODE)0,                   // 10    
+    (PCODE)Load_RDX,            // 11
+    (PCODE)Load_RDX_R8,         // 12
+    (PCODE)Load_RDX_R8_R9,      // 13
+    (PCODE)0,                   // 20
+    (PCODE)0,                   // 21
+    (PCODE)Load_R8,             // 22
+    (PCODE)Load_R8_R9,          // 23
+    (PCODE)0,                   // 30
+    (PCODE)0,                   // 31
+    (PCODE)0,                   // 32
+    (PCODE)Load_R9              // 33
+};
+
+PCODE GPRegsRefRoutines[] =
+{
+    (PCODE)Load_Ref_RCX,        // 0
+    (PCODE)Load_Ref_RDX,        // 1
+    (PCODE)Load_Ref_R8,         // 2
+    (PCODE)Load_Ref_R9,         // 3
+};
+
+PCODE FPRegsRoutines[] =
+{
+    (PCODE)Load_XMM0,                // 00
+    (PCODE)Load_XMM0_XMM1,           // 01
+    (PCODE)Load_XMM0_XMM1_XMM2,      // 02
+    (PCODE)Load_XMM0_XMM1_XMM2_XMM3, // 03
+    (PCODE)0,                        // 10    
+    (PCODE)Load_XMM1,                // 11
+    (PCODE)Load_XMM1_XMM2,           // 12
+    (PCODE)Load_XMM1_XMM2_XMM3,      // 13
+    (PCODE)0,                        // 20
+    (PCODE)0,                        // 21
+    (PCODE)Load_XMM2,                // 22
+    (PCODE)Load_XMM2_XMM3,           // 23
+    (PCODE)0,                        // 30
+    (PCODE)0,                        // 31
+    (PCODE)0,                        // 32
+    (PCODE)Load_XMM3                 // 33
+};
+
+#else // TARGET_WINDOWS
+
+extern "C" void Load_RDI();
+extern "C" void Load_RDI_RSI();
+extern "C" void Load_RDI_RSI_RDX();
+extern "C" void Load_RDI_RSI_RDX_RCX();
+extern "C" void Load_RDI_RSI_RDX_RCX_R8();
+extern "C" void Load_RDI_RSI_RDX_RCX_R8_R9();
+extern "C" void Load_RSI();
+extern "C" void Load_RSI_RDX();
+extern "C" void Load_RSI_RDX_RCX();
+extern "C" void Load_RSI_RDX_RCX_R8();
+extern "C" void Load_RSI_RDX_RCX_R8_R9();
+extern "C" void Load_RDX();
+extern "C" void Load_RDX_RCX();
+extern "C" void Load_RDX_RCX_R8();
+extern "C" void Load_RDX_RCX_R8_R9();
+extern "C" void Load_RCX();
+extern "C" void Load_RCX_R8();
+extern "C" void Load_RCX_R8_R9();
+extern "C" void Load_R8();
+extern "C" void Load_R8_R9();
+extern "C" void Load_R9();
+
+PCODE GPRegsRoutines[] =
+{
+    (PCODE)Load_RDI,                    // 00
+    (PCODE)Load_RDI_RSI,                // 01
+    (PCODE)Load_RDI_RSI_RDX,            // 02
+    (PCODE)Load_RDI_RSI_RDX_RCX,        // 03
+    (PCODE)Load_RDI_RSI_RDX_RCX_R8,     // 04
+    (PCODE)Load_RDI_RSI_RDX_RCX_R8_R9,  // 05
+    (PCODE)0,                           // 10    
+    (PCODE)Load_RSI,                    // 11
+    (PCODE)Load_RSI_RDX,                // 12
+    (PCODE)Load_RSI_RDX_RCX,            // 13
+    (PCODE)Load_RSI_RDX_RCX_R8,         // 14
+    (PCODE)Load_RSI_RDX_RCX_R8_R9,      // 15
+    (PCODE)0,                           // 20
+    (PCODE)0,                           // 21
+    (PCODE)Load_RDX,                    // 22
+    (PCODE)Load_RDX_RCX,                // 23
+    (PCODE)Load_RDX_RCX_R8,             // 24
+    (PCODE)Load_RDX_RCX_R8_R9,          // 25
+    (PCODE)0,                           // 30
+    (PCODE)0,                           // 31
+    (PCODE)0,                           // 32
+    (PCODE)Load_RCX                     // 33
+    (PCODE)Load_RCX_R8                  // 34
+    (PCODE)Load_RCX_R8_R9               // 35
+    (PCODE)0,                           // 40
+    (PCODE)0,                           // 41
+    (PCODE)0,                           // 42
+    (PCODE)0,                           // 43
+    (PCODE)Load_R8                      // 44
+    (PCODE)Load_R8_R9                   // 45
+    (PCODE)0,                           // 50
+    (PCODE)0,                           // 51
+    (PCODE)0,                           // 52
+    (PCODE)0,                           // 53
+    (PCODE)0,                           // 54
+    (PCODE)Load_R9                      // 55
+};
+
+extern "C" void Load_XMM0();
+extern "C" void Load_XMM0_XMM1();
+extern "C" void Load_XMM0_XMM1_XMM2();
+extern "C" void Load_XMM0_XMM1_XMM2_XMM3();
+extern "C" void Load_XMM0_XMM1_XMM2_XMM3_XMM4();
+extern "C" void Load_XMM0_XMM1_XMM2_XMM3_XMM4_XMM5();
+extern "C" void Load_XMM0_XMM1_XMM2_XMM3_XMM4_XMM5_XMM6();
+extern "C" void Load_XMM0_XMM1_XMM2_XMM3_XMM4_XMM5_XMM6_XMM7();
+extern "C" void Load_XMM1();
+extern "C" void Load_XMM1_XMM2();
+extern "C" void Load_XMM1_XMM2_XMM3();
+extern "C" void Load_XMM1_XMM2_XMM3_XMM4();
+extern "C" void Load_XMM1_XMM2_XMM3_XMM4_XMM5();
+extern "C" void Load_XMM1_XMM2_XMM3_XMM4_XMM5_XMM6();
+extern "C" void Load_XMM1_XMM2_XMM3_XMM4_XMM5_XMM6_XMM7();
+extern "C" void Load_XMM2();
+extern "C" void Load_XMM2_XMM3();
+extern "C" void Load_XMM2_XMM3_XMM4();
+extern "C" void Load_XMM2_XMM3_XMM4_XMM5();
+extern "C" void Load_XMM2_XMM3_XMM4_XMM5_XMM6();
+extern "C" void Load_XMM2_XMM3_XMM4_XMM5_XMM6_XMM7();
+extern "C" void Load_XMM3();
+extern "C" void Load_XMM3_XMM4();
+extern "C" void Load_XMM3_XMM4_XMM5();
+extern "C" void Load_XMM3_XMM4_XMM5_XMM6();
+extern "C" void Load_XMM3_XMM4_XMM5_XMM6_XMM7();
+extern "C" void Load_XMM4();
+extern "C" void Load_XMM4_XMM5();
+extern "C" void Load_XMM4_XMM5_XMM6();
+extern "C" void Load_XMM4_XMM5_XMM6_XMM7();
+extern "C" void Load_XMM5();
+extern "C" void Load_XMM5_XMM6();
+extern "C" void Load_XMM5_XMM6_XMM7();
+extern "C" void Load_XMM6();
+extern "C" void Load_XMM6_XMM7();
+extern "C" void Load_XMM7();
+
+PCODE FPRegsRoutines[] =
+{
+    (PCODE)Load_XMM0,                                   // 00
+    (PCODE)Load_XMM0_XMM1,                              // 01
+    (PCODE)Load_XMM0_XMM1_XMM2,                         // 02
+    (PCODE)Load_XMM0_XMM1_XMM2_XMM3,                    // 03
+    (PCODE)Load_XMM0_XMM1_XMM2_XMM3_XMM4,               // 04
+    (PCODE)Load_XMM0_XMM1_XMM2_XMM3_XMM4_XMM5,          // 05
+    (PCODE)Load_XMM0_XMM1_XMM2_XMM3_XMM4_XMM5_XMM6,     // 06
+    (PCODE)Load_XMM0_XMM1_XMM2_XMM3_XMM4_XMM5_XMM6_XMM7,// 07
+    (PCODE)0,                                           // 10    
+    (PCODE)Load_XMM1,                                   // 11
+    (PCODE)Load_XMM1_XMM2,                              // 12
+    (PCODE)Load_XMM1_XMM2_XMM3,                         // 13
+    (PCODE)Load_XMM1_XMM2_XMM3_XMM4,                    // 14
+    (PCODE)Load_XMM1_XMM2_XMM3_XMM4_XMM5,               // 15
+    (PCODE)Load_XMM1_XMM2_XMM3_XMM4_XMM5_XMM6,          // 16
+    (PCODE)Load_XMM1_XMM2_XMM3_XMM4_XMM5_XMM6_XMM7,     // 17
+    (PCODE)0,                                           // 20
+    (PCODE)0,                                           // 21
+    (PCODE)Load_XMM2,                                   // 22
+    (PCODE)Load_XMM2_XMM3,                              // 23
+    (PCODE)Load_XMM2_XMM3_XMM4,                         // 24
+    (PCODE)Load_XMM2_XMM3_XMM4_XMM5,                    // 25
+    (PCODE)Load_XMM2_XMM3_XMM4_XMM5_XMM6,               // 26
+    (PCODE)Load_XMM2_XMM3_XMM4_XMM5_XMM6_XMM7,          // 27
+    (PCODE)0,                                           // 30
+    (PCODE)0,                                           // 31
+    (PCODE)0,                                           // 32
+    (PCODE)Load_XMM3                                    // 33
+    (PCODE)Load_XMM3_XMM4,                              // 34
+    (PCODE)Load_XMM3_XMM4_XMM5,                         // 35
+    (PCODE)Load_XMM3_XMM4_XMM5_XMM6,                    // 36
+    (PCODE)Load_XMM3_XMM4_XMM5_XMM6_XMM7,               // 37
+    (PCODE)0,                                           // 40
+    (PCODE)0,                                           // 41
+    (PCODE)0,                                           // 42
+    (PCODE)0,                                           // 43
+    (PCODE)Load_XMM4,                                   // 44
+    (PCODE)Load_XMM4_XMM5,                              // 45
+    (PCODE)Load_XMM4_XMM5_XMM6,                         // 46
+    (PCODE)Load_XMM4_XMM5_XMM6_XMM7,                    // 47
+    (PCODE)0,                                           // 50
+    (PCODE)0,                                           // 51
+    (PCODE)0,                                           // 52
+    (PCODE)0,                                           // 53
+    (PCODE)0,                                           // 54
+    (PCODE)Load_XMM5,                                   // 55
+    (PCODE)Load_XMM5_XMM6,                              // 56
+    (PCODE)Load_XMM5_XMM6_XMM7,                         // 57
+    (PCODE)0,                                           // 60
+    (PCODE)0,                                           // 61
+    (PCODE)0,                                           // 62
+    (PCODE)0,                                           // 63
+    (PCODE)0,                                           // 64
+    (PCODE)0,                                           // 65
+    (PCODE)Load_XMM6,                                   // 66
+    (PCODE)Load_XMM6_XMM7,                              // 67
+    (PCODE)0,                                           // 70
+    (PCODE)0,                                           // 71
+    (PCODE)0,                                           // 72
+    (PCODE)0,                                           // 73
+    (PCODE)0,                                           // 74
+    (PCODE)0,                                           // 75
+    (PCODE)0,                                           // 76
+    (PCODE)Load_XMM7                                    // 77
+};
+
+#endif // TARGET_WINDOWS
+
+#endif // TARGET_AMD64
+
+#ifdef TARGET_ARM64
+
+extern "C" void Load_X0();
+extern "C" void Load_X0_X1();
+extern "C" void Load_X0_X1_X2();
+extern "C" void Load_X0_X1_X2_X3();
+extern "C" void Load_X0_X1_X2_X3_X4();
+extern "C" void Load_X0_X1_X2_X3_X4_X5();
+extern "C" void Load_X0_X1_X2_X3_X4_X5_X6();
+extern "C" void Load_X0_X1_X2_X3_X4_X5_X6_X7();
+extern "C" void Load_X1();
+extern "C" void Load_X1_X2();
+extern "C" void Load_X1_X2_X3();
+extern "C" void Load_X1_X2_X3_X4();
+extern "C" void Load_X1_X2_X3_X4_X5();
+extern "C" void Load_X1_X2_X3_X4_X5_X6();
+extern "C" void Load_X1_X2_X3_X4_X5_X6_X7();
+extern "C" void Load_X2();
+extern "C" void Load_X2_X3();
+extern "C" void Load_X2_X3_X4();
+extern "C" void Load_X2_X3_X4_X5();
+extern "C" void Load_X2_X3_X4_X5_X6();
+extern "C" void Load_X2_X3_X4_X5_X6_X7();
+extern "C" void Load_X3();
+extern "C" void Load_X3_X4();
+extern "C" void Load_X3_X4_X5();
+extern "C" void Load_X3_X4_X5_X6();
+extern "C" void Load_X3_X4_X5_X6_X7();
+extern "C" void Load_X4();
+extern "C" void Load_X4_X5();
+extern "C" void Load_X4_X5_X6();
+extern "C" void Load_X4_X5_X6_X7();
+extern "C" void Load_X5();
+extern "C" void Load_X5_X6();
+extern "C" void Load_X5_X6_X7();
+extern "C" void Load_X6();
+extern "C" void Load_X6_X7();
+extern "C" void Load_X7();
+
+PCODE GPRegsRoutines[] =
+{
+    (PCODE)Load_X0,                         // 00
+    (PCODE)Load_X0_X1,                      // 01
+    (PCODE)Load_X0_X1_X2,                   // 02
+    (PCODE)Load_X0_X1_X2_X3,                // 03
+    (PCODE)Load_X0_X1_X2_X3_X4,             // 04
+    (PCODE)Load_X0_X1_X2_X3_X4_X5,          // 05
+    (PCODE)Load_X0_X1_X2_X3_X4_X5_X6,       // 06
+    (PCODE)Load_X0_X1_X2_X3_X4_X5_X6_X7,    // 07
+    (PCODE)0,                               // 10    
+    (PCODE)Load_X1,                         // 11
+    (PCODE)Load_X1_X2,                      // 12
+    (PCODE)Load_X1_X2_X3,                   // 13
+    (PCODE)Load_X1_X2_X3_X4,                // 14
+    (PCODE)Load_X1_X2_X3_X4_X5,             // 15
+    (PCODE)Load_X1_X2_X3_X4_X5_X6,          // 16
+    (PCODE)Load_X1_X2_X3_X4_X5_X6_X7,       // 17
+    (PCODE)0,                               // 20
+    (PCODE)0,                               // 21
+    (PCODE)Load_X2,                         // 22
+    (PCODE)Load_X2_X3,                      // 23
+    (PCODE)Load_X2_X3_X4,                   // 24
+    (PCODE)Load_X2_X3_X4_X5,                // 25
+    (PCODE)Load_X2_X3_X4_X5_X6,             // 26
+    (PCODE)Load_X2_X3_X4_X5_X6_X7,          // 27
+    (PCODE)0,                               // 30
+    (PCODE)0,                               // 31   
+    (PCODE)0,                               // 32
+    (PCODE)Load_X3,                          // 33
+    (PCODE)Load_X3_X4,                      // 34
+    (PCODE)Load_X3_X4_X5,                   // 35
+    (PCODE)Load_X3_X4_X5_X6,                // 36
+    (PCODE)Load_X3_X4_X5_X6_X7,             // 37
+    (PCODE)0,                               // 40
+    (PCODE)0,                               // 41
+    (PCODE)0,                               // 42
+    (PCODE)0,                               // 43
+    (PCODE)Load_X4,                         // 44
+    (PCODE)Load_X4_X5,                      // 45
+    (PCODE)Load_X4_X5_X6,                   // 46
+    (PCODE)Load_X4_X5_X6_X7,                // 47
+    (PCODE)0,                               // 50
+    (PCODE)0,                               // 51
+    (PCODE)0,                               // 52
+    (PCODE)0,                               // 53
+    (PCODE)0,                               // 54
+    (PCODE)Load_X5,                         // 55
+    (PCODE)Load_X5_X6,                      // 56
+    (PCODE)Load_X5_X6_X7,                   // 57
+    (PCODE)0,                               // 60
+    (PCODE)0,                               // 61
+    (PCODE)0,                               // 62
+    (PCODE)0,                               // 63
+    (PCODE)0,                               // 64
+    (PCODE)0,                               // 65
+    (PCODE)Load_X6,                         // 66
+    (PCODE)Load_X6_X7,                      // 67
+    (PCODE)0,                               // 70
+    (PCODE)0,                               // 71
+    (PCODE)0,                               // 72
+    (PCODE)0,                               // 73
+    (PCODE)0,                               // 74
+    (PCODE)0,                               // 75
+    (PCODE)0,                               // 76
+    (PCODE)Load_X7                          // 77
+};
+
+extern "C" void Load_D0();
+extern "C" void Load_D0_D1();
+extern "C" void Load_D0_D1_D2();
+extern "C" void Load_D0_D1_D2_D3();
+extern "C" void Load_D0_D1_D2_D3_D4();
+extern "C" void Load_D0_D1_D2_D3_D4_D5();
+extern "C" void Load_D0_D1_D2_D3_D4_D5_D6();
+extern "C" void Load_D0_D1_D2_D3_D4_D5_D6_D7();
+extern "C" void Load_D1();
+extern "C" void Load_D1_D2();
+extern "C" void Load_D1_D2_D3();
+extern "C" void Load_D1_D2_D3_D4();
+extern "C" void Load_D1_D2_D3_D4_D5();
+extern "C" void Load_D1_D2_D3_D4_D5_D6();
+extern "C" void Load_D1_D2_D3_D4_D5_D6_D7();
+extern "C" void Load_D2();
+extern "C" void Load_D2_D3();
+extern "C" void Load_D2_D3_D4();
+extern "C" void Load_D2_D3_D4_D5();
+extern "C" void Load_D2_D3_D4_D5_D6();
+extern "C" void Load_D2_D3_D4_D5_D6_D7();
+extern "C" void Load_D3();
+extern "C" void Load_D3_D4();
+extern "C" void Load_D3_D4_D5();
+extern "C" void Load_D3_D4_D5_D6();
+extern "C" void Load_D3_D4_D5_D6_D7();
+extern "C" void Load_D4();
+extern "C" void Load_D4_D5();
+extern "C" void Load_D4_D5_D6();
+extern "C" void Load_D4_D5_D6_D7();
+extern "C" void Load_D5();
+extern "C" void Load_D5_D6();
+extern "C" void Load_D5_D6_D7();
+extern "C" void Load_D6();
+extern "C" void Load_D6_D7();
+extern "C" void Load_D7();
+
+PCODE FPRegsRoutines[] =
+{
+    (PCODE)Load_D0,                         // 00
+    (PCODE)Load_D0_D1,                      // 01
+    (PCODE)Load_D0_D1_D2,                   // 02
+    (PCODE)Load_D0_D1_D2_D3,                // 03
+    (PCODE)Load_D0_D1_D2_D3_D4,             // 04
+    (PCODE)Load_D0_D1_D2_D3_D4_D5,          // 05
+    (PCODE)Load_D0_D1_D2_D3_D4_D5_D6,       // 06
+    (PCODE)Load_D0_D1_D2_D3_D4_D5_D6_D7,    // 07
+    (PCODE)0,                               // 10    
+    (PCODE)Load_D1,                         // 11
+    (PCODE)Load_D1_D2,                      // 12
+    (PCODE)Load_D1_D2_D3,                   // 13
+    (PCODE)Load_D1_D2_D3_D4,                // 14
+    (PCODE)Load_D1_D2_D3_D4_D5,             // 15
+    (PCODE)Load_D1_D2_D3_D4_D5_D6,          // 16
+    (PCODE)Load_D1_D2_D3_D4_D5_D6_D7,       // 17
+    (PCODE)0,                               // 20
+    (PCODE)0,                               // 21
+    (PCODE)Load_D2,                         // 22
+    (PCODE)Load_D2_D3,                      // 23
+    (PCODE)Load_D2_D3_D4,                   // 24
+    (PCODE)Load_D2_D3_D4_D5,                // 25
+    (PCODE)Load_D2_D3_D4_D5_D6,             // 26
+    (PCODE)Load_D2_D3_D4_D5_D6_D7,          // 27
+    (PCODE)0,                               // 30
+    (PCODE)0,                               // 31   
+    (PCODE)0,                               // 32
+    (PCODE)Load_D3,                         // 33
+    (PCODE)Load_D3_D4,                      // 34
+    (PCODE)Load_D3_D4_D5,                   // 35
+    (PCODE)Load_D3_D4_D5_D6,                // 36
+    (PCODE)Load_D3_D4_D5_D6_D7,             // 37
+    (PCODE)0,                               // 40
+    (PCODE)0,                               // 41
+    (PCODE)0,                               // 42
+    (PCODE)0,                               // 43
+    (PCODE)Load_D4,                         // 44
+    (PCODE)Load_D4_D5,                      // 45
+    (PCODE)Load_D4_D5_D6,                   // 46
+    (PCODE)Load_D4_D5_D6_D7,                // 47
+    (PCODE)0,                               // 50
+    (PCODE)0,                               // 51
+    (PCODE)0,                               // 52
+    (PCODE)0,                               // 53
+    (PCODE)0,                               // 54
+    (PCODE)Load_D5,                         // 55
+    (PCODE)Load_D5_D6,                      // 56
+    (PCODE)Load_D5_D6_D7,                   // 57
+    (PCODE)0,                               // 60
+    (PCODE)0,                               // 61
+    (PCODE)0,                               // 62
+    (PCODE)0,                               // 63
+    (PCODE)0,                               // 64
+    (PCODE)0,                               // 65
+    (PCODE)Load_D6,                         // 66
+    (PCODE)Load_D6_D7,                      // 67
+    (PCODE)0,                               // 70
+    (PCODE)0,                               // 71
+    (PCODE)0,                               // 72
+    (PCODE)0,                               // 73
+    (PCODE)0,                               // 74
+    (PCODE)0,                               // 75
+    (PCODE)0,                               // 76
+    (PCODE)Load_D7                          // 77
+};
+#endif // TARGET_ARM64
+
+PCODE GetGPRegRangeLoadRoutine(int r1, int r2)
+{
+    int index = r1 * NUM_ARGUMENT_REGISTERS + r2;
+    return GPRegsRoutines[index];
+}
+
+PCODE GetGPRegRefLoadRoutine(int r)
+{
+    return GPRegsRefRoutines[r];
+}
+
+PCODE GetFPRegRangeLoadRoutine(int x1, int x2)
+{
+    int index = x1 * NUM_FLOAT_ARGUMENT_REGISTERS + x2;
+    return FPRegsRoutines[index];
+}
+
+PCODE GetStackRangeLoadRoutine(int s1, int s2)
+{
+    // Stack range is not supported yet
+    assert(!"Stack range is not supported yet");
+    return NULL;
+}
+
+extern "C" void CallJittedMethodRetVoid(PCODE *routines, int8_t*pArgs, int totalStackSize);
+extern "C" void CallJittedMethodRetDouble(PCODE *routines, int8_t*pArgs, int8_t*pRet, int totalStackSize);
+extern "C" void CallJittedMethodRetI8(PCODE *routines, int8_t*pArgs, int8_t*pRet, int totalStackSize);
+
+void InvokeCompiledMethod(MethodDesc *pMD, int8_t *pArgs, int8_t *pRet)
+{
+    printf("InvokeCompiledMethod %s.%s with signature %s\n", pMD->m_pszDebugClassName, pMD->m_pszDebugMethodName, pMD->m_pszDebugMethodSignature);
+
+    PCODE routines[16];
+
+    MetaSig sig(pMD);
+    ArgIterator argIt(&sig);
+    int ofs = 0;
+    DWORD arg = 0;
+    const int NO_RANGE = -1;
+    int r1 = NO_RANGE; // indicates that there is no active range of GP registers
+    int r2 = 0;
+    int x1 = NO_RANGE; // indicates that there is no active range of FP registers
+    int x2 = 0;
+    int s1 = NO_RANGE; // indicates that there is no active range of stack arguments
+    int s2 = 0;
+    int routineIndex = 0;
+    int totalStackSize = 0; // TODO: use argIt.SizeOfArgStack
+    for (; TransitionBlock::InvalidOffset != (ofs = argIt.GetNextOffset()); arg++)
+    {
+        ArgLocDesc argLocDesc;
+        argIt.GetArgLoc(ofs, &argLocDesc);
+
+        // TODO: handle structs passed in registers, consider {float, int} and {int, float} would use the same arg registers, but load them in a reverse order.
+        // This seems to be only possible on unix amd64, Windows pass structs larger than 64 bits by reference
+        // Interesting case on Windows x64 - {int, float} is passed in a single general purpose register, does the interpreter store it that way?
+        // TODO: handle value types passing by reference on platforms that do that, like Windows
+        // TODO: it seems that arm64 doesn't use the Q registers for passing floats / doubles
+        // TODO: Apple arm64 specialities
+        
+
+        // Check if we have a range of registers or stack arguments that we need to store because the current argument
+        // terminates it.
+        if ((argLocDesc.m_cGenReg == 0 || argIt.IsArgPassedByRef()) && (r1 != NO_RANGE))
+        {
+            // No GP register is used to pass the current argument, but we already have a range of GP registers,
+            // store the routine for the range
+            printf("r%d..%d\n", r1, r2);
+            routines[routineIndex++] = GetGPRegRangeLoadRoutine(r1, r2);
+            r1 = NO_RANGE;
+        }
+        else if (((argLocDesc.m_cFloatReg == 0)) && (x1 != NO_RANGE))
+        {
+            // No floating point register is used to pass the current argument, but we already have a range of FP registers,
+            // store the routine for the range
+            printf("x%d..%d\n", x1, x2);
+            routines[routineIndex++] = GetFPRegRangeLoadRoutine(x1, x2);
+            x1 = NO_RANGE;
+        }
+        else if ((argLocDesc.m_byteStackSize == 0) && (s1 != NO_RANGE))
+        {
+            // No stack argument is used to pass the current argument, but we already have a range of stack arguments,
+            // store the routine for the range
+            printf("stack index %d, size %d\n", s1, s2 - s1 + 1);
+            totalStackSize += s2 - s1 + 1;
+            routines[routineIndex++] = (PCODE)Load_Stack;
+            routines[routineIndex++] = ((int64_t)(s2 - s1 + 1) << 32) | s1;
+            s1 = NO_RANGE;
+        }
+
+        if (argLocDesc.m_cGenReg != 0)
+        {                       
+            if (argIt.IsArgPassedByRef())
+            {
+                // Arguments passed by reference are handled separately, because the interpreter stores the value types on its stack by value.
+                // So the argument loading routine needs to load the address of the argument. To avoid explosion of number of the routines,
+                // we always process single argument passed by reference using single routine.
+                printf("r%d value type by reference, size %d\n", argLocDesc.m_idxGenReg, argIt.GetArgSize());
+                routines[routineIndex++] = GetGPRegRefLoadRoutine(argLocDesc.m_idxGenReg);
+                routines[routineIndex++] = argIt.GetArgSize();
+            }
+            else
+            {
+                if (r1 == NO_RANGE) // No active range yet
+                {
+                    // Start a new range
+                    r1 = argLocDesc.m_idxGenReg;
+                    r2 = r1 + argLocDesc.m_cGenReg - 1;
+                } 
+                else if (argLocDesc.m_idxGenReg == r2 + 1)
+                {
+                    // Extend an existing range
+                    r2 += argLocDesc.m_cGenReg;
+                }
+                else
+                {
+                    // Discontinuous range - store a routine for the current and start a new one
+                    printf("r%d..%d\n", r1, r2);
+                    routines[routineIndex++] = GetGPRegRangeLoadRoutine(r1, r2);
+                    r1 = argLocDesc.m_idxGenReg;
+                    r2 = r1 + argLocDesc.m_cGenReg - 1;
+                }
+            }
+        }
+
+        if (argLocDesc.m_cFloatReg != 0)
+        {
+            if (x1 == NO_RANGE) // No active range yet
+            {
+                // Start a new range
+                x1 = argLocDesc.m_idxFloatReg;
+                x2 = x1 + argLocDesc.m_cFloatReg - 1;
+            } 
+            else if (argLocDesc.m_idxFloatReg == x2 + 1)
+            {
+                // Extend an existing range
+                x2 += argLocDesc.m_cFloatReg;
+            }
+            else
+            {
+                // Discontinuous range - store a routine for the current and start a new one
+                printf("x%d..%d\n", x1, x2);
+                routines[routineIndex++] = GetFPRegRangeLoadRoutine(x1, x2);
+                x1 = argLocDesc.m_idxFloatReg;
+                x2 = x1 + argLocDesc.m_cFloatReg - 1;
+            }
+        }
+
+        if (argLocDesc.m_byteStackSize != 0)
+        {
+            if (s1 == NO_RANGE) // No active range yet
+            {
+                // Start a new range
+                s1 = argLocDesc.m_byteStackIndex;
+                s2 = s1 + argLocDesc.m_byteStackSize - 1;
+            } 
+            else if (argLocDesc.m_byteStackIndex == s2 + 1)
+            {
+                // Extend an existing range
+                s2 += argLocDesc.m_byteStackSize;
+            }
+            else
+            {
+                // Discontinuous range - store a routine for the current and start a new one
+                printf("stack index %d, size %d\n", s1, s2 - s1 + 1);
+                totalStackSize += s2 - s1 + 1;
+                routines[routineIndex++] = (PCODE)Load_Stack;
+                routines[routineIndex++] = ((int64_t)(s2 - s1 + 1) << 32) | s1;
+                s1 = argLocDesc.m_byteStackIndex;
+                s2 = s1 + argLocDesc.m_byteStackSize - 1;
+            }
+        }
+    }
+
+    // All arguments were processed, but there is likely a pending ranges to store.
+    if (r1 != NO_RANGE)
+    {
+        printf("r%d..%d\n", r1, r2);
+        routines[routineIndex++] = GetGPRegRangeLoadRoutine(r1, r2);
+    }
+    else if (x1 != NO_RANGE)
+    {
+        printf("x%d..%d\n", x1, x2);
+        routines[routineIndex++] = GetFPRegRangeLoadRoutine(x1, x2);
+    }
+    else if (s1 != NO_RANGE)
+    {
+        printf("stack index %d, size %d\n", s1, s2 - s1 + 1);
+        totalStackSize += s2 - s1 + 1;
+        routines[routineIndex++] = (PCODE)Load_Stack;
+        routines[routineIndex++] = ((int64_t)(s2 - s1 + 1) << 32) | s1;
+    }
+
+    routines[routineIndex] = pMD->GetNativeCode(); // The method to call
+    //routines[routineIndex] = pMD->GetSingleCallableAddrOfCode();
+
+    totalStackSize = ALIGN_UP(totalStackSize, 16); // Align the stack to 16 bytes
+    
+    TypeHandle thReturnValueType;
+    CorElementType thReturnType = sig.GetReturnTypeNormalized(&thReturnValueType);
+
+    // TODO: consider adding a routine for return value processing and having a single CallJittedMethod. It would be beneficial for caching
+    // It may have to be handled in a special way though, since after returning from the target, the current routine address would be gone. Unless we store it in a nonvol register
+    switch (thReturnType)
+    {
+        case ELEMENT_TYPE_BOOLEAN:
+        case ELEMENT_TYPE_CHAR:
+        case ELEMENT_TYPE_I1:
+        case ELEMENT_TYPE_U1:
+        case ELEMENT_TYPE_I2:
+        case ELEMENT_TYPE_U2:
+        case ELEMENT_TYPE_I4:
+        case ELEMENT_TYPE_U4:
+        case ELEMENT_TYPE_I8:
+        case ELEMENT_TYPE_U8:
+        case ELEMENT_TYPE_I:
+        case ELEMENT_TYPE_U:
+        case ELEMENT_TYPE_CLASS:
+        case ELEMENT_TYPE_OBJECT:
+        case ELEMENT_TYPE_STRING:
+        case ELEMENT_TYPE_PTR:
+        case ELEMENT_TYPE_BYREF:
+        case ELEMENT_TYPE_TYPEDBYREF:
+        case ELEMENT_TYPE_ARRAY:
+        case ELEMENT_TYPE_SZARRAY:
+        case ELEMENT_TYPE_FNPTR:
+            CallJittedMethodRetI8(routines, pArgs, pRet, totalStackSize);
+            break;        
+        case ELEMENT_TYPE_R4:
+        case ELEMENT_TYPE_R8:
+            CallJittedMethodRetDouble(routines, pArgs, pRet, totalStackSize);
+            break;
+        case ELEMENT_TYPE_VOID:
+            CallJittedMethodRetVoid(routines, pArgs, totalStackSize);
+            break;
+        case ELEMENT_TYPE_VALUETYPE:
+            _ASSERTE(!"Struct returns are not supported yet");
+            // TODO: retbuffer
+            //  Windows x64:
+            //  - pass the return buffer in rcx
+            //  - at return, rax points to the buffer            
+            // TODO: struct in regs return - (int, int), (int, double), (double, double), (double, int)
+            //  Windows x64
+            //  - POD structs smaller than 64 bits are returned in rax
+            //  - 128 bit vector types returned in xmm0
+            break;
+        default:
+            _ASSERTE(!"Unexpected return type");
+            break;
+    }
+}
+
 typedef void* (*HELPER_FTN_PP)(void*);
 
 thread_local InterpThreadContext *t_pThreadContext = NULL;
@@ -985,9 +1705,20 @@ CALL_INTERP_SLOT:
                         // to make the probability that the next stack walk will need to search only a
                         // small subset of frames high.
                         pInterpreterFrame->SetTopInterpMethodContextFrame(pFrame);
-                        GCX_PREEMP();
-                        pMD->PrepareInitialCode(CallerGCMode::Coop);
-                        code = pMD->GetNativeCode();
+
+                        // if (!(pMD->IsIL() || pMD->IsNoMetadata()))
+                        // {
+                        //     InvokeCompiledMethod(pMD, stack + callArgsOffset, stack + returnOffset);
+                        //     break;
+                        //     //printf("Attempted to execute method without IL %s.%s with signature %s from interpreter.\n", pMD->m_pszDebugClassName, pMD->m_pszDebugMethodName, pMD->m_pszDebugMethodSignature);
+                        //     //assert(0);
+                        // }
+                        // else
+                        {
+                            GCX_PREEMP();
+                            pMD->PrepareInitialCode(CallerGCMode::Coop);
+                            code = pMD->GetNativeCode();
+                        }
                     }
                     pMethod->pDataItems[methodSlot] = (void*)code;
                     targetIp = (const int32_t*)code;
@@ -997,8 +1728,24 @@ CALL_INTERP_SLOT:
                     // At this stage in the implementation, we assume this is pointer to
                     // interpreter code. In the future, this should probably be tagged pointer
                     // for interpreter call or normal pointer for JIT/R2R call.
-                    targetIp = (const int32_t*)targetMethod;
+                    targetIp = (const int32_t*)targetMethod;                   
                 }
+
+                EECodeInfo codeInfo((PCODE)targetIp);
+                if (!codeInfo.IsValid())
+                {
+                    printf("Attempted to execute native code from interpreter.\n");
+                    assert(0);
+                }
+                else if (codeInfo.GetCodeManager() != ExecutionManager::GetInterpreterCodeManager())
+                {
+                    MethodDesc *pMD = codeInfo.GetMethodDesc();
+                    InvokeCompiledMethod(pMD, stack + callArgsOffset, stack + returnOffset);
+                    break;
+                    // printf("Attempted to execute JITted / crossgened method %s.%s with signature %s from interpreter.\n", pMD->m_pszDebugClassName, pMD->m_pszDebugMethodName, pMD->m_pszDebugMethodSignature);
+                    // assert(0);
+                }
+
 
                 // Save current execution state for when we return from called method
                 pFrame->ip = ip;

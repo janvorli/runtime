@@ -3110,13 +3110,25 @@ retry_emit:
                         break;
                     }
                     default:
-                        assert(0);
+                        {
+                            const uint8_t *ip = m_ip - 1;
+                            printf("IL_%04x %-10s - opcode not supported yet\n",
+                                (int32_t)(m_ip - m_pILCode),
+                                CEEOpName(CEEDecodeOpcode(&ip)));
+                            assert(0);
+                        }
                         break;
                 }
                 break;
 
             default:
-                assert(0);
+                {
+                    const uint8_t *ip = m_ip;
+                    printf("IL_%04x %-10s - opcode not supported yet\n",
+                        (int32_t)(m_ip - m_pILCode),
+                        CEEOpName(CEEDecodeOpcode(&ip)));
+                    assert(0);
+                }
                 break;
         }
     }

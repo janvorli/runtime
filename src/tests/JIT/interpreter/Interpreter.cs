@@ -38,12 +38,41 @@ public struct MyStruct2
     }
 }
 
+public struct TestStruct
+{
+    public int a;
+    public int b;
+    public int c;
+    public int d;
+    public int e;
+    public int f;
+}
+
 public class InterpreterTest
 {
+    // static void TestCallingConvention(int a, float b, int c, double d, int e, double f)
+    // {
+    //     Console.WriteLine("TestCallingConvention: a = {0}, b = {1}, c = {2}, d = {3}, e = {4}, f = {5}", a, b, c, d, e, f);
+    // }
+
+    static void TestCallingConvention(TestStruct s)
+    {
+        Console.WriteLine("TestCallingConvention: a = {0}, b = {1}, c = {2}, d = {3}, e = {4}, f = {5}", s.a, s.b, s.c, s.d, s.e, s.f);
+    }
+
     static int Main(string[] args)
     {
         jitField1 = 42;
         jitField2 = 43;
+        TestStruct s = new TestStruct();
+        s.a = 1;
+        s.b = 2;
+        s.c = 3;
+        s.d = 4;
+        s.e = 5;
+        s.f = 6;
+        TestCallingConvention(s);
+        //TestCallingConvention(1, 2.0f, 3, 4.0, 5, 6.0);
         RunInterpreterTests();
         return 100;
     }
@@ -51,6 +80,15 @@ public class InterpreterTest
     [MethodImpl(MethodImplOptions.NoInlining)]
     public static void RunInterpreterTests()
     {
+//        TestCallingConvention(1, 2.0f, 3, 4.0, 5, 6.0);
+        TestStruct s = new TestStruct();
+        s.a = 1;
+        s.b = 2;
+        s.c = 3;
+        s.d = 4;
+        s.e = 5;
+        s.f = 6;
+        TestCallingConvention(s);
 //      Console.WriteLine("Run interp tests");
         if (SumN(50) != 1275)
             Environment.FailFast(null);

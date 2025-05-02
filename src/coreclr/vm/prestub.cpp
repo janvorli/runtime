@@ -1939,7 +1939,7 @@ extern "C" PCODE STDCALL PreStubWorker(TransitionBlock* pTransitionBlock, Method
 }
 
 #ifdef FEATURE_INTERPRETER
-extern "C" void STDCALL ExecuteInterpretedMethod(TransitionBlock* pTransitionBlock, TADDR byteCodeAddr)
+extern "C" int STDCALL ExecuteInterpretedMethod(TransitionBlock* pTransitionBlock, TADDR byteCodeAddr)
 {
     // Argument registers are in the TransitionBlock
     // The stack arguments are right after the pTransitionBlock
@@ -1956,6 +1956,8 @@ extern "C" void STDCALL ExecuteInterpretedMethod(TransitionBlock* pTransitionBlo
     InterpExecMethod(&interpreterFrame, &interpMethodContextFrame, threadContext);
 
     interpreterFrame.Pop();
+
+    return *(int*)sp;
 }
 #endif // FEATURE_INTERPRETER
 
