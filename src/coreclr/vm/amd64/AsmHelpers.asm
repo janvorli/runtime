@@ -510,8 +510,7 @@ LEAF_END ThisPtrRetBufPrecodeWorker, _TEXT
 LEAF_ENTRY Load_Stack, _TEXT
     push rdi
     push rsi
-    push rax; alignment
-    mov rax, rcx
+    push rcx
     mov edi, dword ptr [r11 + 8]  ; SP offset
     mov ecx, dword ptr [r11 + 12] ; number of stack slots
     add edi, 20h ; the 3 pushes above plus return address
@@ -520,8 +519,7 @@ LEAF_ENTRY Load_Stack, _TEXT
     shr rcx, 3
     rep movsq
     mov r10, rsi
-    mov rcx, rax
-    pop rax
+    pop rcx
     pop rsi
     pop rdi
     add r11, 16

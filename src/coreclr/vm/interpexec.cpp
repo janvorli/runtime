@@ -114,6 +114,13 @@ extern "C" void Load_R8();
 extern "C" void Load_R8_R9();
 extern "C" void Load_R9();
 
+extern "C" void Load_Ref_RDI();
+extern "C" void Load_Ref_RSI();
+extern "C" void Load_Ref_RDX();
+extern "C" void Load_Ref_RCX();
+extern "C" void Load_Ref_R8();
+extern "C" void Load_Ref_R9();
+
 PCODE GPRegsRoutines[] =
 {
     (PCODE)Load_RDI,                    // 00
@@ -137,21 +144,31 @@ PCODE GPRegsRoutines[] =
     (PCODE)0,                           // 30
     (PCODE)0,                           // 31
     (PCODE)0,                           // 32
-    (PCODE)Load_RCX                     // 33
-    (PCODE)Load_RCX_R8                  // 34
-    (PCODE)Load_RCX_R8_R9               // 35
+    (PCODE)Load_RCX,                    // 33
+    (PCODE)Load_RCX_R8,                 // 34
+    (PCODE)Load_RCX_R8_R9,              // 35
     (PCODE)0,                           // 40
     (PCODE)0,                           // 41
     (PCODE)0,                           // 42
     (PCODE)0,                           // 43
-    (PCODE)Load_R8                      // 44
-    (PCODE)Load_R8_R9                   // 45
+    (PCODE)Load_R8,                     // 44
+    (PCODE)Load_R8_R9,                  // 45
     (PCODE)0,                           // 50
     (PCODE)0,                           // 51
     (PCODE)0,                           // 52
     (PCODE)0,                           // 53
     (PCODE)0,                           // 54
     (PCODE)Load_R9                      // 55
+};
+
+PCODE GPRegsRefRoutines[] =
+{
+    (PCODE)Load_Ref_RDI,        // 0
+    (PCODE)Load_Ref_RSI,        // 1
+    (PCODE)Load_Ref_RDX,        // 2
+    (PCODE)Load_Ref_RCX,        // 3
+    (PCODE)Load_Ref_R8,         // 4
+    (PCODE)Load_Ref_R9         // 5
 };
 
 extern "C" void Load_XMM0();
@@ -220,7 +237,7 @@ PCODE FPRegsRoutines[] =
     (PCODE)0,                                           // 30
     (PCODE)0,                                           // 31
     (PCODE)0,                                           // 32
-    (PCODE)Load_XMM3                                    // 33
+    (PCODE)Load_XMM3,                                   // 33
     (PCODE)Load_XMM3_XMM4,                              // 34
     (PCODE)Load_XMM3_XMM4_XMM5,                         // 35
     (PCODE)Load_XMM3_XMM4_XMM5_XMM6,                    // 36

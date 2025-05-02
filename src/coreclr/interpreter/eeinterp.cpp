@@ -5,6 +5,7 @@
 
 #include "interpreter.h"
 #include "eeinterp.h"
+#include "pal.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -48,7 +49,7 @@ void Assert(const char* why, const char* file, unsigned line)
 {
     if (g_compHndForAssert && g_compHndForAssert->doAssert(file, line, why))
     {
-        __debugbreak();
+        DebugBreak();
     }
 }
 
