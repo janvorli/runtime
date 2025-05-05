@@ -161,16 +161,6 @@ PCODE GPRegsRoutines[] =
     (PCODE)Load_R9                      // 55
 };
 
-PCODE GPRegsRefRoutines[] =
-{
-    (PCODE)Load_Ref_RDI,        // 0
-    (PCODE)Load_Ref_RSI,        // 1
-    (PCODE)Load_Ref_RDX,        // 2
-    (PCODE)Load_Ref_RCX,        // 3
-    (PCODE)Load_Ref_R8,         // 4
-    (PCODE)Load_Ref_R9         // 5
-};
-
 extern "C" void Load_XMM0();
 extern "C" void Load_XMM0_XMM1();
 extern "C" void Load_XMM0_XMM1_XMM2();
@@ -499,10 +489,12 @@ PCODE GetGPRegRangeLoadRoutine(int r1, int r2)
     return GPRegsRoutines[index];
 }
 
+#ifndef UNIX_AMD64_ABI
 PCODE GetGPRegRefLoadRoutine(int r)
 {
     return GPRegsRefRoutines[r];
 }
+#endif // UNIX_AMD64_ABI
 
 PCODE GetFPRegRangeLoadRoutine(int x1, int x2)
 {
@@ -521,6 +513,13 @@ extern "C" void CallJittedMethodRetVoid(PCODE *routines, int8_t*pArgs, int total
 extern "C" void CallJittedMethodRetDouble(PCODE *routines, int8_t*pArgs, int8_t*pRet, int totalStackSize);
 extern "C" void CallJittedMethodRetI8(PCODE *routines, int8_t*pArgs, int8_t*pRet, int totalStackSize);
 extern "C" void CallJittedMethodRetBuff(PCODE *routines, int8_t*pArgs, int8_t*pRet, int totalStackSize);
+
+#ifdef UNIX_AMD64_ABI
+extern "C" void CallJittedMethodRetI8I8(PCODE *routines, int8_t*pArgs, int8_t*pRet, int totalStackSize);
+extern "C" void CallJittedMethodRetI8Double(PCODE *routines, int8_t*pArgs, int8_t*pRet, int totalStackSize);
+extern "C" void CallJittedMethodRetDoubleI8(PCODE *routines, int8_t*pArgs, int8_t*pRet, int totalStackSize);
+extern "C" void CallJittedMethodRetDoubleDouble(PCODE *routines, int8_t*pArgs, int8_t*pRet, int totalStackSize);
+#endif
 
 void InvokeCompiledMethod(MethodDesc *pMD, int8_t *pArgs, int8_t *pRet)
 {
@@ -546,17 +545,16 @@ void InvokeCompiledMethod(MethodDesc *pMD, int8_t *pArgs, int8_t *pRet)
         ArgLocDesc argLocDesc;
         argIt.GetArgLoc(ofs, &argLocDesc);
 
-        // TODO: handle structs passed in registers, consider {float, int} and {int, float} would use the same arg registers, but load them in a reverse order.
-        // This is only possible on unix amd64, Windows pass structs larger than 64 bits by reference
-        // Interesting case on Windows x64 - {int, float} is passed in a single general purpose register, does the interpreter store it that way?
-        // TODO: handle value types passing by reference on platforms that do that, like Windows
-        // TODO: it seems that arm64 doesn't use the Q registers for passing floats / doubles
-        // TODO: Apple arm64 specialities
-        
+        // TODO: handle arguments of struct types passed in registers when the argLocDesc contains multiple kinds of locations (floats, integers, stack)
+        if (argIt.GetArgLocDescForStructInRegs() != NULL)
+        {
+            // The order of registers depend on the layout of the struct.
+            assert(!"Structs in registers args are not supported yet");
+        }
 
         // Check if we have a range of registers or stack arguments that we need to store because the current argument
         // terminates it.
-        if ((argLocDesc.m_cGenReg == 0 || argIt.IsArgPassedByRef()) && (r1 != NO_RANGE))
+        if ((argLocDesc.m_cGenReg == 0) && (r1 != NO_RANGE))
         {
             // No GP register is used to pass the current argument, but we already have a range of GP registers,
             // store the routine for the range
@@ -585,8 +583,17 @@ void InvokeCompiledMethod(MethodDesc *pMD, int8_t *pArgs, int8_t *pRet)
 
         if (argLocDesc.m_cGenReg != 0)
         {                       
+#ifndef UNIX_AMD64_ABI
             if (argIt.IsArgPassedByRef())
             {
+                if (r1 != NO_RANGE)
+                {
+                    // The args passed by reference use a separate routine, so we need to flush the existing range
+                    // of general purpose registers if we have one.
+                    printf("r%d..%d\n", r1, r2);
+                    routines[routineIndex++] = GetGPRegRangeLoadRoutine(r1, r2);
+                    r1 = NO_RANGE;
+                }
                 // Arguments passed by reference are handled separately, because the interpreter stores the value types on its stack by value.
                 // So the argument loading routine needs to load the address of the argument. To avoid explosion of number of the routines,
                 // we always process single argument passed by reference using single routine.
@@ -595,6 +602,7 @@ void InvokeCompiledMethod(MethodDesc *pMD, int8_t *pArgs, int8_t *pRet)
                 routines[routineIndex++] = argIt.GetArgSize();
             }
             else
+#endif // UNIX_AMD64_ABI
             {
                 if (r1 == NO_RANGE) // No active range yet
                 {
@@ -700,8 +708,6 @@ void InvokeCompiledMethod(MethodDesc *pMD, int8_t *pArgs, int8_t *pRet)
         TypeHandle thReturnValueType;
         CorElementType thReturnType = sig.GetReturnTypeNormalized(&thReturnValueType);
 
-        // TODO: consider adding a routine for return value processing and having a single CallJittedMethod. It would be beneficial for caching
-        // It may have to be handled in a special way though, since after returning from the target, the current routine address would be gone. Unless we store it in a nonvol register
         switch (thReturnType)
         {
             case ELEMENT_TYPE_BOOLEAN:
@@ -748,8 +754,44 @@ void InvokeCompiledMethod(MethodDesc *pMD, int8_t *pArgs, int8_t *pRet)
                     CallJittedMethodRetI8(routines, pArgs, pRet, totalStackSize);
                 }
 #else // TARGET_WINDOWS
-                // TODO: struct in registers
-                _ASSERTE(!"Struct returns by value in registers are not supported yet");
+                if (thReturnValueType.AsMethodTable()->IsRegPassedStruct())
+                {
+                    UINT fpReturnSize = argIt.GetFPReturnSize();
+                    if (fpReturnSize == 0)
+                    {
+                        CallJittedMethodRetI8(routines, pArgs, pRet, totalStackSize);
+                    }
+                    else if (fpReturnSize == 8)
+                    {
+                       CallJittedMethodRetDouble(routines, pArgs, pRet, totalStackSize);
+                    }
+                    else
+                    {
+                        _ASSERTE((fpReturnSize & 16) != 0);
+                        // The fpReturnSize bits 0..1 have the following meaning:
+                        // Bit 0 - the first 8 bytes of the struct is integer (0) or floating point (1)
+                        // Bit 1 - the second 8 bytes of the struct is integer (0) or floating point (1)
+                        switch (fpReturnSize & 0x3)
+                        {
+                            case 0:
+                                CallJittedMethodRetI8I8(routines, pArgs, pRet, totalStackSize);
+                                break;
+                            case 1:
+                                CallJittedMethodRetDoubleI8(routines, pArgs, pRet, totalStackSize);
+                                break;
+                            case 2:
+                                CallJittedMethodRetI8Double(routines, pArgs, pRet, totalStackSize);
+                                break;
+                            case 3:
+                                CallJittedMethodRetDoubleDouble(routines, pArgs, pRet, totalStackSize);
+                                break;
+                        }
+                    }
+                }
+                else
+                {
+                    _ASSERTE(!"Should not get here");
+                }
 #endif // TARGET_WINDOWS
 #elif TARGET_ARM64
                 // HFA, HVA, POD structs smaller than 128 bits

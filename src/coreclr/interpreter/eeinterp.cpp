@@ -49,7 +49,7 @@ void Assert(const char* why, const char* file, unsigned line)
 {
     if (g_compHndForAssert && g_compHndForAssert->doAssert(file, line, why))
     {
-        DebugBreak();
+        //DebugBreak();
     }
 }
 

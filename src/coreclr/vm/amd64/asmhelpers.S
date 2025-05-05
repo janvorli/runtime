@@ -482,7 +482,7 @@ LEAF_ENTRY Load_RDI_RSI_RDX_RCX_R8_R9, _TEXT
 LEAF_END Load_RDI_RSI_RDX_RCX_R8_R9, _TEXT
 
 LEAF_ENTRY Load_RSI, _TEXT
-    mov rdx, [r10]
+    mov rsi, [r10]
     add r10, 8
     add r11, 8
     jmp qword ptr [r11]
@@ -573,7 +573,7 @@ LEAF_ENTRY Load_RCX_R8, _TEXT
     add r10, 16
     add r11, 8
     jmp qword ptr [r11]
-LEAF_END Load_RCX_RDX, _TEXT
+LEAF_END Load_RCX_R8, _TEXT
 
 LEAF_ENTRY Load_RCX_R8_R9, _TEXT
     mov rcx, [r10]
@@ -582,7 +582,7 @@ LEAF_ENTRY Load_RCX_R8_R9, _TEXT
     add r10, 24
     add r11, 8
     jmp qword ptr [r11]
-LEAF_END Load_RCX_RDX_R8, _TEXT
+LEAF_END Load_RCX_R8_R9, _TEXT
 
 LEAF_ENTRY Load_RDX_R8, _TEXT
     mov rdx, [r10]
@@ -960,12 +960,13 @@ LEAF_ENTRY Load_XMM7, _TEXT
 LEAF_END Load_XMM7, _TEXT
 
 NESTED_ENTRY CallJittedMethodRetVoid, _TEXT, NoHandler
-    push_register rbp
+// TODO: decide whether to create RBP frame everywhere or not
+    push_nonvol_reg rbp
     mov  rbp, rsp
     alloc_stack 0x10
     save_reg_postrsp r10, 0 
 END_PROLOGUE
-    sub rsp, r8 // total stack space
+    sub rsp, rdx // total stack space
     mov r11, rdi // The routines list
     mov r10, rsi // interpreter stack args
     call qword ptr [r11]
@@ -975,24 +976,131 @@ END_PROLOGUE
     ret
 NESTED_END CallJittedMethodRetVoid, _TEXT
 
-NESTED_ENTRY CallJittedMethodRetDouble, _TEXT, NoHandler
-    push_register rdx
+NESTED_ENTRY CallJittedMethodRetBuff, _TEXT, NoHandler
+    push_nonvol_reg rbp
+    mov  rbp, rsp
+    alloc_stack 0x10
+    save_reg_postrsp r10, 0
 END_PROLOGUE
+    sub rsp, rcx // total stack space
+    mov r11, rdi // The routines list
+    mov r10, rsi // interpreter stack args
+    mov rdi, rdx // return buffer
+    call qword ptr [r11]
+    mov r10, [rsp]
+    mov rsp, rbp
+    pop rbp
+    ret
+NESTED_END CallJittedMethodRetBuff, _TEXT
+
+NESTED_ENTRY CallJittedMethodRetDouble, _TEXT, NoHandler
+    push_nonvol_reg rbp
+    mov  rbp, rsp
+    push_register rdx
+    push_register rax // align
+END_PROLOGUE
+    sub rsp, rcx // total stack space
     mov r11, rdi // The routines list
     mov r10, rsi // interpreter stack args
     call qword ptr [r11]
-    pop rdx
+    //pop rdx
+    mov rdx, [rbp - 8]
     movsd real8 ptr [rdx], xmm0
+    mov rsp, rbp
+    pop rbp
     ret
 NESTED_END CallJittedMethodRetDouble, _TEXT
 
 NESTED_ENTRY CallJittedMethodRetI8, _TEXT, NoHandler
+    push_nonvol_reg rbp
+    mov  rbp, rsp
     push_register rdx
+    push_register rax // align
 END_PROLOGUE
+    sub rsp, rcx // total stack space
     mov r11, rdi // The routines list
     mov r10, rsi // interpreter stack args
     call qword ptr [r11]
-    pop rdx
+//    pop rdx
+    mov rdx, [rbp - 8]
     mov qword ptr [rdx], rax
+    mov rsp, rbp
+    pop rbp
     ret
 NESTED_END CallJittedMethodRetI8, _TEXT
+
+NESTED_ENTRY CallJittedMethodRetI8I8, _TEXT, NoHandler
+    push_nonvol_reg rbp
+    mov  rbp, rsp
+    push_register rdx
+    push_register rax // align
+END_PROLOGUE
+    sub rsp, rcx // total stack space
+    mov r11, rdi // The routines list
+    mov r10, rsi // interpreter stack args
+    call qword ptr [r11]
+//    pop rdx
+    mov rcx, [rbp - 8]
+    mov qword ptr [rcx], rax
+    mov qword ptr [rcx + 8], rdx
+    mov rsp, rbp
+    pop rbp
+    ret
+NESTED_END CallJittedMethodRetI8I8, _TEXT
+
+NESTED_ENTRY CallJittedMethodRetI8Double, _TEXT, NoHandler
+    push_nonvol_reg rbp
+    mov  rbp, rsp
+    push_register rdx
+    push_register rax // align
+END_PROLOGUE
+    sub rsp, rcx // total stack space
+    mov r11, rdi // The routines list
+    mov r10, rsi // interpreter stack args
+    call qword ptr [r11]
+//    pop rdx
+    mov rcx, [rbp - 8]
+    mov qword ptr [rcx], rax
+    movsd real8 ptr [rcx + 8], xmm0
+    mov rsp, rbp
+    pop rbp
+    ret
+NESTED_END CallJittedMethodRetI8Double, _TEXT
+
+NESTED_ENTRY CallJittedMethodRetDoubleI8, _TEXT, NoHandler
+    push_nonvol_reg rbp
+    mov  rbp, rsp
+    push_register rdx
+    push_register rax // align
+END_PROLOGUE
+    sub rsp, rcx // total stack space
+    mov r11, rdi // The routines list
+    mov r10, rsi // interpreter stack args
+    call qword ptr [r11]
+//    pop rdx
+    mov rcx, [rbp - 8]
+    movsd real8 ptr [rcx], xmm0
+    mov qword ptr [rcx + 8], rax
+    mov rsp, rbp
+    pop rbp
+    ret
+NESTED_END CallJittedMethodRetDoubleI8, _TEXT
+
+NESTED_ENTRY CallJittedMethodRetDoubleDouble, _TEXT, NoHandler
+    push_nonvol_reg rbp
+    mov  rbp, rsp
+    push_register rdx
+    push_register rax // align
+END_PROLOGUE
+    sub rsp, rcx // total stack space
+    mov r11, rdi // The routines list
+    mov r10, rsi // interpreter stack args
+    call qword ptr [r11]
+//    pop rdx
+    mov rcx, [rbp - 8]
+    movsd real8 ptr [rcx], xmm0
+    movsd real8 ptr [rcx + 8], xmm1
+    mov rsp, rbp
+    pop rbp
+    ret
+NESTED_END CallJittedMethodRetDoubleDouble, _TEXT
