@@ -503,6 +503,7 @@ PCODE GetStackRangeLoadRoutine(int s1, int s2)
 extern "C" void CallJittedMethodRetVoid(PCODE *routines, int8_t*pArgs, int totalStackSize);
 extern "C" void CallJittedMethodRetDouble(PCODE *routines, int8_t*pArgs, int8_t*pRet, int totalStackSize);
 extern "C" void CallJittedMethodRetI8(PCODE *routines, int8_t*pArgs, int8_t*pRet, int totalStackSize);
+extern "C" void CallJittedMethodRetBuff(PCODE *routines, int8_t*pArgs, int8_t*pRet, int totalStackSize);
 
 void InvokeCompiledMethod(MethodDesc *pMD, int8_t *pArgs, int8_t *pRet)
 {
@@ -515,7 +516,7 @@ void InvokeCompiledMethod(MethodDesc *pMD, int8_t *pArgs, int8_t *pRet)
     int ofs = 0;
     DWORD arg = 0;
     const int NO_RANGE = -1;
-    int r1 = NO_RANGE; // indicates that there is no active range of GP registers
+    int r1 = argIt.HasThis() ? 0 :  NO_RANGE; // The "this" argument register is not enumerated by the arg iterator.
     int r2 = 0;
     int x1 = NO_RANGE; // indicates that there is no active range of FP registers
     int x2 = 0;
@@ -529,7 +530,7 @@ void InvokeCompiledMethod(MethodDesc *pMD, int8_t *pArgs, int8_t *pRet)
         argIt.GetArgLoc(ofs, &argLocDesc);
 
         // TODO: handle structs passed in registers, consider {float, int} and {int, float} would use the same arg registers, but load them in a reverse order.
-        // This seems to be only possible on unix amd64, Windows pass structs larger than 64 bits by reference
+        // This is only possible on unix amd64, Windows pass structs larger than 64 bits by reference
         // Interesting case on Windows x64 - {int, float} is passed in a single general purpose register, does the interpreter store it that way?
         // TODO: handle value types passing by reference on platforms that do that, like Windows
         // TODO: it seems that arm64 doesn't use the Q registers for passing floats / doubles
@@ -672,58 +673,77 @@ void InvokeCompiledMethod(MethodDesc *pMD, int8_t *pArgs, int8_t *pRet)
     //routines[routineIndex] = pMD->GetSingleCallableAddrOfCode();
 
     totalStackSize = ALIGN_UP(totalStackSize, 16); // Align the stack to 16 bytes
-    
-    TypeHandle thReturnValueType;
-    CorElementType thReturnType = sig.GetReturnTypeNormalized(&thReturnValueType);
 
-    // TODO: consider adding a routine for return value processing and having a single CallJittedMethod. It would be beneficial for caching
-    // It may have to be handled in a special way though, since after returning from the target, the current routine address would be gone. Unless we store it in a nonvol register
-    switch (thReturnType)
+    if (argIt.HasRetBuffArg())
     {
-        case ELEMENT_TYPE_BOOLEAN:
-        case ELEMENT_TYPE_CHAR:
-        case ELEMENT_TYPE_I1:
-        case ELEMENT_TYPE_U1:
-        case ELEMENT_TYPE_I2:
-        case ELEMENT_TYPE_U2:
-        case ELEMENT_TYPE_I4:
-        case ELEMENT_TYPE_U4:
-        case ELEMENT_TYPE_I8:
-        case ELEMENT_TYPE_U8:
-        case ELEMENT_TYPE_I:
-        case ELEMENT_TYPE_U:
-        case ELEMENT_TYPE_CLASS:
-        case ELEMENT_TYPE_OBJECT:
-        case ELEMENT_TYPE_STRING:
-        case ELEMENT_TYPE_PTR:
-        case ELEMENT_TYPE_BYREF:
-        case ELEMENT_TYPE_TYPEDBYREF:
-        case ELEMENT_TYPE_ARRAY:
-        case ELEMENT_TYPE_SZARRAY:
-        case ELEMENT_TYPE_FNPTR:
-            CallJittedMethodRetI8(routines, pArgs, pRet, totalStackSize);
-            break;        
-        case ELEMENT_TYPE_R4:
-        case ELEMENT_TYPE_R8:
-            CallJittedMethodRetDouble(routines, pArgs, pRet, totalStackSize);
-            break;
-        case ELEMENT_TYPE_VOID:
-            CallJittedMethodRetVoid(routines, pArgs, totalStackSize);
-            break;
-        case ELEMENT_TYPE_VALUETYPE:
-            _ASSERTE(!"Struct returns are not supported yet");
-            // TODO: retbuffer
-            //  Windows x64:
-            //  - pass the return buffer in rcx
-            //  - at return, rax points to the buffer            
-            // TODO: struct in regs return - (int, int), (int, double), (double, double), (double, int)
-            //  Windows x64
-            //  - POD structs smaller than 64 bits are returned in rax
-            //  - 128 bit vector types returned in xmm0
-            break;
-        default:
-            _ASSERTE(!"Unexpected return type");
-            break;
+        CallJittedMethodRetBuff(routines, pArgs, pRet, totalStackSize);
+    }
+    else
+    {
+        TypeHandle thReturnValueType;
+        CorElementType thReturnType = sig.GetReturnTypeNormalized(&thReturnValueType);
+
+        // TODO: consider adding a routine for return value processing and having a single CallJittedMethod. It would be beneficial for caching
+        // It may have to be handled in a special way though, since after returning from the target, the current routine address would be gone. Unless we store it in a nonvol register
+        switch (thReturnType)
+        {
+            case ELEMENT_TYPE_BOOLEAN:
+            case ELEMENT_TYPE_CHAR:
+            case ELEMENT_TYPE_I1:
+            case ELEMENT_TYPE_U1:
+            case ELEMENT_TYPE_I2:
+            case ELEMENT_TYPE_U2:
+            case ELEMENT_TYPE_I4:
+            case ELEMENT_TYPE_U4:
+            case ELEMENT_TYPE_I8:
+            case ELEMENT_TYPE_U8:
+            case ELEMENT_TYPE_I:
+            case ELEMENT_TYPE_U:
+            case ELEMENT_TYPE_CLASS:
+            case ELEMENT_TYPE_OBJECT:
+            case ELEMENT_TYPE_STRING:
+            case ELEMENT_TYPE_PTR:
+            case ELEMENT_TYPE_BYREF:
+            case ELEMENT_TYPE_TYPEDBYREF:
+            case ELEMENT_TYPE_ARRAY:
+            case ELEMENT_TYPE_SZARRAY:
+            case ELEMENT_TYPE_FNPTR:
+                CallJittedMethodRetI8(routines, pArgs, pRet, totalStackSize);
+                break;
+            case ELEMENT_TYPE_R4:
+            case ELEMENT_TYPE_R8:
+                CallJittedMethodRetDouble(routines, pArgs, pRet, totalStackSize);
+                break;
+            case ELEMENT_TYPE_VOID:
+                CallJittedMethodRetVoid(routines, pArgs, totalStackSize);
+                break;
+            case ELEMENT_TYPE_VALUETYPE:
+#ifdef TARGET_AMD64
+#ifdef TARGET_WINDOWS
+                if (thReturnValueType.AsMethodTable()->IsIntrinsicType())
+                {
+                    // 128 bit vector types returned in xmm0 too. E.g. Vector2
+                    CallJittedMethodRetDouble(routines, pArgs, pRet, totalStackSize);
+                }
+                else
+                {
+                    // POD structs smaller than 64 bits are returned in rax
+                    CallJittedMethodRetI8(routines, pArgs, pRet, totalStackSize);
+                }
+#else // TARGET_WINDOWS
+                // TODO: struct in registers
+                _ASSERTE(!"Struct returns by value in registers are not supported yet");
+#endif // TARGET_WINDOWS
+#elif TARGET_ARM64
+                // HFA, HVA, POD structs smaller than 128 bits
+#else
+                _ASSERTE(!"Struct returns by value are not supported yet");
+#endif
+                break;
+            default:
+                _ASSERTE(!"Unexpected return type");
+                break;
+        }
     }
 }
 

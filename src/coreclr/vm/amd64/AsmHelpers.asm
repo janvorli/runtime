@@ -510,8 +510,7 @@ LEAF_END ThisPtrRetBufPrecodeWorker, _TEXT
 LEAF_ENTRY Load_Stack, _TEXT
     push rdi
     push rsi
-    push rax; alignment
-    mov rax, rcx
+    push rcx
     mov edi, dword ptr [r11 + 8]  ; SP offset
     mov ecx, dword ptr [r11 + 12] ; number of stack slots
     add edi, 20h ; the 3 pushes above plus return address
@@ -521,7 +520,7 @@ LEAF_ENTRY Load_Stack, _TEXT
     rep movsq
     mov r10, rsi
     mov rcx, rax
-    pop rax
+    pop rcx
     pop rsi
     pop rdi
     add r11, 16
@@ -732,6 +731,24 @@ END_PROLOGUE
     pop rbp
     ret
 NESTED_END CallJittedMethodRetVoid, _TEXT
+
+NESTED_ENTRY CallJittedMethodRetBuff, _TEXT
+    push_vol_reg rbp
+    mov  rbp, rsp
+    alloc_stack 10h
+    save_reg_postrsp r10, 0
+END_PROLOGUE
+    add r9, 20h ; argument save area + alignment
+    sub rsp, r9 ; total stack space
+    mov r11, rcx ; The routines list
+    mov r10, rdx ; interpreter stack args
+    mov rcx, r8  ; return buffer
+    call qword ptr [r11]
+    mov r10, [rsp]
+    mov rsp, rbp
+    pop rbp
+    ret
+NESTED_END CallJittedMethodRetBuff, _TEXT
 
 NESTED_ENTRY CallJittedMethodRetDouble, _TEXT
     push_vol_reg r8

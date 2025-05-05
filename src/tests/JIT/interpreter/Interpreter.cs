@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 
 public struct MyStruct
@@ -48,6 +49,12 @@ public struct TestStruct
     public int f;
 }
 
+public struct TestStruct2
+{
+    public int a;
+    public int b;
+}
+
 public class InterpreterTest
 {
     // static void TestCallingConvention(int a, float b, int c, double d, int e, double f)
@@ -55,24 +62,53 @@ public class InterpreterTest
     //     Console.WriteLine("TestCallingConvention: a = {0}, b = {1}, c = {2}, d = {3}, e = {4}, f = {5}", a, b, c, d, e, f);
     // }
 
-    static void TestCallingConvention(TestStruct s)
-    {
-        Console.WriteLine("TestCallingConvention: a = {0}, b = {1}, c = {2}, d = {3}, e = {4}, f = {5}", s.a, s.b, s.c, s.d, s.e, s.f);
-    }
+    // static void TestCallingConvention(TestStruct s)
+    // {
+    //     Console.WriteLine("TestCallingConvention: a = {0}, b = {1}, c = {2}, d = {3}, e = {4}, f = {5}", s.a, s.b, s.c, s.d, s.e, s.f);
+    // }
 
-    static int Main(string[] args)
+    // static TestStruct2 TestCallingConvention()
+    // {
+    //     TestStruct2 s;
+    //     s.a = 1;
+    //     s.b = 2;
+    //     return s;
+    // }
+
+    // static Vector2 TestCallingConvention()
+    // {
+    //     Vector2 v = new Vector2(1, 2);
+    //     return v;
+    // }
+
+    static TestStruct TestCallingConvention()
     {
-        jitField1 = 42;
-        jitField2 = 43;
-        TestStruct s = new TestStruct();
+        TestStruct s;
         s.a = 1;
         s.b = 2;
         s.c = 3;
         s.d = 4;
         s.e = 5;
         s.f = 6;
-        TestCallingConvention(s);
+        return s;
+    }
+
+    static int Main(string[] args)
+    {
+        jitField1 = 42;
+        jitField2 = 43;
+        // TestStruct s = new TestStruct();
+        // s.a = 1;
+        // s.b = 2;
+        // s.c = 3;
+        // s.d = 4;
+        // s.e = 5;
+        // s.f = 6;
+        // TestCallingConvention(s);
         //TestCallingConvention(1, 2.0f, 3, 4.0, 5, 6.0);
+        //TestStruct2 s = TestCallingConvention();
+        //Vector2 v = TestCallingConvention();
+        TestStruct s = TestCallingConvention();
         RunInterpreterTests();
         return 100;
     }
@@ -81,14 +117,31 @@ public class InterpreterTest
     public static void RunInterpreterTests()
     {
 //        TestCallingConvention(1, 2.0f, 3, 4.0, 5, 6.0);
-        TestStruct s = new TestStruct();
-        s.a = 1;
-        s.b = 2;
-        s.c = 3;
-        s.d = 4;
-        s.e = 5;
-        s.f = 6;
-        TestCallingConvention(s);
+        // TestStruct s = new TestStruct();
+        // s.a = 1;
+        // s.b = 2;
+        // s.c = 3;
+        // s.d = 4;
+        // s.e = 5;
+        // s.f = 6;
+        // TestCallingConvention(s);
+        //TestStruct2 s = TestCallingConvention();
+        // Vector2 v = TestCallingConvention();
+        // Console.WriteLine("TestCallingConvention: s = ");
+        // Console.WriteLine(s.a);
+        // Console.WriteLine(s.b);
+        // Console.WriteLine("TestCallingConvention: v = ");
+        // Console.WriteLine(v[0]);
+        // Console.WriteLine(v[1]);
+        TestStruct s = TestCallingConvention();
+        Console.WriteLine("TestCallingConvention: s = ");
+        Console.WriteLine(s.a);
+        Console.WriteLine(s.b);
+        Console.WriteLine(s.c);
+        Console.WriteLine(s.d);
+        Console.WriteLine(s.e);
+        Console.WriteLine(s.f);
+
 //      Console.WriteLine("Run interp tests");
         if (SumN(50) != 1275)
             Environment.FailFast(null);
