@@ -519,7 +519,6 @@ LEAF_ENTRY Load_Stack, _TEXT
     shr rcx, 3
     rep movsq
     mov r10, rsi
-    mov rcx, rax
     pop rcx
     pop rsi
     pop rdi

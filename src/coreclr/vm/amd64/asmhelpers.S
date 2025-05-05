@@ -366,19 +366,63 @@ LEAF_END ThisPtrRetBufPrecodeWorker, _TEXT
 LEAF_ENTRY Load_Stack, _TEXT
     push rdi
     push rsi
-    mov rax, rcx
-    mov edi, dword ptr [r11 + 8]  ; SP offset
-    mov ecx, dword ptr [r11 + 12] ; number of stack slots
+    push rcx
+    mov edi, dword ptr [r11 + 8]  // SP offset
+    mov ecx, dword ptr [r11 + 12] // number of stack slots
+    add edi, 0x20 // the 3 pushes above plus return address
     add rdi, rsp
     mov rsi, r10
+    shr rcx, 3
     rep movsq
     mov r10, rsi
-    mov rcx, rax
+    pop rcx
     pop rsi
     pop rdi
     add r11, 16
     jmp qword ptr [r11]
 LEAF_END Load_Stack, _TEXT
+
+LEAF_ENTRY Load_Ref_RDI, _TEXT
+    mov rdi, r10
+    add r10, [r11 + 8]
+    add r11, 16
+    jmp qword ptr [r11]
+LEAF_END Load_Ref_RDI, _TEXT
+
+LEAF_ENTRY Load_Ref_RSI, _TEXT
+    mov rsi, r10
+    add r10, [r11 + 8]
+    add r11, 16
+    jmp qword ptr [r11]
+LEAF_END Load_Ref_RSI, _TEXT
+
+LEAF_ENTRY Load_Ref_RDX, _TEXT
+    mov rdx, r10
+    add r10, [r11 + 8]
+    add r11, 16
+    jmp qword ptr [r11]
+LEAF_END Load_Ref_RDX, _TEXT
+
+LEAF_ENTRY Load_Ref_RCX, _TEXT
+    mov rcx, r10
+    add r10, [r11 + 8]
+    add r11, 16
+    jmp qword ptr [r11]
+LEAF_END Load_Ref_RCX, _TEXT
+
+LEAF_ENTRY Load_Ref_R8, _TEXT
+    mov r8, r10
+    add r10, [r11 + 8]
+    add r11, 16
+    jmp qword ptr [r11]
+LEAF_END Load_Ref_R8, _TEXT
+
+LEAF_ENTRY Load_Ref_R9, _TEXT
+    mov r9, r10
+    add r10, [r11 + 8]
+    add r11, 16
+    jmp qword ptr [r11]
+LEAF_END Load_Ref_R9, _TEXT
 
 LEAF_ENTRY Load_RDI, _TEXT
     mov rdi, [r10]
@@ -523,39 +567,22 @@ LEAF_ENTRY Load_RCX, _TEXT
     jmp qword ptr [r11]
 LEAF_END Load_RCX, _TEXT
 
-LEAF_ENTRY Load_RCX_RDX, _TEXT
+LEAF_ENTRY Load_RCX_R8, _TEXT
     mov rcx, [r10]
-    mov rdx, [r10 + 8]
+    mov r8, [r10 + 8]
     add r10, 16
     add r11, 8
     jmp qword ptr [r11]
 LEAF_END Load_RCX_RDX, _TEXT
 
-LEAF_ENTRY Load_RCX_RDX_R8, _TEXT
+LEAF_ENTRY Load_RCX_R8_R9, _TEXT
     mov rcx, [r10]
-    mov rdx, [r10 + 8]
-    mov r8, [r10 + 16]
+    mov r8, [r10 + 8]
+    mov r9, [r10 + 16]
     add r10, 24
     add r11, 8
     jmp qword ptr [r11]
 LEAF_END Load_RCX_RDX_R8, _TEXT
-
-LEAF_ENTRY Load_RCX_RDX_R8_R9, _TEXT
-    mov rcx, [r10]
-    mov rdx, [r10 + 8]
-    mov r8, [r10 + 16]
-    mov r9, [r10 + 24]
-    add r10, 32
-    add r11, 8
-    jmp qword ptr [r11]
-LEAF_END Load_RCX_RDX_R8_R9, _TEXT
-
-LEAF_ENTRY Load_RDX, _TEXT
-    mov rdx, [r10]
-    add r10, 8
-    add r11, 8
-    jmp qword ptr [r11]
-LEAF_END Load_RDX, _TEXT
 
 LEAF_ENTRY Load_RDX_R8, _TEXT
     mov rdx, [r10]
@@ -606,7 +633,7 @@ LEAF_END Load_XMM0, _TEXT
 LEAF_ENTRY Load_XMM0_XMM1, _TEXT
         movsd xmm0, real8 ptr [r10]
         movsd xmm1, real8 ptr [r10 + 8]
-        add r10, 10h
+        add r10, 16
         add r11, 8
         jmp qword ptr [r11]
 LEAF_END Load_XMM0_XMM1, _TEXT
@@ -641,41 +668,44 @@ LEAF_ENTRY Load_XMM0_XMM1_XMM2_XMM3_XMM4, _TEXT
         jmp qword ptr [r11]
 LEAF_END Load_XMM0_XMM1_XMM2_XMM3_XMM4, _TEXT
 
-LEAF_ENTRY Load_XMM0_XMM1_XMM2_XMM3_XMM5, _TEXT
+LEAF_ENTRY Load_XMM0_XMM1_XMM2_XMM3_XMM4_XMM5, _TEXT
         movsd xmm0, real8 ptr [r10]
         movsd xmm1, real8 ptr [r10 + 8]
         movsd xmm2, real8 ptr [r10 + 16]
         movsd xmm3, real8 ptr [r10 + 24]
-        movsd xmm5, real8 ptr [r10 + 32]
-        add r10, 40
-        add r11, 8
-        jmp qword ptr [r11]
-LEAF_END Load_XMM0_XMM1_XMM2_XMM3_XMM5, _TEXT
-
-LEAF_ENTRY Load_XMM0_XMM1_XMM2_XMM3_XMM5_XMM6, _TEXT
-        movsd xmm0, real8 ptr [r10]
-        movsd xmm1, real8 ptr [r10 + 8]
-        movsd xmm2, real8 ptr [r10 + 16]
-        movsd xmm3, real8 ptr [r10 + 24]
-        movsd xmm5, real8 ptr [r10 + 32]
-        movsd xmm6, real8 ptr [r10 + 40]
+        movsd xmm4, real8 ptr [r10 + 32]
+        movsd xmm5, real8 ptr [r10 + 40]
         add r10, 48
         add r11, 8
         jmp qword ptr [r11]
-LEAF_END Load_XMM0_XMM1_XMM2_XMM3_XMM5_XMM6, _TEXT
+LEAF_END Load_XMM0_XMM1_XMM2_XMM3_XMM4_XMM5, _TEXT
 
-LEAF_ENTRY Load_XMM0_XMM1_XMM2_XMM3_XMM5_XMM6_XMM7, _TEXT
+LEAF_ENTRY Load_XMM0_XMM1_XMM2_XMM3_XMM4_XMM5_XMM6, _TEXT
         movsd xmm0, real8 ptr [r10]
         movsd xmm1, real8 ptr [r10 + 8]
         movsd xmm2, real8 ptr [r10 + 16]
         movsd xmm3, real8 ptr [r10 + 24]
-        movsd xmm5, real8 ptr [r10 + 32]
-        movsd xmm6, real8 ptr [r10 + 40]
-        movsd xmm7, real8 ptr [r10 + 48]
+        movsd xmm4, real8 ptr [r10 + 32]
+        movsd xmm5, real8 ptr [r10 + 40]
+        movsd xmm6, real8 ptr [r10 + 48]
         add r10, 56
         add r11, 8
         jmp qword ptr [r11]
-LEAF_END Load_XMM0_XMM1_XMM2_XMM3_XMM5_XMM6_XMM7, _TEXT
+LEAF_END Load_XMM0_XMM1_XMM2_XMM3_XMM4_XMM5_XMM6, _TEXT
+
+LEAF_ENTRY Load_XMM0_XMM1_XMM2_XMM3_XMM4_XMM5_XMM6_XMM7, _TEXT
+        movsd xmm0, real8 ptr [r10]
+        movsd xmm1, real8 ptr [r10 + 8]
+        movsd xmm2, real8 ptr [r10 + 16]
+        movsd xmm3, real8 ptr [r10 + 24]
+        movsd xmm4, real8 ptr [r10 + 32]
+        movsd xmm5, real8 ptr [r10 + 40]
+        movsd xmm6, real8 ptr [r10 + 48]
+        movsd xmm7, real8 ptr [r10 + 56]
+        add r10, 64
+        add r11, 8
+        jmp qword ptr [r11]
+LEAF_END Load_XMM0_XMM1_XMM2_XMM3_XMM4_XMM5_XMM6_XMM7, _TEXT
 
 LEAF_ENTRY Load_XMM1, _TEXT
         movsd xmm1, real8 ptr [r10]
@@ -929,32 +959,38 @@ LEAF_ENTRY Load_XMM7, _TEXT
         jmp qword ptr [r11]
 LEAF_END Load_XMM7, _TEXT
 
-NESTED_ENTRY CallJittedMethodRetVoid, _TEXT
-    push_vol_reg r10
+NESTED_ENTRY CallJittedMethodRetVoid, _TEXT, NoHandler
+    push_register rbp
+    mov  rbp, rsp
+    alloc_stack 0x10
+    save_reg_postrsp r10, 0 
 END_PROLOGUE
-    mov r11, rdi ; The routines list
-    mov r10, rsi ; interpreter stack args
+    sub rsp, r8 // total stack space
+    mov r11, rdi // The routines list
+    mov r10, rsi // interpreter stack args
     call qword ptr [r11]
-    pop r10
+    mov r10, [rsp]
+    mov rsp, rbp
+    pop rbp
     ret
 NESTED_END CallJittedMethodRetVoid, _TEXT
 
-NESTED_ENTRY CallJittedMethodRetDouble, _TEXT
-    push_vol_reg rdx
+NESTED_ENTRY CallJittedMethodRetDouble, _TEXT, NoHandler
+    push_register rdx
 END_PROLOGUE
-    mov r11, rdi ; The routines list
-    mov r10, rsi ; interpreter stack args
+    mov r11, rdi // The routines list
+    mov r10, rsi // interpreter stack args
     call qword ptr [r11]
     pop rdx
     movsd real8 ptr [rdx], xmm0
     ret
 NESTED_END CallJittedMethodRetDouble, _TEXT
 
-NESTED_ENTRY CallJittedMethodRetI8, _TEXT
-    push_vol_reg rdx
+NESTED_ENTRY CallJittedMethodRetI8, _TEXT, NoHandler
+    push_register rdx
 END_PROLOGUE
-    mov r11, rdi ; The routines list
-    mov r10, rsi ; interpreter stack args
+    mov r11, rdi // The routines list
+    mov r10, rsi // interpreter stack args
     call qword ptr [r11]
     pop rdx
     mov qword ptr [rdx], rax
