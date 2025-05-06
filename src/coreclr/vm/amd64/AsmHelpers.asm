@@ -526,13 +526,6 @@ LEAF_ENTRY Load_Stack, _TEXT
     jmp qword ptr [r11]
 LEAF_END Load_Stack, _TEXT
 
-LEAF_ENTRY Load_RCX, _TEXT
-    mov rcx, [r10]
-    add r10, 8
-    add r11, 8
-    jmp qword ptr [r11]
-LEAF_END Load_RCX, _TEXT
-
 LEAF_ENTRY Load_Ref_RCX, _TEXT
     mov rcx, r10
     add r10, [r11 + 8] ; size of the value type
@@ -560,6 +553,13 @@ LEAF_ENTRY Load_Ref_R9, _TEXT
     add r11, 16
     jmp qword ptr [r11]
 LEAF_END Load_Ref_R9, _TEXT
+
+LEAF_ENTRY Load_RCX, _TEXT
+    mov rcx, [r10]
+    add r10, 8
+    add r11, 8
+    jmp qword ptr [r11]
+LEAF_END Load_RCX, _TEXT
 
 LEAF_ENTRY Load_RCX_RDX, _TEXT
     mov rcx, [r10]
@@ -735,7 +735,7 @@ NESTED_ENTRY CallJittedMethodRetBuff, _TEXT
     push_vol_reg rbp
     mov  rbp, rsp
     alloc_stack 10h
-    save_reg_postrsp r10, 0
+    save_reg_postrsp r10, 0 WHY save R10? it is not volatile!
 END_PROLOGUE
     add r9, 20h ; argument save area + alignment
     sub rsp, r9 ; total stack space

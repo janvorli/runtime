@@ -309,6 +309,16 @@ extern "C" void Load_X6();
 extern "C" void Load_X6_X7();
 extern "C" void Load_X7();
 
+extern "C" void Load_Ref_X0();
+extern "C" void Load_Ref_X1();
+extern "C" void Load_Ref_X2();
+extern "C" void Load_Ref_X3();
+extern "C" void Load_Ref_X4();
+extern "C" void Load_Ref_X5();
+extern "C" void Load_Ref_X6();
+extern "C" void Load_Ref_X7();
+
+
 PCODE GPRegsRoutines[] =
 {
     (PCODE)Load_X0,                         // 00
@@ -375,6 +385,18 @@ PCODE GPRegsRoutines[] =
     (PCODE)0,                               // 75
     (PCODE)0,                               // 76
     (PCODE)Load_X7                          // 77
+};
+
+PCODE GPRegsRefRoutines[] =
+{
+    (PCODE)Load_Ref_X0,        // 0
+    (PCODE)Load_Ref_X1,        // 1
+    (PCODE)Load_Ref_X2,        // 2
+    (PCODE)Load_Ref_X3,        // 3
+    (PCODE)Load_Ref_X4,        // 4
+    (PCODE)Load_Ref_X5,        // 5
+    (PCODE)Load_Ref_X6,        // 6
+    (PCODE)Load_Ref_X7         // 7
 };
 
 extern "C" void Load_D0();
@@ -521,6 +543,17 @@ extern "C" void CallJittedMethodRetDoubleI8(PCODE *routines, int8_t*pArgs, int8_
 extern "C" void CallJittedMethodRetDoubleDouble(PCODE *routines, int8_t*pArgs, int8_t*pRet, int totalStackSize);
 #endif
 
+#ifdef TARGET_ARM64
+extern "C" void CallJittedMethodRet2I8(PCODE *routines, int8_t*pArgs, int8_t*pRet, int totalStackSize);
+extern "C" void CallJittedMethodRet2Double(PCODE *routines, int8_t*pArgs, int8_t*pRet, int totalStackSize);
+extern "C" void CallJittedMethodRet3Double(PCODE *routines, int8_t*pArgs, int8_t*pRet, int totalStackSize);
+extern "C" void CallJittedMethodRet4Double(PCODE *routines, int8_t*pArgs, int8_t*pRet, int totalStackSize);
+extern "C" void CallJittedMethodRetFloat(PCODE *routines, int8_t*pArgs, int8_t*pRet, int totalStackSize);
+extern "C" void CallJittedMethodRet2Float(PCODE *routines, int8_t*pArgs, int8_t*pRet, int totalStackSize);
+extern "C" void CallJittedMethodRet3Float(PCODE *routines, int8_t*pArgs, int8_t*pRet, int totalStackSize);
+extern "C" void CallJittedMethodRet4Float(PCODE *routines, int8_t*pArgs, int8_t*pRet, int totalStackSize);
+#endif // TARGET_ARM64
+
 void InvokeCompiledMethod(MethodDesc *pMD, int8_t *pArgs, int8_t *pRet)
 {
     printf("InvokeCompiledMethod %s.%s with signature %s\n", pMD->m_pszDebugClassName, pMD->m_pszDebugMethodName, pMD->m_pszDebugMethodSignature);
@@ -545,12 +578,14 @@ void InvokeCompiledMethod(MethodDesc *pMD, int8_t *pArgs, int8_t *pRet)
         ArgLocDesc argLocDesc;
         argIt.GetArgLoc(ofs, &argLocDesc);
 
+#ifdef UNIX_AMD64_ABI        
         // TODO: handle arguments of struct types passed in registers when the argLocDesc contains multiple kinds of locations (floats, integers, stack)
         if (argIt.GetArgLocDescForStructInRegs() != NULL)
         {
             // The order of registers depend on the layout of the struct.
             assert(!"Structs in registers args are not supported yet");
         }
+#endif // UNIX_AMD64_ABI
 
         // Check if we have a range of registers or stack arguments that we need to store because the current argument
         // terminates it.
@@ -795,6 +830,73 @@ void InvokeCompiledMethod(MethodDesc *pMD, int8_t *pArgs, int8_t *pRet)
 #endif // TARGET_WINDOWS
 #elif TARGET_ARM64
                 // HFA, HVA, POD structs smaller than 128 bits
+                if (thReturnValueType.IsHFA())
+                {
+                    switch (thReturnValueType.GetHFAType())
+                    {
+                        case CORINFO_HFA_ELEM_FLOAT:
+                            switch (thReturnValueType.GetSize())
+                            {
+                                case 4:
+                                    CallJittedMethodRetFloat(routines, pArgs, pRet, totalStackSize);
+                                    break;
+                                case 8:
+                                    CallJittedMethodRet2Float(routines, pArgs, pRet, totalStackSize);
+                                    break;
+                                case 12:
+                                    CallJittedMethodRet3Float(routines, pArgs, pRet, totalStackSize);
+                                    break;
+                                case 16:
+                                    CallJittedMethodRet4Float(routines, pArgs, pRet, totalStackSize);
+                                    break;
+                                default:
+                                    _ASSERTE(!"Should not get here");
+                                    break;
+                            }
+                            break;
+                        case CORINFO_HFA_ELEM_DOUBLE:
+                            switch (thReturnValueType.GetSize())
+                            {
+                                case 8:
+                                    CallJittedMethodRetDouble(routines, pArgs, pRet, totalStackSize);
+                                    break;
+                                case 16:
+                                    CallJittedMethodRet2Double(routines, pArgs, pRet, totalStackSize);
+                                    break;
+                                case 24:
+                                    CallJittedMethodRet3Double(routines, pArgs, pRet, totalStackSize);
+                                    break;
+                                case 32:
+                                    CallJittedMethodRet4Double(routines, pArgs, pRet, totalStackSize);
+                                    break;
+                                default:
+                                    _ASSERTE(!"Should not get here");
+                                    break;
+                            }
+                                break;
+                        default:
+                            _ASSERTE(!"HFA types other than float and double are not supported yet");
+                            break;
+                    }
+                }
+                else
+                {
+                    switch (thReturnValueType.GetSize())
+                    {
+                        case 1:
+                        case 2:
+                        case 4:
+                        case 8:
+                            CallJittedMethodRetI8(routines, pArgs, pRet, totalStackSize);
+                            break;
+                        case 16:
+                            CallJittedMethodRet2I8(routines, pArgs, pRet, totalStackSize);
+                            break;
+                        default:
+                            _ASSERTE(!"Struct returns by value are not supported yet");
+                            break;
+                    }
+                }
 #else
                 _ASSERTE(!"Struct returns by value are not supported yet");
 #endif
