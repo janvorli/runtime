@@ -554,6 +554,133 @@ extern "C" void CallJittedMethodRet3Float(PCODE *routines, int8_t*pArgs, int8_t*
 extern "C" void CallJittedMethodRet4Float(PCODE *routines, int8_t*pArgs, int8_t*pRet, int totalStackSize);
 #endif // TARGET_ARM64
 
+const int NO_RANGE = -1;
+
+void ProcessArgument(ArgIterator& argIt, ArgLocDesc& argLocDesc, int& r1, int& r2, int& x1, int& x2, int& s1, int& s2, PCODE *routines, int &routineIndex, int& totalStackSize)
+{
+    // Check if we have a range of registers or stack arguments that we need to store because the current argument
+    // terminates it.
+    if ((argLocDesc.m_cGenReg == 0) && (r1 != NO_RANGE))
+    {
+        // No GP register is used to pass the current argument, but we already have a range of GP registers,
+        // store the routine for the range
+        printf("r%d..%d\n", r1, r2);
+        routines[routineIndex++] = GetGPRegRangeLoadRoutine(r1, r2);
+        r1 = NO_RANGE;
+    }
+    else if (((argLocDesc.m_cFloatReg == 0)) && (x1 != NO_RANGE))
+    {
+        // No floating point register is used to pass the current argument, but we already have a range of FP registers,
+        // store the routine for the range
+        printf("x%d..%d\n", x1, x2);
+        routines[routineIndex++] = GetFPRegRangeLoadRoutine(x1, x2);
+        x1 = NO_RANGE;
+    }
+    else if ((argLocDesc.m_byteStackSize == 0) && (s1 != NO_RANGE))
+    {
+        // No stack argument is used to pass the current argument, but we already have a range of stack arguments,
+        // store the routine for the range
+        printf("stack index %d, size %d\n", s1, s2 - s1 + 1);
+        totalStackSize += s2 - s1 + 1;
+        routines[routineIndex++] = (PCODE)Load_Stack;
+        routines[routineIndex++] = ((int64_t)(s2 - s1 + 1) << 32) | s1;
+        s1 = NO_RANGE;
+    }
+
+    if (argLocDesc.m_cGenReg != 0)
+    {                       
+#ifndef UNIX_AMD64_ABI
+        if (argIt.IsArgPassedByRef())
+        {
+            if (r1 != NO_RANGE)
+            {
+                // The args passed by reference use a separate routine, so we need to flush the existing range
+                // of general purpose registers if we have one.
+                printf("r%d..%d\n", r1, r2);
+                routines[routineIndex++] = GetGPRegRangeLoadRoutine(r1, r2);
+                r1 = NO_RANGE;
+            }
+            // Arguments passed by reference are handled separately, because the interpreter stores the value types on its stack by value.
+            // So the argument loading routine needs to load the address of the argument. To avoid explosion of number of the routines,
+            // we always process single argument passed by reference using single routine.
+            printf("r%d value type by reference, size %d\n", argLocDesc.m_idxGenReg, argIt.GetArgSize());
+            routines[routineIndex++] = GetGPRegRefLoadRoutine(argLocDesc.m_idxGenReg);
+            routines[routineIndex++] = argIt.GetArgSize();
+        }
+        else
+#endif // UNIX_AMD64_ABI
+        {
+            if (r1 == NO_RANGE) // No active range yet
+            {
+                // Start a new range
+                r1 = argLocDesc.m_idxGenReg;
+                r2 = r1 + argLocDesc.m_cGenReg - 1;
+            } 
+            else if (argLocDesc.m_idxGenReg == r2 + 1)
+            {
+                // Extend an existing range
+                r2 += argLocDesc.m_cGenReg;
+            }
+            else
+            {
+                // Discontinuous range - store a routine for the current and start a new one
+                printf("r%d..%d\n", r1, r2);
+                routines[routineIndex++] = GetGPRegRangeLoadRoutine(r1, r2);
+                r1 = argLocDesc.m_idxGenReg;
+                r2 = r1 + argLocDesc.m_cGenReg - 1;
+            }
+        }
+    }
+
+    if (argLocDesc.m_cFloatReg != 0)
+    {
+        if (x1 == NO_RANGE) // No active range yet
+        {
+            // Start a new range
+            x1 = argLocDesc.m_idxFloatReg;
+            x2 = x1 + argLocDesc.m_cFloatReg - 1;
+        } 
+        else if (argLocDesc.m_idxFloatReg == x2 + 1)
+        {
+            // Extend an existing range
+            x2 += argLocDesc.m_cFloatReg;
+        }
+        else
+        {
+            // Discontinuous range - store a routine for the current and start a new one
+            printf("x%d..%d\n", x1, x2);
+            routines[routineIndex++] = GetFPRegRangeLoadRoutine(x1, x2);
+            x1 = argLocDesc.m_idxFloatReg;
+            x2 = x1 + argLocDesc.m_cFloatReg - 1;
+        }
+    }
+
+    if (argLocDesc.m_byteStackSize != 0)
+    {
+        if (s1 == NO_RANGE) // No active range yet
+        {
+            // Start a new range
+            s1 = argLocDesc.m_byteStackIndex;
+            s2 = s1 + argLocDesc.m_byteStackSize - 1;
+        } 
+        else if (argLocDesc.m_byteStackIndex == s2 + 1)
+        {
+            // Extend an existing range
+            s2 += argLocDesc.m_byteStackSize;
+        }
+        else
+        {
+            // Discontinuous range - store a routine for the current and start a new one
+            printf("stack index %d, size %d\n", s1, s2 - s1 + 1);
+            totalStackSize += s2 - s1 + 1;
+            routines[routineIndex++] = (PCODE)Load_Stack;
+            routines[routineIndex++] = ((int64_t)(s2 - s1 + 1) << 32) | s1;
+            s1 = argLocDesc.m_byteStackIndex;
+            s2 = s1 + argLocDesc.m_byteStackSize - 1;
+        }
+    }
+}
+
 void InvokeCompiledMethod(MethodDesc *pMD, int8_t *pArgs, int8_t *pRet)
 {
     printf("InvokeCompiledMethod %s.%s with signature %s\n", pMD->m_pszDebugClassName, pMD->m_pszDebugMethodName, pMD->m_pszDebugMethodSignature);
@@ -564,7 +691,6 @@ void InvokeCompiledMethod(MethodDesc *pMD, int8_t *pArgs, int8_t *pRet)
     ArgIterator argIt(&sig);
     int ofs = 0;
     DWORD arg = 0;
-    const int NO_RANGE = -1;
     int r1 = argIt.HasThis() ? 0 :  NO_RANGE; // The "this" argument register is not enumerated by the arg iterator.
     int r2 = 0;
     int x1 = NO_RANGE; // indicates that there is no active range of FP registers
@@ -579,134 +705,54 @@ void InvokeCompiledMethod(MethodDesc *pMD, int8_t *pArgs, int8_t *pRet)
         argIt.GetArgLoc(ofs, &argLocDesc);
 
 #ifdef UNIX_AMD64_ABI        
-        // TODO: handle arguments of struct types passed in registers when the argLocDesc contains multiple kinds of locations (floats, integers, stack)
         if (argIt.GetArgLocDescForStructInRegs() != NULL)
         {
-            // The order of registers depend on the layout of the struct.
-            assert(!"Structs in registers args are not supported yet");
+            TypeHandle argTypeHandle;
+            CorElementType corType = argIt.GetArgType(&argTypeHandle);
+            _ASSERTE(corType == ELEMENT_TYPE_VALUETYPE);
+
+            MethodTable *pMT = argTypeHandle.AsMethodTable();
+            EEClass *pEEClass = pMT->GetClass();
+            int numEightBytes = pEEClass->GetNumberEightBytes();
+            for (int i = 0; i < numEightBytes; i++)
+            {
+                ArgLocDesc argLocDescEightByte = {};
+                SystemVClassificationType eightByteType = pEEClass->GetEightByteClassification(i);
+                if (eightByteType == SystemVClassificationTypeInteger)
+                {
+                    if (argLocDesc.m_cGenReg != 0)
+                    {
+                        argLocDescEightByte.m_cGenReg = 1;
+                        argLocDescEightByte.m_idxGenReg = argLocDesc.m_idxGenReg++;
+                    }
+                    else
+                    {
+                        argLocDescEightByte.m_byteStackSize = 8;
+                        argLocDescEightByte.m_byteStackIndex = argLocDesc.m_byteStackIndex;
+                        argLocDesc.m_byteStackIndex += 8;
+                    }
+                }
+                else if (eightByteType == SystemVClassificationTypeSSE)
+                {
+                    if (argLocDesc.m_cFloatReg != 0)
+                    {
+                        argLocDescEightByte.m_cFloatReg = 1;
+                        argLocDescEightByte.m_idxFloatReg = argLocDesc.m_idxFloatReg++;
+                    }
+                    else
+                    {
+                        argLocDescEightByte.m_byteStackSize = 8;
+                        argLocDescEightByte.m_byteStackIndex = argLocDesc.m_byteStackIndex;
+                        argLocDesc.m_byteStackIndex += 8;
+                    }
+                }
+                ProcessArgument(argIt, argLocDescEightByte, r1, r2, x1, x2, s1, s2, routines, routineIndex, totalStackSize);
+            }
         }
+        else
 #endif // UNIX_AMD64_ABI
-
-        // Check if we have a range of registers or stack arguments that we need to store because the current argument
-        // terminates it.
-        if ((argLocDesc.m_cGenReg == 0) && (r1 != NO_RANGE))
         {
-            // No GP register is used to pass the current argument, but we already have a range of GP registers,
-            // store the routine for the range
-            printf("r%d..%d\n", r1, r2);
-            routines[routineIndex++] = GetGPRegRangeLoadRoutine(r1, r2);
-            r1 = NO_RANGE;
-        }
-        else if (((argLocDesc.m_cFloatReg == 0)) && (x1 != NO_RANGE))
-        {
-            // No floating point register is used to pass the current argument, but we already have a range of FP registers,
-            // store the routine for the range
-            printf("x%d..%d\n", x1, x2);
-            routines[routineIndex++] = GetFPRegRangeLoadRoutine(x1, x2);
-            x1 = NO_RANGE;
-        }
-        else if ((argLocDesc.m_byteStackSize == 0) && (s1 != NO_RANGE))
-        {
-            // No stack argument is used to pass the current argument, but we already have a range of stack arguments,
-            // store the routine for the range
-            printf("stack index %d, size %d\n", s1, s2 - s1 + 1);
-            totalStackSize += s2 - s1 + 1;
-            routines[routineIndex++] = (PCODE)Load_Stack;
-            routines[routineIndex++] = ((int64_t)(s2 - s1 + 1) << 32) | s1;
-            s1 = NO_RANGE;
-        }
-
-        if (argLocDesc.m_cGenReg != 0)
-        {                       
-#ifndef UNIX_AMD64_ABI
-            if (argIt.IsArgPassedByRef())
-            {
-                if (r1 != NO_RANGE)
-                {
-                    // The args passed by reference use a separate routine, so we need to flush the existing range
-                    // of general purpose registers if we have one.
-                    printf("r%d..%d\n", r1, r2);
-                    routines[routineIndex++] = GetGPRegRangeLoadRoutine(r1, r2);
-                    r1 = NO_RANGE;
-                }
-                // Arguments passed by reference are handled separately, because the interpreter stores the value types on its stack by value.
-                // So the argument loading routine needs to load the address of the argument. To avoid explosion of number of the routines,
-                // we always process single argument passed by reference using single routine.
-                printf("r%d value type by reference, size %d\n", argLocDesc.m_idxGenReg, argIt.GetArgSize());
-                routines[routineIndex++] = GetGPRegRefLoadRoutine(argLocDesc.m_idxGenReg);
-                routines[routineIndex++] = argIt.GetArgSize();
-            }
-            else
-#endif // UNIX_AMD64_ABI
-            {
-                if (r1 == NO_RANGE) // No active range yet
-                {
-                    // Start a new range
-                    r1 = argLocDesc.m_idxGenReg;
-                    r2 = r1 + argLocDesc.m_cGenReg - 1;
-                } 
-                else if (argLocDesc.m_idxGenReg == r2 + 1)
-                {
-                    // Extend an existing range
-                    r2 += argLocDesc.m_cGenReg;
-                }
-                else
-                {
-                    // Discontinuous range - store a routine for the current and start a new one
-                    printf("r%d..%d\n", r1, r2);
-                    routines[routineIndex++] = GetGPRegRangeLoadRoutine(r1, r2);
-                    r1 = argLocDesc.m_idxGenReg;
-                    r2 = r1 + argLocDesc.m_cGenReg - 1;
-                }
-            }
-        }
-
-        if (argLocDesc.m_cFloatReg != 0)
-        {
-            if (x1 == NO_RANGE) // No active range yet
-            {
-                // Start a new range
-                x1 = argLocDesc.m_idxFloatReg;
-                x2 = x1 + argLocDesc.m_cFloatReg - 1;
-            } 
-            else if (argLocDesc.m_idxFloatReg == x2 + 1)
-            {
-                // Extend an existing range
-                x2 += argLocDesc.m_cFloatReg;
-            }
-            else
-            {
-                // Discontinuous range - store a routine for the current and start a new one
-                printf("x%d..%d\n", x1, x2);
-                routines[routineIndex++] = GetFPRegRangeLoadRoutine(x1, x2);
-                x1 = argLocDesc.m_idxFloatReg;
-                x2 = x1 + argLocDesc.m_cFloatReg - 1;
-            }
-        }
-
-        if (argLocDesc.m_byteStackSize != 0)
-        {
-            if (s1 == NO_RANGE) // No active range yet
-            {
-                // Start a new range
-                s1 = argLocDesc.m_byteStackIndex;
-                s2 = s1 + argLocDesc.m_byteStackSize - 1;
-            } 
-            else if (argLocDesc.m_byteStackIndex == s2 + 1)
-            {
-                // Extend an existing range
-                s2 += argLocDesc.m_byteStackSize;
-            }
-            else
-            {
-                // Discontinuous range - store a routine for the current and start a new one
-                printf("stack index %d, size %d\n", s1, s2 - s1 + 1);
-                totalStackSize += s2 - s1 + 1;
-                routines[routineIndex++] = (PCODE)Load_Stack;
-                routines[routineIndex++] = ((int64_t)(s2 - s1 + 1) << 32) | s1;
-                s1 = argLocDesc.m_byteStackIndex;
-                s2 = s1 + argLocDesc.m_byteStackSize - 1;
-            }
+            ProcessArgument(argIt, argLocDesc, r1, r2, x1, x2, s1, s2, routines, routineIndex, totalStackSize);
         }
     }
 

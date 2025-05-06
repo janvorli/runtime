@@ -273,14 +273,14 @@ public class InterpreterTest
         Console.WriteLine(s2.a);
         Console.WriteLine(s2.b);
 
-#if 0
+#if VECTOR_ALIGNMENT_WORKS
         // TODO: enable this again after fixing the alignment for the Vector2 struct and similar ones
-        // win_x64 - interpreter stack alignment issue problem, otherwise would work
-        // linux_x64 ok
-        // Vector2 v = TestCallingConvention3();
-        // Console.WriteLine("TestCallingConvention: v = ");
-        // Console.WriteLine(v[0]);
-        // Console.WriteLine(v[1]);
+        win_x64 - interpreter stack alignment issue problem, otherwise would work
+        linux_x64 ok
+        Vector2 v = TestCallingConvention3();
+        Console.WriteLine("TestCallingConvention: v = ");
+        Console.WriteLine(v[0]);
+        Console.WriteLine(v[1]);
 #endif
         // win_x64 ok
         // linux_x64 ok
