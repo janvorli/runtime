@@ -717,15 +717,12 @@ LEAF_END Load_XMM3, _TEXT
 NESTED_ENTRY CallJittedMethodRetVoid, _TEXT
     push_vol_reg rbp
     mov  rbp, rsp
-    alloc_stack 10h
-    save_reg_postrsp r10, 0 
 END_PROLOGUE
     add r8, 20h ; argument save area + alignment
     sub rsp, r8 ; total stack space
     mov r11, rcx ; The routines list
     mov r10, rdx ; interpreter stack args
     call qword ptr [r11]
-    mov r10, [rsp]
     mov rsp, rbp
     pop rbp
     ret
@@ -734,8 +731,6 @@ NESTED_END CallJittedMethodRetVoid, _TEXT
 NESTED_ENTRY CallJittedMethodRetBuff, _TEXT
     push_vol_reg rbp
     mov  rbp, rsp
-    alloc_stack 10h
-    save_reg_postrsp r10, 0 WHY save R10? it is not volatile!
 END_PROLOGUE
     add r9, 20h ; argument save area + alignment
     sub rsp, r9 ; total stack space
@@ -743,7 +738,6 @@ END_PROLOGUE
     mov r10, rdx ; interpreter stack args
     mov rcx, r8  ; return buffer
     call qword ptr [r11]
-    mov r10, [rsp]
     mov rsp, rbp
     pop rbp
     ret

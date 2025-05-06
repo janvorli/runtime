@@ -88,34 +88,41 @@ public struct TestStruct4ff
     public float d;
 }
 
+
+public struct TestStruct3d
+{
+    public double a;
+    public double b;
+    public double c;
+}
+
 public class InterpreterTest
 {
-#if TEST0
-    static void TestCallingConvention(int a, float b, int c, double d, int e, double f)
+    static void TestCallingConvention0(int a, float b, int c, double d, int e, double f)
     {
-        Console.WriteLine("TestCallingConvention: a = {0}, b = {1}, c = {2}, d = {3}, e = {4}, f = {5}", a, b, c, d, e, f);
+        Console.WriteLine("TestCallingConvention0: a = {0}, b = {1}, c = {2}, d = {3}, e = {4}, f = {5}", a, b, c, d, e, f);
     }
-#elif TEST1
-    static void TestCallingConvention(TestStruct s)
+
+    static void TestCallingConvention1(TestStruct s)
     {
-        Console.WriteLine("TestCallingConvention: a = {0}, b = {1}, c = {2}, d = {3}, e = {4}, f = {5}", s.a, s.b, s.c, s.d, s.e, s.f);
+        Console.WriteLine("TestCallingConvention1: a = {0}, b = {1}, c = {2}, d = {3}, e = {4}, f = {5}", s.a, s.b, s.c, s.d, s.e, s.f);
     }
-#elif TEST2
-    static TestStruct2 TestCallingConvention()
+
+    static TestStruct2 TestCallingConvention2()
     {
         TestStruct2 s;
         s.a = 1;
         s.b = 2;
         return s;
     }
-#elif TEST3
-    static Vector2 TestCallingConvention()
+
+    static Vector2 TestCallingConvention3()
     {
         Vector2 v = new Vector2(1, 2);
         return v;
     }
-#elif TEST4
-    static TestStruct TestCallingConvention()
+
+    static TestStruct TestCallingConvention4()
     {
         TestStruct s;
         s.a = 1;
@@ -126,8 +133,8 @@ public class InterpreterTest
         s.f = 6;
         return s;
     }
-#elif TEST5
-    static TestStruct4ii TestCallingConvention()
+
+    static TestStruct4ii TestCallingConvention5()
     {
         TestStruct4ii s;
         s.a = 1;
@@ -136,8 +143,8 @@ public class InterpreterTest
         s.d = 4;
         return s;
     }
-#elif TEST6
-    static TestStruct4if TestCallingConvention()
+
+    static TestStruct4if TestCallingConvention6()
     {
         TestStruct4if s;
         s.a = 1;
@@ -146,8 +153,8 @@ public class InterpreterTest
         s.d = 4.0f;
         return s;
     }
-#elif TEST7
-    static TestStruct4fi TestCallingConvention()
+
+    static TestStruct4fi TestCallingConvention7()
     {
         TestStruct4fi s;
         s.a = 1.0f;
@@ -156,8 +163,8 @@ public class InterpreterTest
         s.d = 4;
         return s;
     }
-#elif TEST8
-    static TestStruct4ff TestCallingConvention()
+
+    static TestStruct4ff TestCallingConvention8()
     {
         TestStruct4ff s;
         s.a = 1.0f;
@@ -166,20 +173,34 @@ public class InterpreterTest
         s.d = 4.0f;
         return s;
     }
-#elif TEST9
-    static void TestCallingConvention(TestStruct4fi s)
+
+    static void TestCallingConvention9(TestStruct4fi s)
     {
-        Console.WriteLine("TestCallingConvention: a = {0}, b = {1}, c = {2}, d = {3}", s.a, s.b, s.c, s.d);
+        Console.WriteLine("TestCallingConvention9: a = {0}, b = {1}, c = {2}, d = {3}", s.a, s.b, s.c, s.d);
     }
-#endif
+
+    static void TestCallingConvention10(TestStruct3d s)
+    {
+        Console.WriteLine("TestCallingConvention10: a = {0}, b = {1}, c = {2}", s.a, s.b, s.c);
+    }
+
+    static TestStruct3d TestCallingConvention11()
+    {
+        TestStruct3d s;
+        s.a = 1.0f;
+        s.b = 2.0f;
+        s.c = 3.0f;
+        return s;
+    }
+
 
     static int Main(string[] args)
     {
         jitField1 = 42;
         jitField2 = 43;
-#if TEST0
-        TestCallingConvention(1, 2.0f, 3, 4.0, 5, 6.0);
-#elif TEST1
+
+        TestCallingConvention0(1, 2.0f, 3, 4.0, 5, 6.0);
+
         TestStruct s = new TestStruct();
         s.a = 1;
         s.b = 2;
@@ -187,29 +208,41 @@ public class InterpreterTest
         s.d = 4;
         s.e = 5;
         s.f = 6;
-        TestCallingConvention(s);
-#elif TEST2
-        TestStruct2 s = TestCallingConvention();
-#elif TEST3
-        Vector2 v = TestCallingConvention();
-#elif TEST4
-        TestStruct s = TestCallingConvention();
-#elif TEST5
-        TestStruct4ii s = TestCallingConvention();
-#elif TEST6
-        TestStruct4if s = TestCallingConvention();
-#elif TEST7
-        TestStruct4fi s = TestCallingConvention();
-#elif TEST8
-        TestStruct4ff s = TestCallingConvention();
-#elif TEST9
-        TestStruct4fi s = new TestStruct4fi();
-        s.a = 1.0f;
-        s.b = 2.0f;
-        s.c = 3;
-        s.d = 4;
-        TestCallingConvention(s);
-#endif
+        TestCallingConvention1(s);
+
+        TestStruct2 s2 = TestCallingConvention2();
+
+        Vector2 v = TestCallingConvention3();
+
+        TestStruct s4 = TestCallingConvention4();
+
+        TestStruct4ii s5 = TestCallingConvention5();
+
+        TestStruct4if s6 = TestCallingConvention6();
+
+        TestStruct4fi s7 = TestCallingConvention7();
+
+        TestStruct4ff s8 = TestCallingConvention8();
+
+        TestStruct4fi s9 = new TestStruct4fi();
+        s9.a = 1.0f;
+        s9.b = 2.0f;
+        s9.c = 3;
+        s9.d = 4;
+        TestCallingConvention9(s9);
+
+        TestStruct3d s10 = new TestStruct3d();
+        s10.a = 1.0f;
+        s10.b = 2.0f;
+        s10.c = 3.0f;
+        TestCallingConvention10(s10);
+
+        TestStruct3d s11 = TestCallingConvention11();
+        Console.WriteLine("TestCallingConvention11: s = ");
+        Console.WriteLine(s11.a);
+        Console.WriteLine(s11.b);
+        Console.WriteLine(s11.c);
+
         RunInterpreterTests();
         return 100;
     }
@@ -217,11 +250,11 @@ public class InterpreterTest
     [MethodImpl(MethodImplOptions.NoInlining)]
     public static void RunInterpreterTests()
     {
-#if TEST0
+
         // win_x64 ok
         // linux_x64 ok
-        TestCallingConvention(1, 2.0f, 3, 4.0, 5, 6.0);
-#elif TEST1
+        TestCallingConvention0(1, 2.0f, 3, 4.0, 5, 6.0);
+
         // win_x64 ok
         // linux_x64 ok
         TestStruct s = new TestStruct();
@@ -231,72 +264,85 @@ public class InterpreterTest
         s.d = 4;
         s.e = 5;
         s.f = 6;
-        TestCallingConvention(s);
-#elif TEST2
+        TestCallingConvention1(s);
+
         // win_x64 ok
         // linux_x64 ok
-        TestStruct2 s = TestCallingConvention();
+        TestStruct2 s2 = TestCallingConvention2();
         Console.WriteLine("TestCallingConvention: s = ");
-        Console.WriteLine(s.a);
-        Console.WriteLine(s.b);
-#elif TEST3
+        Console.WriteLine(s2.a);
+        Console.WriteLine(s2.b);
+
+#if 0
+        // TODO: enable this again after fixing the alignment for the Vector2 struct and similar ones
         // win_x64 - interpreter stack alignment issue problem, otherwise would work
         // linux_x64 ok
-        Vector2 v = TestCallingConvention();
-        Console.WriteLine("TestCallingConvention: v = ");
-        Console.WriteLine(v[0]);
-        Console.WriteLine(v[1]);
-#elif TEST4
+        // Vector2 v = TestCallingConvention3();
+        // Console.WriteLine("TestCallingConvention: v = ");
+        // Console.WriteLine(v[0]);
+        // Console.WriteLine(v[1]);
+#endif
         // win_x64 ok
         // linux_x64 ok
-        TestStruct s = TestCallingConvention();
+        TestStruct s4 = TestCallingConvention4();
         Console.WriteLine("TestCallingConvention: s = ");
-        Console.WriteLine(s.a);
-        Console.WriteLine(s.b);
-        Console.WriteLine(s.c);
-        Console.WriteLine(s.d);
-        Console.WriteLine(s.e);
-        Console.WriteLine(s.f);
-#elif TEST5
+        Console.WriteLine(s4.a);
+        Console.WriteLine(s4.b);
+        Console.WriteLine(s4.c);
+        Console.WriteLine(s4.d);
+        Console.WriteLine(s4.e);
+        Console.WriteLine(s4.f);
+
         // linux_x64 ok
-        TestStruct4ii s = TestCallingConvention();
+        TestStruct4ii s5 = TestCallingConvention5();
         Console.WriteLine("TestCallingConvention: s = ");
-        Console.WriteLine(s.a);
-        Console.WriteLine(s.b);
-        Console.WriteLine(s.c);
-        Console.WriteLine(s.d);
-#elif TEST6
+        Console.WriteLine(s5.a);
+        Console.WriteLine(s5.b);
+        Console.WriteLine(s5.c);
+        Console.WriteLine(s5.d);
+
         // linux_x64 ok
-        TestStruct4if s = TestCallingConvention();
+        TestStruct4if s6 = TestCallingConvention6();
         Console.WriteLine("TestCallingConvention: s = ");
-        Console.WriteLine(s.a);
-        Console.WriteLine(s.b);
-        Console.WriteLine(s.c);
-        Console.WriteLine(s.d);
-#elif TEST7
+        Console.WriteLine(s6.a);
+        Console.WriteLine(s6.b);
+        Console.WriteLine(s6.c);
+        Console.WriteLine(s6.d);
+
         // linux_x64 ok
-        TestStruct4fi s = TestCallingConvention();
+        TestStruct4fi s7 = TestCallingConvention7();
         Console.WriteLine("TestCallingConvention: s = ");
-        Console.WriteLine(s.a);
-        Console.WriteLine(s.b);
-        Console.WriteLine(s.c);
-        Console.WriteLine(s.d);
-#elif TEST8
+        Console.WriteLine(s7.a);
+        Console.WriteLine(s7.b);
+        Console.WriteLine(s7.c);
+        Console.WriteLine(s7.d);
+
         // linux_x64 ok
-        TestStruct4ff s = TestCallingConvention();
+        TestStruct4ff s8 = TestCallingConvention8();
         Console.WriteLine("TestCallingConvention: s = ");
-        Console.WriteLine(s.a);
-        Console.WriteLine(s.b);
-        Console.WriteLine(s.c);
-        Console.WriteLine(s.d);
-#elif TEST9
-        TestStruct4fi s = new TestStruct4fi();
-        s.a = 1.0f;
-        s.b = 2.0f;
-        s.c = 3;
-        s.d = 4;
-        TestCallingConvention(s);
-#endif
+        Console.WriteLine(s8.a);
+        Console.WriteLine(s8.b);
+        Console.WriteLine(s8.c);
+        Console.WriteLine(s8.d);
+
+        TestStruct4fi s9 = new TestStruct4fi();
+        s9.a = 1.0f;
+        s9.b = 2.0f;
+        s9.c = 3;
+        s9.d = 4;
+        TestCallingConvention9(s9);
+
+        TestStruct3d s10 = new TestStruct3d();
+        s10.a = 1.0f;
+        s10.b = 2.0f;
+        s10.c = 3.0f;
+        TestCallingConvention10(s10);
+
+        TestStruct3d s11 = TestCallingConvention11();
+        Console.WriteLine("TestCallingConvention: s = ");
+        Console.WriteLine(s11.a);
+        Console.WriteLine(s11.b);
+        Console.WriteLine(s11.c);
 
         //      Console.WriteLine("Run interp tests");
         if (SumN(50) != 1275)

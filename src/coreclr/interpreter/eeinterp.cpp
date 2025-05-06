@@ -5,7 +5,6 @@
 
 #include "interpreter.h"
 #include "eeinterp.h"
-#include "pal.h"
 
 #include <string.h>
 #include <stdio.h>
