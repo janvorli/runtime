@@ -1360,7 +1360,7 @@ LEAF_END Load_D0_D1_D2_D3_D4_D5_D6_D7
 // X2 - stack arguments size (properly aligned)
 NESTED_ENTRY CallJittedMethodRetVoid, _TEXT, NoHandler
     PROLOG_SAVE_REG_PAIR_INDEXED fp, lr, -16
-    sub sp, sp, x2
+    sub sp, sp, x3
     mov x10, x0
     mov x9, x1
     ldr x11, [x10], #8

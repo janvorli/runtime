@@ -242,6 +242,30 @@ HRESULT MethodDesc::SetMethodDescVersionState(PTR_MethodDescVersioningState stat
     return S_OK;
 }
 
+HRESULT MethodDesc::SetCallStubHeader(CallStubHeader *pHeader)
+{
+    WRAPPER_NO_CONTRACT;
+
+    HRESULT hr;
+    IfFailRet(EnsureCodeDataExists(NULL));
+
+    _ASSERTE(m_codeData != NULL);
+    if (InterlockedCompareExchangeT(&m_codeData->CallStubHeader, pHeader, NULL) != NULL)
+        return S_FALSE;
+
+    return S_OK;
+}
+
+CallStubHeader *MethodDesc::GetCallStubHeader()
+{
+    WRAPPER_NO_CONTRACT;
+
+    PTR_MethodDescCodeData codeData = VolatileLoadWithoutBarrier(&m_codeData);
+    if (codeData == NULL)
+        return NULL;
+    return VolatileLoadWithoutBarrier(&codeData->CallStubHeader);
+}
+
 #endif //!DACCESS_COMPILE
 
 PTR_MethodDescVersioningState MethodDesc::GetMethodDescVersionState()

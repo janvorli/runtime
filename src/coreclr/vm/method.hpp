@@ -22,6 +22,7 @@
 #include <stddef.h>
 #include "eeconfig.h"
 #include "precode.h"
+#include "callstubgenerator.h"
 
 class Stub;
 class FCallMethodDesc;
@@ -163,6 +164,7 @@ struct MethodDescCodeData final
 {
     PTR_MethodDescVersioningState VersioningState;
     PCODE TemporaryEntryPoint;
+    CallStubHeader *CallStubHeader;
 };
 using PTR_MethodDescCodeData = DPTR(MethodDescCodeData);
 
@@ -1713,6 +1715,8 @@ public:
     HRESULT EnsureCodeDataExists(AllocMemTracker *pamTracker);
 
     HRESULT SetMethodDescVersionState(PTR_MethodDescVersioningState state);
+    HRESULT SetCallStubHeader(CallStubHeader *pHeader);
+    CallStubHeader *GetCallStubHeader();
 #endif //!DACCESS_COMPILE
 
     PTR_MethodDescVersioningState GetMethodDescVersionState();

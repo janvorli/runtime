@@ -302,6 +302,7 @@ set(VM_SOURCES_WKS
     callconvbuilder.cpp
     callhelpers.cpp
     callsiteinspect.cpp
+    callstubgenerator.cpp
     clrconfignative.cpp
     clrex.cpp
     clrvarargs.cpp
@@ -443,6 +444,7 @@ set(VM_HEADERS_WKS
     interoputil.h
     interoputil.inl
     interpexec.h
+    callstubgenerator.h
     invokeutil.h
     managedmdimport.hpp
     marshalnative.h

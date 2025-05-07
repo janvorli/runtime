@@ -966,7 +966,7 @@ NESTED_ENTRY CallJittedMethodRetVoid, _TEXT, NoHandler
     alloc_stack 0x10
     save_reg_postrsp r10, 0 
 END_PROLOGUE
-    sub rsp, rdx // total stack space
+    sub rsp, rcx // total stack space
     mov r11, rdi // The routines list
     mov r10, rsi // interpreter stack args
     call qword ptr [r11]

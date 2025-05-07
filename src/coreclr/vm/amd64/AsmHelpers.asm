@@ -718,8 +718,8 @@ NESTED_ENTRY CallJittedMethodRetVoid, _TEXT
     push_vol_reg rbp
     mov  rbp, rsp
 END_PROLOGUE
-    add r8, 20h ; argument save area + alignment
-    sub rsp, r8 ; total stack space
+    add r9, 20h ; argument save area + alignment
+    sub rsp, r9 ; total stack space
     mov r11, rcx ; The routines list
     mov r10, rdx ; interpreter stack args
     call qword ptr [r11]
