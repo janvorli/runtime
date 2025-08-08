@@ -54,7 +54,16 @@
 //-----------------------------------------------------------------------------
 
 
+static PCODE GetNativeCodeFromMethodDesc(MethodDesc *pMD)
+{
+    PCODE functionAddress = (PCODE)dac_cast<TADDR>(pMD->GetInterpreterCode());
+    if (functionAddress == (PCODE)NULL)
+    {
+        functionAddress = pMD->GetNativeCode();
+    }
 
+    return functionAddress;
+}
 
 // Global allocator for DD. Access is protected under the g_dacMutex lock.
 IDacDbiInterface::IAllocator * g_pAllocator = NULL;
@@ -1127,7 +1136,7 @@ void DacDbiInterfaceImpl::GetMethodRegionInfo(MethodDesc *             pMethodDe
     CONTRACTL_END;
 
     IJitManager::MethodRegionInfo methodRegionInfo = {(TADDR)NULL, 0, (TADDR)NULL, 0};
-    PCODE functionAddress = pMethodDesc->GetNativeCode();
+    PCODE functionAddress = GetNativeCodeFromMethodDesc(pMethodDesc);
 
     // get the start address of the hot region and initialize the jit manager
     pCodeInfo->m_rgCodeRegions[kHot].pAddress = CORDB_ADDRESS(PCODEToPINSTR(functionAddress));

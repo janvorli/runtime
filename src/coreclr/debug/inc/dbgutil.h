@@ -90,3 +90,6 @@ HRESULT ReadFromDataTarget(ICorDebugDataTarget* pDataTarget,
     ULONG64 addr,
     BYTE* pBuffer,
     ULONG32 bytesToRead);
+
+class MethodDesc;
+ULONG64 GetNativeCodeFromMethodDesc(MethodDesc *pMD);

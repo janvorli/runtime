@@ -4331,6 +4331,17 @@ ClrDataMethodInstance::EndEnumExtents(
     return status;
 }
 
+static PCODE GetNativeCodeFromMethodDesc(MethodDesc *pMD)
+{
+    PCODE functionAddress = (PCODE)dac_cast<TADDR>(pMD->GetInterpreterCode());
+    if (functionAddress == (PCODE)NULL)
+    {
+        functionAddress = pMD->GetNativeCode();
+    }
+
+    return functionAddress;
+}
+
 HRESULT STDMETHODCALLTYPE
 ClrDataMethodInstance::GetRepresentativeEntryAddress(
     /* [out] */ CLRDATA_ADDRESS* addr)
@@ -4343,7 +4354,7 @@ ClrDataMethodInstance::GetRepresentativeEntryAddress(
     {
         if (m_methodDesc->HasNativeCode())
         {
-            *addr = TO_CDADDR(m_methodDesc->GetNativeCode());
+            *addr = TO_CDADDR(GetNativeCodeFromMethodDesc(m_methodDesc));
             status = S_OK;
         }
         else

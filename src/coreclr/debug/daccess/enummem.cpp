@@ -448,6 +448,16 @@ HRESULT ClrDataAccess::DumpManagedObject(CLRDataEnumMemoryFlags flags, OBJECTREF
     return status;
 }
 
+static PCODE GetNativeCodeFromMethodDesc(MethodDesc *pMD)
+{
+    PCODE functionAddress = (PCODE)dac_cast<TADDR>(pMD->GetInterpreterCode());
+    if (functionAddress == (PCODE)NULL)
+    {
+        functionAddress = pMD->GetNativeCode();
+    }
+
+    return functionAddress;
+}
 
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //
@@ -594,7 +604,7 @@ HRESULT ClrDataAccess::DumpManagedExcepObject(CLRDataEnumMemoryFlags flags, OBJE
             // Pulls in data to translate from token to MethodDesc
             FindLoadedMethodRefOrDef(pMD->GetMethodTable()->GetModule(), pMD->GetMemberDef());
 
-            PCODE addr = pMD->GetNativeCode();
+            PCODE addr = GetNativeCodeFromMethodDesc(pMD);
             if (addr != (PCODE)NULL)
             {
                 EECodeInfo codeInfo(addr);

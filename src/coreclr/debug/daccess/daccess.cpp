@@ -90,6 +90,17 @@ EXTERN_C BOOL WINAPI DllMain2(HANDLE instance, DWORD reason, LPVOID reserved)
     return TRUE;
 }
 
+PCODE GetNativeCodeFromMethodDesc(MethodDesc *pMD)
+{
+    PCODE functionAddress = (PCODE)dac_cast<TADDR>(pMD->GetInterpreterCode());
+    if (functionAddress == (PCODE)NULL)
+    {
+        functionAddress = pMD->GetNativeCode();
+    }
+
+    return functionAddress;
+}
+
 HRESULT
 ConvertUtf8(_In_ LPCUTF8 utf8,
             ULONG32 bufLen,
@@ -5090,7 +5101,7 @@ ClrDataAccess::FollowStubStep(
             methodDesc = PTR_MethodDesc(CORDB_ADDRESS_TO_TADDR(inBuffer->u.addr));
             if (methodDesc->HasNativeCode())
             {
-                *outAddr = methodDesc->GetNativeCode();
+                *outAddr = GetNativeCodeFromMethodDesc(methodDesc);
                 *outFlags = CLRDATA_FOLLOW_STUB_EXIT;
                 return S_OK;
             }
@@ -5923,7 +5934,7 @@ ClrDataAccess::GetMethodExtents(MethodDesc* methodDesc,
         // for all types of managed code.
         //
 
-        PCODE methodStart = methodDesc->GetNativeCode();
+        PCODE methodStart = GetNativeCodeFromMethodDesc(methodDesc);
         if (!methodStart)
         {
             return E_NOINTERFACE;
@@ -5981,7 +5992,7 @@ ClrDataAccess::GetMethodVarInfo(MethodDesc* methodDesc,
     }
     else
     {
-        nativeCodeStartAddr = PCODEToPINSTR(methodDesc->GetNativeCode());
+        nativeCodeStartAddr = PCODEToPINSTR(GetNativeCodeFromMethodDesc(methodDesc));
     }
 
     DebugInfoRequest request;
@@ -6040,7 +6051,7 @@ ClrDataAccess::GetMethodNativeMap(MethodDesc* methodDesc,
     }
     else
     {
-        nativeCodeStartAddr = PCODEToPINSTR(methodDesc->GetNativeCode());
+        nativeCodeStartAddr = PCODEToPINSTR(GetNativeCodeFromMethodDesc(methodDesc));
     }
 
     DebugInfoRequest request;

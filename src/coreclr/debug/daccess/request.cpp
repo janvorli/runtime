@@ -184,6 +184,17 @@ BadMethodTable: ;
 
 }
 
+static PCODE GetNativeCodeFromMethodDesc(MethodDesc *pMD)
+{
+    PCODE functionAddress = (PCODE)dac_cast<TADDR>(pMD->GetInterpreterCode());
+    if (functionAddress == (PCODE)NULL)
+    {
+        functionAddress = pMD->GetNativeCode();
+    }
+
+    return functionAddress;
+}
+
 BOOL DacValidateMD(PTR_MethodDesc pMD)
 {
     if ((pMD == NULL) || dac_cast<TADDR>(pMD) == (TADDR)-1)
@@ -229,7 +240,7 @@ BOOL DacValidateMD(PTR_MethodDesc pMD)
 
         if (retval && pMD->HasNativeCode() && !pMD->IsFCall())
         {
-            PCODE jitCodeAddr = pMD->GetNativeCode();
+            PCODE jitCodeAddr = GetNativeCodeFromMethodDesc(pMD);
 
             MethodDesc *pMDCheck = ExecutionManager::GetCodeMethodDesc(jitCodeAddr);
             if (pMDCheck)
