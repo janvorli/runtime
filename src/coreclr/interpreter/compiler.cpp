@@ -3473,6 +3473,15 @@ CORINFO_CLASS_HANDLE InterpCompiler::getClassFromContext(CORINFO_CONTEXT_HANDLE 
 
 int InterpCompiler::getParamArgIndex()
 {
+    if (m_pCBB->clauseType == BBClauseFilter)
+    {
+        AddIns(INTOP_LOAD_FRAMEVAR);
+        PushInterpType(InterpTypeI, NULL);
+        m_pLastNewIns->SetDVar(m_pStackPointer[-1].var);
+        EmitLdind(m_pVars[m_paramArgIndex].interpType, m_pVars[m_paramArgIndex].clsHnd, m_pVars[m_paramArgIndex].offset);
+        return m_pStackPointer[-1].var;
+    }
+
     return m_paramArgIndex;
 }
 
