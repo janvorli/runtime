@@ -116,3 +116,18 @@ void record_changed_seg (uint8_t* start, uint8_t* end,
 }
 
 #endif // !DACCESS_COMPILE
+
+bool AffinitySet::Initialize(int cpuCount)
+{
+    assert(m_bitset == nullptr);
+
+    m_bitsetDataSize = (cpuCount + BitsPerBitsetEntry - 1) / BitsPerBitsetEntry;
+    m_bitset = new (nothrow) uintptr_t[m_bitsetDataSize];
+    if (m_bitset == nullptr)
+    {
+        return false;
+    }
+
+    memset(m_bitset, 0, sizeof(uintptr_t) * m_bitsetDataSize);
+    return true;
+}
