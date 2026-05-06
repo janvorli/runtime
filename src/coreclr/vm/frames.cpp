@@ -673,7 +673,7 @@ void InlinedCallFrame::UpdateFloatingPointRegisters_Impl(const PREGDISPLAY pRD, 
     if (IsInInterpreter())
     {
         InterpreterFrame *pInterpreterFrame = (InterpreterFrame *)m_Next;
-        pInterpreterFrame->UpdateFloatingPointRegisters(pRD, pInterpreterFrame->GetInterpExecMethodSP());
+        pInterpreterFrame->UpdateFloatingPointRegisters(pRD, 0 /* targetSP */); // targetSP is not used for interpreter frames
         pInterpreterFrame->SetContextToInterpMethodContextFrame(pRD->pCurrentContext);
         return;
     }

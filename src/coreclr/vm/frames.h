@@ -2255,16 +2255,16 @@ public:
 #endif // HOST_AMD64 && HOST_WINDOWS
 
 #ifndef TARGET_WASM
-    void SetInterpExecMethodSP(TADDR sp)
+    void SetInterpExecMethodFP(TADDR fp)
     {
         LIMITED_METHOD_CONTRACT;
-        m_SP = sp;
+        m_FP = fp;
     }
 
-    TADDR GetInterpExecMethodSP()
+    TADDR GetInterpExecMethodFP()
     {
         LIMITED_METHOD_CONTRACT;
-        return m_SP;
+        return m_FP;
     }
 #endif // TARGET_WASM
 
@@ -2313,7 +2313,7 @@ private:
     TADDR m_SSP;
 #endif // HOST_AMD64 && HOST_WINDOWS
 #ifndef TARGET_WASM
-    TADDR m_SP;
+    TADDR m_FP;
 #endif // TARGET_WASM
     PTR_Object m_continuation;
 };

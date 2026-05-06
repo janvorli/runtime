@@ -485,6 +485,7 @@ inline TADDR GetSecondArgReg(CONTEXT *context)
 }
 
 extern "C" void* GetCurrentSP();
+extern "C" void* GetRBP();
 
 // Emits:
 //  mov r10, pv1

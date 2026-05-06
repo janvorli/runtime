@@ -194,13 +194,13 @@ static size_t CreateDispatchTokenForMethod(MethodDesc* pMD)
     }
 }
 
-#ifdef TARGET_WASM
-// Unused on WASM
+#ifndef HOST_WINDOWS
+// Unused on non-Windows platforms
 #define SAVE_THE_LOWEST_SP do {} while (0)
 #else
 // Save the lowest SP in the current method so that we can identify it by that during stackwalk
-#define SAVE_THE_LOWEST_SP pInterpreterFrame->SetInterpExecMethodSP((TADDR)GetCurrentSP())
-#endif // !TARGET_WASM
+#define SAVE_THE_LOWEST_SP pInterpreterFrame->SetInterpExecMethodFP((TADDR)GetCurrentSP())
+#endif // !HOST_WINDOWS
 
 // Call invoker helpers provided by platform.
 void InvokeManagedMethod(ManagedMethodParam *pParam);
@@ -1168,7 +1168,18 @@ static InterpByteCodeStart* PrepareInterpreterCode(MethodDesc* targetMethod, Int
     return targetIp;
 }
 
-void InterpExecMethod(InterpreterFrame *pInterpreterFrame, InterpMethodContextFrame *pFrame, InterpThreadContext *pThreadContext, ExceptionClauseArgs *pExceptionClauseArgs)
+
+#ifndef TARGET_WASM
+#ifdef TARGET_UNIX
+extern "C" void* __builtin_frame_address(unsigned int level);
+#define GetCurrentFP() __builtin_frame_address(0)
+#endif // TARGET_UNIX
+#endif // !TARGET_WASM
+
+#ifdef TARGET_UNIX
+__attribute__((target("no-omit-frame-pointer")))
+#endif
+NOINLINE void InterpExecMethod(InterpreterFrame *pInterpreterFrame, InterpMethodContextFrame *pFrame, InterpThreadContext *pThreadContext, ExceptionClauseArgs *pExceptionClauseArgs)
 {
     CONTRACTL
     {
@@ -1180,6 +1191,10 @@ void InterpExecMethod(InterpreterFrame *pInterpreterFrame, InterpMethodContextFr
 #if defined(HOST_AMD64) && defined(HOST_WINDOWS)
     pInterpreterFrame->SetInterpExecMethodSSP((TADDR)_rdsspq());
 #endif // HOST_AMD64 && HOST_WINDOWS
+
+#if !defined(TARGET_WASM) && !defined(HOST_WINDOWS)
+    pInterpreterFrame->SetInterpExecMethodFP((TADDR)GetCurrentFP());
+#endif // !TARGET_WASM && !HOST_WINDOWS
 
     const int32_t *ip;
     int8_t *stack;

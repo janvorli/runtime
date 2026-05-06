@@ -1916,7 +1916,7 @@ void InterpreterCodeManager::ResumeAfterCatch(CONTEXT *pContext, size_t targetSS
 
     ClrCaptureContext(pContext);
 
-    TADDR targetSP = pInterpreterFrame->GetInterpExecMethodSP();
+    TADDR targetFP = pInterpreterFrame->GetInterpExecMethodFP();
 
     // We are resuming in interpreter frame. So we need to skip all native, JIT and AOT generated frames until we reach
     // the resumeSP
@@ -1936,7 +1936,11 @@ void InterpreterCodeManager::ResumeAfterCatch(CONTEXT *pContext, size_t targetSS
 #endif
         }
     }
-    while (GetSP(pContext) != targetSP);
+#ifdef TARGET_WINDOWS
+    while (GetSP(pContext) != targetFP);
+#else
+    while (GetFP(pContext) != targetFP);
+#endif
 
 #if defined(HOST_AMD64) && defined(HOST_WINDOWS)
     targetSSP = pInterpreterFrame->GetInterpExecMethodSSP();
