@@ -2768,6 +2768,8 @@ void gc_heap::process_remaining_regions (int current_plan_gen_num, generation* c
     {
         size_t gen1_pins_left = 0;
         size_t total_space_to_skip = 0;
+        size_t total_space_at_last_pin = 0;
+        bool is_first_region = true;
 
         while (current_region)
         {
@@ -2778,8 +2780,26 @@ void gc_heap::process_remaining_regions (int current_plan_gen_num, generation* c
 
                 if (!heap_segment_swept_in_plan (current_region))
                 {
-                    gen1_pins_left += heap_segment_pinned_survived (current_region);
-                    total_space_to_skip += get_region_size (current_region);
+                    uint8_t* region_start;
+                    if (is_first_region)
+                    {
+                        region_start = generation_allocation_pointer (consing_gen);
+                        is_first_region = false;
+                    }
+                    else
+                    {
+                        region_start = heap_segment_mem (current_region);
+                    }
+                    size_t region_space = heap_segment_allocated (current_region) - region_start;
+
+                    int pinned_surv = heap_segment_pinned_survived (current_region);
+                    gen1_pins_left += pinned_surv;
+                    total_space_to_skip += region_space;
+
+                    if (pinned_surv > 0)
+                    {
+                        total_space_at_last_pin = total_space_to_skip;
+                    }
                 }
             }
             else
@@ -2789,6 +2809,8 @@ void gc_heap::process_remaining_regions (int current_plan_gen_num, generation* c
 
             current_region = heap_segment_next (current_region);
         }
+
+        total_space_to_skip = total_space_at_last_pin;
 
         float pin_frag_ratio = 0.0;
         float pin_surv_ratio = 0.0;
