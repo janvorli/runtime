@@ -147,6 +147,7 @@ else()
     ${GC_DIR}/unix/numasupport.cpp
     ${GC_DIR}/unix/events.cpp
     ${GC_DIR}/unix/cgroup.cpp
+    ${CLR_SRC_NATIVE_DIR}/minipal/cpucount.c
   )
 
   list(APPEND FULL_RUNTIME_SOURCES

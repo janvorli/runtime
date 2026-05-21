@@ -152,6 +152,7 @@ set(SOURCES
   locale/unicode.cpp
   locale/unicodedata.cpp
   ${CLR_SRC_NATIVE_DIR}/minipal/utf8.c
+  ${CLR_SRC_NATIVE_DIR}/minipal/cpucount.c
   map/common.cpp
   map/map.cpp
   map/virtual.cpp

@@ -106,7 +106,7 @@ convert_to_absolute_path(GC_SOURCES ${GC_SOURCES})
 
 # clrgcexp is build with standalone+regions
 if (CLR_CMAKE_TARGET_ARCH_ARM64 OR CLR_CMAKE_TARGET_ARCH_AMD64)
-  add_library_clr(clrgcexp SHARED ${GC_SOURCES})
+  add_library_clr(clrgcexp SHARED ${GC_SOURCES} ${CLR_SRC_NATIVE_DIR}/minipal/cpucount.c)
   add_dependencies(clrgcexp eventing_headers)
   target_link_libraries(clrgcexp PRIVATE ${GC_LINK_LIBRARIES})
   target_compile_definitions(clrgcexp PRIVATE -DUSE_REGIONS)
@@ -114,7 +114,7 @@ if (CLR_CMAKE_TARGET_ARCH_ARM64 OR CLR_CMAKE_TARGET_ARCH_AMD64)
 endif (CLR_CMAKE_TARGET_ARCH_ARM64 OR CLR_CMAKE_TARGET_ARCH_AMD64)
 
 # clrgc is build with standalone+segments
-add_library_clr(clrgc SHARED ${GC_SOURCES})
+add_library_clr(clrgc SHARED ${GC_SOURCES} ${CLR_SRC_NATIVE_DIR}/minipal/cpucount.c)
 add_dependencies(clrgc eventing_headers)
 target_link_libraries(clrgc PRIVATE ${GC_LINK_LIBRARIES})
 install_clr(TARGETS clrgc DESTINATIONS . COMPONENT runtime)

@@ -37,6 +37,8 @@ SET_DEFAULT_DEBUG_CHANNEL(THREAD); // some headers have code with asserts, so do
 #include "pal/utils.h"
 #include "pal/virtual.h"
 
+#include <minipal/cpucount.h>
+
 #if defined(__NetBSD__) && !HAVE_PTHREAD_GETCPUCLOCKID
 #include <sys/cdefs.h>
 #include <sys/param.h>
@@ -1662,10 +1664,10 @@ CPalThread::ThreadEntry(
     // - https://forum.snapcraft.io/t/requesting-autoconnect-for-interfaces-in-pigmeat-process-control-home/17987/13
 
     {
-        int configuredCpuCount = sysconf(_SC_NPROCESSORS_CONF);
+        int configuredCpuCount = minipal_get_cpu_max_possible_count();
         if (configuredCpuCount == -1)
         {
-            // In the unlikely event that sysconf(_SC_NPROCESSORS_CONF) fails, just assume a reasonable default maximum number of CPUs to avoid failing thread creation.
+            // In the unlikely event that minipal_get_cpu_max_possible_count() fails, just assume a reasonable default maximum number of CPUs to avoid failing thread creation.
             configuredCpuCount = CPU_SETSIZE;
         }
 
