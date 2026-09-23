@@ -3055,15 +3055,15 @@ public:
             if((val & ~3) != (size_t) ref || (val & 3) != 1)
                 return(true);
             // If the pointer lives in the GC heap, than it is protected, and thus valid.
-            if (g_heap_type == GC_HEAP_CUSTOM)
-            {
-                if (GCHeapUtilities::GetFastGCFunctions().is_in_gc_heap(GCHeapUtilities::GetGCHeap(), (Object**)val))
-                    return true;
-            }
-            else
+            if (g_heap_type != GC_HEAP_CUSTOM)
             {
                 if (dac_cast<TADDR>(g_lowest_address) <= val && val < dac_cast<TADDR>(g_highest_address))
                     return(true);
+            }
+            else
+            {
+                if (GCHeapUtilities::GetFastGCFunctions().is_in_gc_heap(GCHeapUtilities::GetGCHeap(), (Object**)val))
+                    return true;
             }
             // Same for frozen segments
             if (GCHeapUtilities::GetGCHeap()->IsInFrozenSegment(*(Object**)ref))
@@ -5407,11 +5407,11 @@ inline BOOL IsWriteBarrierCopyEnabled()
 #ifdef DACCESS_COMPILE
     return FALSE;
 #else // DACCESS_COMPILE
-	if (g_heap_type == GC_HEAP_CUSTOM)
+	if (g_heap_type != GC_HEAP_CUSTOM)
 	{
-		return FALSE;
+        return g_pConfig->IsWriteBarrierCopyEnabled();
 	}
-    return g_pConfig->IsWriteBarrierCopyEnabled();
+    return FALSE;
 #endif // DACCESS_COMPILE
 }
 

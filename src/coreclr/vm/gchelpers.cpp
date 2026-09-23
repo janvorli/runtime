@@ -454,13 +454,13 @@ inline void LogAlloc(Object* object)
 template <class TObj>
 void PublishObjectAndNotify(TObj* &orObject, GC_ALLOC_FLAGS flags)
 {
-	if (g_heap_type == GC_HEAP_CUSTOM)
+	if (g_heap_type != GC_HEAP_CUSTOM)
 	{
-		_ASSERTE(orObject->HasEmptySyncBlockInfo() || (flags & (GC_ALLOC_LARGE_OBJECT_HEAP | GC_ALLOC_PINNED_OBJECT_HEAP)));
+    	_ASSERTE(orObject->HasEmptySyncBlockInfo());
 	}
 	else
 	{
-    	_ASSERTE(orObject->HasEmptySyncBlockInfo());
+		_ASSERTE(orObject->HasEmptySyncBlockInfo() || (flags & (GC_ALLOC_LARGE_OBJECT_HEAP | GC_ALLOC_PINNED_OBJECT_HEAP)));
 	}
 
     if (flags & GC_ALLOC_USER_OLD_HEAP)
@@ -1344,12 +1344,8 @@ void ErectWriteBarrier(OBJECTREF *dst, OBJECTREF ref)
     STATIC_CONTRACT_NOTHROW;
     STATIC_CONTRACT_GC_NOTRIGGER;
 
-    if (g_heap_type == GC_HEAP_CUSTOM)
+    if (g_heap_type != GC_HEAP_CUSTOM)
     {
-        GCHeapUtilities::GetFastGCFunctions().write_barrier((Object**)dst, OBJECTREFToObject(ref));
-    }
-	else
-	{
     	// if the dst is outside of the heap (unboxed value classes) then we
     	//      simply exit
     	if (((BYTE*)dst < g_lowest_address) || ((BYTE*)dst >= g_highest_address))
@@ -1381,6 +1377,10 @@ void ErectWriteBarrier(OBJECTREF *dst, OBJECTREF ref)
     	    }
     	}
     }
+    else
+    {
+        GCHeapUtilities::GetFastGCFunctions().write_barrier((Object**)dst, OBJECTREFToObject(ref));
+    }
 }
 #include <optdefault.h>
 
@@ -1390,42 +1390,44 @@ void ErectWriteBarrierForMT(MethodTable **dst, MethodTable *ref)
     STATIC_CONTRACT_NOTHROW;
     STATIC_CONTRACT_GC_NOTRIGGER;
 
-	if (g_heap_type == GC_HEAP_CUSTOM)
-	{
-    	// this whole thing is unnecessary in Satori
-    	UNREACHABLE();
-	}
-
-    *dst = ref;
+	if (g_heap_type != GC_HEAP_CUSTOM)
+    {
+        *dst = ref;
 
 #ifdef WRITE_BARRIER_CHECK
-    updateGCShadow((Object **)dst, (Object *)ref);     // support debugging write barrier, updateGCShadow only cares that these are pointers
+        updateGCShadow((Object **)dst, (Object *)ref);     // support debugging write barrier, updateGCShadow only cares that these are pointers
 #endif
 
-    if (ref->Collectible())
-    {
-#ifdef FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
-        if (GCHeapUtilities::SoftwareWriteWatchIsEnabled())
+        if (ref->Collectible())
         {
-            GCHeapUtilities::SoftwareWriteWatchSetDirty(dst, sizeof(*dst));
-        }
+#ifdef FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
+            if (GCHeapUtilities::SoftwareWriteWatchIsEnabled())
+            {
+                GCHeapUtilities::SoftwareWriteWatchSetDirty(dst, sizeof(*dst));
+            }
 
 #endif // FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
 
-        BYTE *refObject = *(BYTE **)ref->GetLoaderAllocatorObjectHandle();
-        if((BYTE*) refObject >= g_ephemeral_low && (BYTE*) refObject < g_ephemeral_high)
-        {
-            // VolatileLoadWithoutBarrier() is used here to prevent fetch of g_card_table from being reordered
-            // with g_lowest/highest_address check above. See comment in StompWriteBarrier.
-            BYTE* pCardByte = (BYTE*)VolatileLoadWithoutBarrier(&g_card_table) + card_byte((BYTE *)dst);
-            if( !((*pCardByte) & card_bit((BYTE *)dst)) )
+            BYTE *refObject = *(BYTE **)ref->GetLoaderAllocatorObjectHandle();
+            if((BYTE*) refObject >= g_ephemeral_low && (BYTE*) refObject < g_ephemeral_high)
             {
-                *pCardByte = 0xFF;
+                // VolatileLoadWithoutBarrier() is used here to prevent fetch of g_card_table from being reordered
+                // with g_lowest/highest_address check above. See comment in StompWriteBarrier.
+                BYTE* pCardByte = (BYTE*)VolatileLoadWithoutBarrier(&g_card_table) + card_byte((BYTE *)dst);
+                if( !((*pCardByte) & card_bit((BYTE *)dst)) )
+                {
+                    *pCardByte = 0xFF;
 
 #ifdef FEATURE_MANUALLY_MANAGED_CARD_BUNDLES
-                SetCardBundleByte((BYTE*)dst);
+                    SetCardBundleByte((BYTE*)dst);
 #endif
+                }
             }
         }
+    }
+    else
+    {
+    	// this whole thing is unnecessary in Satori
+    	UNREACHABLE();
     }
 }

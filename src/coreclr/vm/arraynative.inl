@@ -300,7 +300,31 @@ FORCEINLINE void InlinedMemmoveGCRefsHelper(void *dest, const void *src, size_t 
     _ASSERTE(IS_ALIGNED(src, sizeof(SIZE_T)));
     _ASSERTE(IS_ALIGNED(len, sizeof(SIZE_T)));
 
-    if (g_heap_type == GC_HEAP_CUSTOM)
+    if (g_heap_type != GC_HEAP_CUSTOM)
+    {
+        const bool notInHeap = ((BYTE*)dest < g_lowest_address || (BYTE*)dest >= g_highest_address);
+
+        if (!notInHeap)
+        {
+            GCHeapMemoryBarrier();
+        }
+
+        // To be able to copy forwards, the destination buffer cannot start inside the source buffer
+        if ((size_t)dest - (size_t)src >= len)
+        {
+            InlinedForwardGCSafeCopyHelper(dest, src, len);
+        }
+        else
+        {
+            InlinedBackwardGCSafeCopyHelper(dest, src, len);
+        }
+
+        if (!notInHeap)
+        {
+            InlinedSetCardsAfterBulkCopyHelper((Object**)dest, len);
+        }
+    }
+    else
     {
         if (GCHeapUtilities::GetFastGCFunctions().is_in_gc_heap(GCHeapUtilities::GetGCHeap(), (Object**)dest))
         {
@@ -320,30 +344,6 @@ FORCEINLINE void InlinedMemmoveGCRefsHelper(void *dest, const void *src, size_t 
         {
             InlinedBackwardGCSafeCopyHelper(dest, src, len);
         }
-
-        return;
-    }
-
-    const bool notInHeap = ((BYTE*)dest < g_lowest_address || (BYTE*)dest >= g_highest_address);
-
-    if (!notInHeap)
-    {
-        GCHeapMemoryBarrier();
-    }
-
-    // To be able to copy forwards, the destination buffer cannot start inside the source buffer
-    if ((size_t)dest - (size_t)src >= len)
-    {
-        InlinedForwardGCSafeCopyHelper(dest, src, len);
-    }
-    else
-    {
-        InlinedBackwardGCSafeCopyHelper(dest, src, len);
-    }
-
-    if (!notInHeap)
-    {
-        InlinedSetCardsAfterBulkCopyHelper((Object**)dest, len);
     }
 }
 

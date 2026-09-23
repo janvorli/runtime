@@ -4710,13 +4710,13 @@ do                                                                      \
                         GCHeapMemoryBarrier();
                         while (pCopyEntry->countBytes != 0)
                         {
-                            if (g_heap_type == GC_HEAP_CUSTOM)
+                            if (g_heap_type != GC_HEAP_CUSTOM)
                             {
-                                GCHeapUtilities::GetFastGCFunctions().bulk_move_with_write_barrier(pContinuationData, LOCAL_VAR_ADDR(pCopyEntry->startOffset, uint8_t), pCopyEntry->countBytes);
+                            	InlinedForwardGCSafeCopyHelper(pContinuationData, LOCAL_VAR_ADDR(pCopyEntry->startOffset, uint8_t), pCopyEntry->countBytes);
                             }
 							else
 							{
-                            	InlinedForwardGCSafeCopyHelper(pContinuationData, LOCAL_VAR_ADDR(pCopyEntry->startOffset, uint8_t), pCopyEntry->countBytes);
+                                GCHeapUtilities::GetFastGCFunctions().bulk_move_with_write_barrier(pContinuationData, LOCAL_VAR_ADDR(pCopyEntry->startOffset, uint8_t), pCopyEntry->countBytes);
                         	}
                             bytesTotal += pCopyEntry->countBytes;
                             pContinuationData += pCopyEntry->countBytes;

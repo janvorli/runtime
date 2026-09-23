@@ -487,44 +487,45 @@ VOID Object::Validate(BOOL bDeep, BOOL bVerifyNextHeader, BOOL bVerifySyncBlock)
     STATIC_CONTRACT_MODE_COOPERATIVE;
     STATIC_CONTRACT_CANNOT_TAKE_LOCK;
 
-	if (g_heap_type == GC_HEAP_CUSTOM)
+	if (g_heap_type != GC_HEAP_CUSTOM)
 	{
-		_ASSERTE(this->GetSize() > 0);
-		return;
-	}
-
-    if (g_fEEShutDown & ShutDown_Phase2)
-    {
-        // During second phase of shutdown the code below is not guaranteed to work.
-        return;
-    }
+        if (g_fEEShutDown & ShutDown_Phase2)
+        {
+            // During second phase of shutdown the code below is not guaranteed to work.
+            return;
+        }
 
 #ifdef _DEBUG
-    {
-        Thread *pThread = GetThreadNULLOk();
-
-        if (pThread != NULL && !(pThread->PreemptiveGCDisabled()))
         {
-            // Debugger helper threads are special in that they take over for
-            // what would normally be a nonEE thread (the RCThread).  If an
-            // EE thread is doing RCThread duty, then it should be treated
-            // as such.
-            //
-            // There are some GC threads in the same kind of category.  Note that
-            // GetThread() sometimes returns them, if DLL_THREAD_ATTACH notifications
-            // have run some managed code.
-            if (!dbgOnly_IsSpecialEEThread() && !IsGCSpecialThread())
-                _ASSERTE(!"OBJECTREF being accessed while thread is in preemptive GC mode.");
+            Thread *pThread = GetThreadNULLOk();
+
+            if (pThread != NULL && !(pThread->PreemptiveGCDisabled()))
+            {
+                // Debugger helper threads are special in that they take over for
+                // what would normally be a nonEE thread (the RCThread).  If an
+                // EE thread is doing RCThread duty, then it should be treated
+                // as such.
+                //
+                // There are some GC threads in the same kind of category.  Note that
+                // GetThread() sometimes returns them, if DLL_THREAD_ATTACH notifications
+                // have run some managed code.
+                if (!dbgOnly_IsSpecialEEThread() && !IsGCSpecialThread())
+                    _ASSERTE(!"OBJECTREF being accessed while thread is in preemptive GC mode.");
+            }
         }
-    }
 #endif
 
 
-    {   // ValidateInner can throw or fault on failure which violates contract.
-        CONTRACT_VIOLATION(ThrowsViolation);
+        {   // ValidateInner can throw or fault on failure which violates contract.
+            CONTRACT_VIOLATION(ThrowsViolation);
 
-        // using inner helper because of TRY and stack objects with destructors.
-        ValidateInner(bDeep, bVerifyNextHeader, bVerifySyncBlock);
+            // using inner helper because of TRY and stack objects with destructors.
+            ValidateInner(bDeep, bVerifyNextHeader, bVerifySyncBlock);
+        }
+    }
+    else
+    {
+		_ASSERTE(this->GetSize() > 0);
     }
 }
 
