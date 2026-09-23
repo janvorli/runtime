@@ -300,6 +300,29 @@ FORCEINLINE void InlinedMemmoveGCRefsHelper(void *dest, const void *src, size_t 
     _ASSERTE(IS_ALIGNED(src, sizeof(SIZE_T)));
     _ASSERTE(IS_ALIGNED(len, sizeof(SIZE_T)));
 
+    if (g_heap_type == GC_HEAP_CUSTOM)
+    {
+        if (GCHeapUtilities::GetFastGCFunctions().is_in_gc_heap(GCHeapUtilities::GetGCHeap(), (Object**)dest))
+        {
+            GCHeapUtilities::GetFastGCFunctions().bulk_move_with_write_barrier(dest, src, len);
+            return;
+        }
+
+        // The destination is not in the heap - most likely the stack.
+        // Nothing can be published this way, so there is no need for escape tracking,
+        // ordering or cards. Just copy.
+        // NB: the source may still be shared, so the copy must not tear references.
+        if ((size_t)dest - (size_t)src >= len)
+        {
+            InlinedForwardGCSafeCopyHelper(dest, src, len);
+        }
+        else
+        {
+            InlinedBackwardGCSafeCopyHelper(dest, src, len);
+        }
+
+        return;
+    }
 
     const bool notInHeap = ((BYTE*)dest < g_lowest_address || (BYTE*)dest >= g_highest_address);
 

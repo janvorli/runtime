@@ -181,6 +181,9 @@ PCODE WriteBarrierManager::GetCurrentWriteBarrierCode()
 
     switch (m_currentWriteBarrier)
     {
+    	case WRITE_BARRIER_CUSTOM:
+            _ASSERTE(!"Custom write barrier should not reach this point");
+        	return NULL;
         case WRITE_BARRIER_PREGROW64:
             return GetEEFuncEntryPoint(JIT_WriteBarrier_PreGrow64);
         case WRITE_BARRIER_POSTGROW64:
@@ -221,6 +224,9 @@ size_t WriteBarrierManager::GetSpecificWriteBarrierSize(WriteBarrierType writeBa
 
     switch (writeBarrier)
     {
+	    case WRITE_BARRIER_CUSTOM:
+            _ASSERTE(!"Custom write barrier should not reach this point");
+    	    return 0;
         case WRITE_BARRIER_PREGROW64:
             return MARKED_FUNCTION_SIZE(JIT_WriteBarrier_PreGrow64);
         case WRITE_BARRIER_POSTGROW64:
@@ -275,15 +281,24 @@ int WriteBarrierManager::ChangeWriteBarrierTo(WriteBarrierType newWriteBarrier, 
         stompWBCompleteActions |= SWB_EE_RESTART;
     }
 
-    _ASSERTE(m_currentWriteBarrier != newWriteBarrier);
-    m_currentWriteBarrier = newWriteBarrier;
+	if (g_heap_type != GC_HEAP_CUSTOM)
+	{
+    	_ASSERTE(m_currentWriteBarrier != newWriteBarrier);
+    
+        m_currentWriteBarrier = newWriteBarrier;
 
-    // the memcpy must come before the switch statement because the asserts inside the switch
-    // are actually looking into the JIT_WriteBarrier buffer
+        // the memcpy must come before the switch statement because the asserts inside the switch
+        // are actually looking into the JIT_WriteBarrier buffer
+        {
+            ExecutableWriterHolder<void> writeBarrierWriterHolder(GetWriteBarrierCodeLocation((void*)JIT_WriteBarrier), GetCurrentWriteBarrierSize());
+            memcpy(writeBarrierWriterHolder.GetRW(), (LPVOID)GetCurrentWriteBarrierCode(), GetCurrentWriteBarrierSize());
+            stompWBCompleteActions |= SWB_ICACHE_FLUSH;
+        }
+    }
+    else
     {
-        ExecutableWriterHolder<void> writeBarrierWriterHolder(GetWriteBarrierCodeLocation((void*)JIT_WriteBarrier), GetCurrentWriteBarrierSize());
-        memcpy(writeBarrierWriterHolder.GetRW(), (LPVOID)GetCurrentWriteBarrierCode(), GetCurrentWriteBarrierSize());
-        stompWBCompleteActions |= SWB_ICACHE_FLUSH;
+        // TODO: is this method ever called for custom GC?
+        _ASSERTE(m_currentWriteBarrier == newWriteBarrier);
     }
 
 #if defined(WRITE_BARRIER_VARS_INLINE)
@@ -387,6 +402,12 @@ bool WriteBarrierManager::NeedDifferentWriteBarrier(bool bReqUpperBoundsCheck, b
         switch (writeBarrierType)
         {
         case WRITE_BARRIER_UNINITIALIZED:
+			if (g_heap_type == GC_HEAP_CUSTOM)
+			{
+				// Satori TODO: is this necessary?
+				writeBarrierType = WRITE_BARRIER_CUSTOM;
+                break;
+			}
 #ifdef _DEBUG
             // The default slow write barrier has some good asserts
             if ((g_pConfig->GetHeapVerifyLevel() & EEConfig::HEAPVERIFY_BARRIERCHECK)) {
@@ -424,6 +445,9 @@ bool WriteBarrierManager::NeedDifferentWriteBarrier(bool bReqUpperBoundsCheck, b
 
         case WRITE_BARRIER_BYTE_REGIONS64:
         case WRITE_BARRIER_BIT_REGIONS64:
+            break;
+
+        case WRITE_BARRIER_CUSTOM:
             break;
 
 #ifdef FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
@@ -502,6 +526,15 @@ int WriteBarrierManager::UpdateEphemeralBounds(bool isRuntimeSuspended)
             break;
 #endif // FEATURE_SVR_GC
 
+        case WRITE_BARRIER_CUSTOM:
+        {
+            // Satori currently only cares about
+            // - card_bundle_table  (page index, to get heap bounds)
+            // - card_table         (page map, to get to cards)
+            // - sw_ww_table        (whether GC is running concurrently)
+            break;
+        }
+
         default:
             UNREACHABLE_MSG("unexpected m_currentWriteBarrier in UpdateEphemeralBounds");
     }
@@ -530,6 +563,13 @@ int WriteBarrierManager::UpdateWriteWatchAndCardTableLocations(bool isRuntimeSus
     // If we are told that we require an upper bounds check (GC did some heap reshuffling),
     // we need to switch to the WriteBarrier_PostGrow function for good.
 
+	if (g_heap_type == GC_HEAP_CUSTOM)
+	{
+#if defined(WRITE_BARRIER_VARS_INLINE)
+	    // as of now satori does not patch barriers inline, no need to go further.
+    	return SWB_PASS;
+#endif
+	}
     WriteBarrierType newType;
     if (NeedDifferentWriteBarrier(bReqUpperBoundsCheck, g_region_use_bitwise_write_barrier, &newType))
     {
@@ -636,6 +676,11 @@ int WriteBarrierManager::SwitchToWriteWatchBarrier(bool isRuntimeSuspended)
             newWriteBarrierType = WRITE_BARRIER_WRITE_WATCH_BIT_REGIONS64;
             break;
 
+        case WRITE_BARRIER_CUSTOM:
+            // same barrier, but update variables
+            newWriteBarrierType = m_currentWriteBarrier;
+            break;
+
         default:
             UNREACHABLE();
     }
@@ -672,6 +717,11 @@ int WriteBarrierManager::SwitchToNonWriteWatchBarrier(bool isRuntimeSuspended)
 
         case WRITE_BARRIER_WRITE_WATCH_BIT_REGIONS64:
             newWriteBarrierType = WRITE_BARRIER_BIT_REGIONS64;
+            break;
+
+        case WRITE_BARRIER_CUSTOM:
+            // same barrier, but update variables
+            newWriteBarrierType = m_currentWriteBarrier;
             break;
 
         default:
@@ -1070,6 +1120,9 @@ void WriteBarrierManager::UpdatePatchLocations(WriteBarrierType newWriteBarrier)
 #endif
             break;
 
+        case WRITE_BARRIER_CUSTOM:
+            // noop
+            break;
 
 #endif // FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
 

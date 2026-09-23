@@ -334,6 +334,11 @@ void SetObjectReferenceUnchecked(OBJECTREF *dst,OBJECTREF ref)
     STATIC_CONTRACT_MODE_COOPERATIVE;
     STATIC_CONTRACT_CANNOT_TAKE_LOCK;
 
+    if (GCHeapUtilities::GetFastGCFunctions().check_escape != nullptr)
+    {
+        GCHeapUtilities::GetFastGCFunctions().check_escape((Object**)dst, OBJECTREFToObject(ref));
+    }
+
     // Assign value. We use casting to avoid going thru the overloaded
     // OBJECTREF= operator which in this case would trigger a false
     // write-barrier violation assert.
@@ -481,6 +486,12 @@ VOID Object::Validate(BOOL bDeep, BOOL bVerifyNextHeader, BOOL bVerifySyncBlock)
     STATIC_CONTRACT_GC_NOTRIGGER;
     STATIC_CONTRACT_MODE_COOPERATIVE;
     STATIC_CONTRACT_CANNOT_TAKE_LOCK;
+
+	if (g_heap_type == GC_HEAP_CUSTOM)
+	{
+		_ASSERTE(this->GetSize() > 0);
+		return;
+	}
 
     if (g_fEEShutDown & ShutDown_Phase2)
     {

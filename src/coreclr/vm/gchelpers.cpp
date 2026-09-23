@@ -454,7 +454,14 @@ inline void LogAlloc(Object* object)
 template <class TObj>
 void PublishObjectAndNotify(TObj* &orObject, GC_ALLOC_FLAGS flags)
 {
-    _ASSERTE(orObject->HasEmptySyncBlockInfo());
+	if (g_heap_type == GC_HEAP_CUSTOM)
+	{
+		_ASSERTE(orObject->HasEmptySyncBlockInfo() || (flags & (GC_ALLOC_LARGE_OBJECT_HEAP | GC_ALLOC_PINNED_OBJECT_HEAP)));
+	}
+	else
+	{
+    	_ASSERTE(orObject->HasEmptySyncBlockInfo());
+	}
 
     if (flags & GC_ALLOC_USER_OLD_HEAP)
     {
@@ -1337,35 +1344,42 @@ void ErectWriteBarrier(OBJECTREF *dst, OBJECTREF ref)
     STATIC_CONTRACT_NOTHROW;
     STATIC_CONTRACT_GC_NOTRIGGER;
 
-    // if the dst is outside of the heap (unboxed value classes) then we
-    //      simply exit
-    if (((BYTE*)dst < g_lowest_address) || ((BYTE*)dst >= g_highest_address))
-        return;
+    if (g_heap_type == GC_HEAP_CUSTOM)
+    {
+        GCHeapUtilities::GetFastGCFunctions().write_barrier((Object**)dst, OBJECTREFToObject(ref));
+    }
+	else
+	{
+    	// if the dst is outside of the heap (unboxed value classes) then we
+    	//      simply exit
+    	if (((BYTE*)dst < g_lowest_address) || ((BYTE*)dst >= g_highest_address))
+        	return;
 
 #ifdef WRITE_BARRIER_CHECK
-    updateGCShadow((Object**) dst, OBJECTREFToObject(ref));     // support debugging write barrier
+    	updateGCShadow((Object**) dst, OBJECTREFToObject(ref));     // support debugging write barrier
 #endif
 
 #ifdef FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
-    if (GCHeapUtilities::SoftwareWriteWatchIsEnabled())
-    {
-        GCHeapUtilities::SoftwareWriteWatchSetDirty(dst, sizeof(*dst));
-    }
+	    if (GCHeapUtilities::SoftwareWriteWatchIsEnabled())
+	    {
+	        GCHeapUtilities::SoftwareWriteWatchSetDirty(dst, sizeof(*dst));
+	    }
 #endif // FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
 
-    if ((BYTE*) OBJECTREFToObject(ref) >= g_ephemeral_low && (BYTE*) OBJECTREFToObject(ref) < g_ephemeral_high)
-    {
-        // VolatileLoadWithoutBarrier() is used here to prevent fetch of g_card_table from being reordered
-        // with g_lowest/highest_address check above. See comment in StompWriteBarrier.
-        BYTE* pCardByte = (BYTE*)VolatileLoadWithoutBarrier(&g_card_table) + card_byte((BYTE *)dst);
-        if (*pCardByte != 0xFF)
-        {
-            *pCardByte = 0xFF;
+	    if ((BYTE*) OBJECTREFToObject(ref) >= g_ephemeral_low && (BYTE*) OBJECTREFToObject(ref) < g_ephemeral_high)
+	    {
+	        // VolatileLoadWithoutBarrier() is used here to prevent fetch of g_card_table from being reordered
+	        // with g_lowest/highest_address check above. See comment in StompWriteBarrier.
+	        BYTE* pCardByte = (BYTE*)VolatileLoadWithoutBarrier(&g_card_table) + card_byte((BYTE *)dst);
+	        if (*pCardByte != 0xFF)
+	        {
+	            *pCardByte = 0xFF;
 
 #ifdef FEATURE_MANUALLY_MANAGED_CARD_BUNDLES
-            SetCardBundleByte((BYTE*)dst);
+	            SetCardBundleByte((BYTE*)dst);
 #endif
-        }
+    	    }
+    	}
     }
 }
 #include <optdefault.h>
@@ -1375,6 +1389,12 @@ void ErectWriteBarrierForMT(MethodTable **dst, MethodTable *ref)
     STATIC_CONTRACT_MODE_COOPERATIVE;
     STATIC_CONTRACT_NOTHROW;
     STATIC_CONTRACT_GC_NOTRIGGER;
+
+	if (g_heap_type == GC_HEAP_CUSTOM)
+	{
+    	// this whole thing is unnecessary in Satori
+    	UNREACHABLE();
+	}
 
     *dst = ref;
 

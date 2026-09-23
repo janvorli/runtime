@@ -1197,6 +1197,8 @@ void InitThreadManager()
 
     if (IsWriteBarrierCopyEnabled())
     {
+        _ASSERTE(g_heap_type != GC_HEAP_CUSTOM);
+
         s_barrierCopy = ExecutableAllocator::Instance()->Reserve(g_SystemInfo.dwAllocationGranularity);
         ExecutableAllocator::Instance()->Commit(s_barrierCopy, g_SystemInfo.dwAllocationGranularity, true);
         if (s_barrierCopy == NULL)
@@ -1248,15 +1250,26 @@ void InitThreadManager()
     }
     else
     {
+        if (g_heap_type != GC_HEAP_CUSTOM)
+        {
 #ifdef TARGET_X86
-        JIT_WriteBarrierEAX_Loc = (void*)RhpAssignRefEAX;
+            JIT_WriteBarrierEAX_Loc = (void*)RhpAssignRefEAX;
 #else
-        JIT_WriteBarrier_Loc = (void*)RhpAssignRef;
+            JIT_WriteBarrier_Loc = (void*)RhpAssignRef;
 #endif
 #if defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
-        // Store the JIT_WriteBarrier_Table copy location to a global variable so that it can be updated.
-        JIT_WriteBarrier_Table_Loc = NULL;
+            // Store the JIT_WriteBarrier_Table copy location to a global variable so that it can be updated.
+            JIT_WriteBarrier_Table_Loc = NULL;
 #endif // TARGET_ARM64 || TARGET_LOONGARCH64 || TARGET_RISCV64
+        }
+        else
+        {
+            void* assignRef = nullptr;
+            void* assignRefChecked = nullptr;
+            g_pGCHeap->GetAssignRefFunctions(&assignRef, &assignRefChecked, &g_customWriteBarrierAVLocations);
+            SetJitHelperFunction(CORINFO_HELP_ASSIGN_REF, assignRef);
+            SetJitHelperFunction(CORINFO_HELP_CHECKED_ASSIGN_REF, assignRefChecked);
+        }
     }
 #endif // !FEATURE_PORTABLE_HELPERS
 

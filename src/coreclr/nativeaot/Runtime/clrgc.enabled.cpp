@@ -219,6 +219,11 @@ HRESULT GCHeapUtilities::InitializeStandaloneGC()
     if (initResult == S_OK)
     {
         g_pGCHeap = heap;
+        if ((g_gc_version_info.MajorVersion > GC_INTERFACE_MAJOR_VERSION) ||
+            (g_gc_version_info.MinorVersion >= GC_INTERFACE_MINOR_VERSION))
+        {
+            g_heap_type = heap->GetGCHeapType();
+        }
         {
             CrstHolder lh(&g_eventStashLock);
             g_pGCHeap->ControlEvents(g_stashedKeyword, g_stashedLevel);

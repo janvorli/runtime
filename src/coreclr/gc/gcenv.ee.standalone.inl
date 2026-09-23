@@ -42,6 +42,12 @@ inline void GCToEEInterface::GcScanRoots(promote_func* fn, int condemned, int ma
     g_theGCToCLR->GcScanRoots(fn, condemned, max_gen, sc);
 }
 
+inline void GCToEEInterface::GcScanCurrentStackRoots(promote_func* fn, ScanContext* sc)
+{
+    assert(g_theGCToCLR != nullptr);
+    g_theGCToCLR->GcScanCurrentStackRoots(fn, sc);
+}
+
 inline void GCToEEInterface::GcStartWork(int condemned, int max_gen)
 {
     assert(g_theGCToCLR != nullptr);

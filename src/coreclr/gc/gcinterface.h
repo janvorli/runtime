@@ -11,7 +11,7 @@
 // The minor version of the IGCHeap interface. Non-breaking changes are required
 // to bump the minor version number. GCs and EEs with minor version number
 // mismatches can still interoperate correctly, with some care.
-#define GC_INTERFACE_MINOR_VERSION 9
+#define GC_INTERFACE_MINOR_VERSION 10
 
 // The major version of the IGCToCLR interface. Breaking changes to this interface
 // require bumps in the major version number.
@@ -52,7 +52,26 @@ enum class WriteBarrierOp
     StompEphemeral,
     Initialize,
     SwitchToWriteWatch,
-    SwitchToNonWriteWatch
+    SwitchToNonWriteWatch,
+    StompCustom,
+};
+
+enum class WriteBarrierParametersMask
+{
+    support_use_as_flags = -1,
+    IsRuntimeSuspended = 1 << 0,
+    RequiresUpperBoundsCheck = 1 << 1,
+    SwWwEnabledForGcHeap = 1 << 2,
+    CardTable = 1 << 3,
+    CardBundleTable = 1 << 4,
+    LowestAddress = 1 << 5,
+    HighestAddress = 1 << 6,
+    EphemeralLow = 1 << 7,
+    EphemeralHigh = 1 << 8,
+    RegionToGenerationTable = 1 << 9,
+    RegionShr = 1 << 10,
+    RegionUseBitwiseWriteBarrier = 1 << 11,
+    WriteWatchTable = 1 << 12,
 };
 
 // Arguments to GCToEEInterface::StompWriteBarrier
@@ -113,6 +132,29 @@ struct WriteBarrierParameters
 
     // whether to use the more precise but slower write barrier
     bool region_use_bitwise_write_barrier;
+
+    // whether the software write watch is enabled for the GC heap.
+    bool sw_ww_enabled_for_gc_heap;
+
+    // bitmask indicating which parameters are valid in this structure. Used for custom GCs
+    WriteBarrierParametersMask parameters_mask;
+};
+
+using WriteBarrierFunction = void (*)(Object** dst, Object* ref);
+using IsInGCHeapFunction = bool (*)(void* context, void* address);
+using BulkMoveWithWriteBarrierFunction = void (*)(void* destination, const void* source, size_t length);
+using CheckEscapeFunction = void (*)(Object** dst, Object* ref);
+
+struct FastGCFunctions
+{
+    void* context;
+    WriteBarrierFunction write_barrier;
+    // WriteBarrierFunction checked_write_barrier;
+    IsInGCHeapFunction is_in_gc_heap;
+    CheckEscapeFunction check_escape;
+    BulkMoveWithWriteBarrierFunction bulk_move_with_write_barrier;
+    void* assign_ref;
+    void* checked_assign_ref;
 };
 
 struct FinalizerWorkItem
@@ -243,6 +285,7 @@ struct segment_info
 #define GC_PROFILING       //Turn on profiling
 #endif // PROFILING_SUPPORTED
 
+// TODO: Satori has LARGE_OBJECT_SIZE ((size_t)(32 * 1024))
 #define LARGE_OBJECT_SIZE ((size_t)(85000))
 
 // The minimum size of an object is three pointers wide: one for the syncblock,
@@ -561,7 +604,8 @@ typedef enum
 {
     GC_HEAP_INVALID = 0,
     GC_HEAP_WKS     = 1,
-    GC_HEAP_SVR     = 2
+    GC_HEAP_SVR     = 2,
+    GC_HEAP_CUSTOM  = 3
 } GCHeapType;
 
 typedef bool (* walk_fn)(Object*, void*);
@@ -1074,6 +1118,18 @@ public:
     virtual void DiagWalkHeapWithACHandling(walk_fn fn, void* context, int gen_number, bool walk_large_object_heap_p) PURE_VIRTUAL
 
     virtual void NullBridgeObjectsWeakRefs(size_t length, void* unreachableObjectHandles) PURE_VIRTUAL;
+
+    // Gets specialized callbacks for performance-sensitive callers.
+    virtual void GetFastGCFunctions(FastGCFunctions* functions) PURE_VIRTUAL
+
+    // Gets the type of the GC heap.
+    virtual GCHeapType GetGCHeapType() PURE_VIRTUAL
+
+    // Gets the precise total number of allocated bytes.
+    virtual uint64_t GetTotalAllocatedBytesPrecise() PURE_VIRTUAL
+
+    // Gets custom assign-reference helpers and their access violation locations.
+    virtual void GetAssignRefFunctions(void** assignRef, void** assignRefChecked, uintptr_t** avLocationsList) PURE_VIRTUAL
 };
 
 #ifdef WRITE_BARRIER_CHECK
@@ -1098,6 +1154,7 @@ enum GC_ALLOC_FLAGS
     GC_ALLOC_ZEROING_OPTIONAL   = 16,
     GC_ALLOC_LARGE_OBJECT_HEAP  = 32,
     GC_ALLOC_PINNED_OBJECT_HEAP = 64,
+    GC_ALLOC_IMMORTAL           = 128,
     GC_ALLOC_USER_OLD_HEAP      = GC_ALLOC_LARGE_OBJECT_HEAP | GC_ALLOC_PINNED_OBJECT_HEAP,
 };
 
