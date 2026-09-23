@@ -168,13 +168,13 @@ static void ScanStackRoots(Thread * pThread, promote_func* fn, ScanContext* sc)
                 if (((void*)*walk > (void*)bottomStack || (void*)*walk < (void*)topStack))
                 {
                     bool isInGcHeap;
-                    if (g_heap_type == GC_HEAP_CUSTOM)
+                    if (g_heap_type != GC_HEAP_CUSTOM)
                     {
-                        isInGcHeap = GCHeapUtilities::GetFastGCFunctions().is_in_gc_heap(GCHeapUtilities::GetGCHeap(), *walk);
+                        isInGcHeap = (void*)*walk >= (void*)g_lowest_address && (void*)*walk <= (void*)g_highest_address;
                     }
                     else
                     {
-                        isInGcHeap = (void*)*walk >= (void*)g_lowest_address && (void*)*walk <= (void*)g_highest_address;
+                        isInGcHeap = GCHeapUtilities::GetFastGCFunctions().is_in_gc_heap(GCHeapUtilities::GetGCHeap(), *walk);
                     }
 
                     if (isInGcHeap)

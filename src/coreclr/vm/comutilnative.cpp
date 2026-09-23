@@ -900,35 +900,37 @@ FCIMPL0(INT64, GCInterface::GetTotalAllocatedBytesApproximate)
 {
     FCALL_CONTRACT;
 
-    if (g_heap_type == GC_HEAP_CUSTOM)
+    if (g_heap_type != GC_HEAP_CUSTOM)
+    {
+#ifdef TARGET_64BIT
+        uint64_t unused_bytes = Thread::dead_threads_non_alloc_bytes;
+#else
+        // As it could be noticed we read 64bit values that may be concurrently updated.
+        // Such reads are not guaranteed to be atomic on 32bit so extra care should be taken.
+        uint64_t unused_bytes = InterlockedCompareExchange64((LONG64*)& Thread::dead_threads_non_alloc_bytes, 0, 0);
+#endif
+
+        uint64_t allocated_bytes = GCHeapUtilities::GetGCHeap()->GetTotalAllocatedBytes() - unused_bytes;
+
+        // highest reported allocated_bytes. We do not want to report a value less than that even if unused_bytes has increased.
+        static uint64_t high_watermark;
+
+        uint64_t current_high = high_watermark;
+        while (allocated_bytes > current_high)
+        {
+            uint64_t orig = InterlockedCompareExchange64((LONG64*)& high_watermark, allocated_bytes, current_high);
+            if (orig == current_high)
+                return allocated_bytes;
+
+            current_high = orig;
+        }
+
+        return current_high;
+    }
+    else
     {
         return GCHeapUtilities::GetGCHeap()->GetTotalAllocatedBytes();
     }
-
-#ifdef TARGET_64BIT
-    uint64_t unused_bytes = Thread::dead_threads_non_alloc_bytes;
-#else
-    // As it could be noticed we read 64bit values that may be concurrently updated.
-    // Such reads are not guaranteed to be atomic on 32bit so extra care should be taken.
-    uint64_t unused_bytes = InterlockedCompareExchange64((LONG64*)& Thread::dead_threads_non_alloc_bytes, 0, 0);
-#endif
-
-    uint64_t allocated_bytes = GCHeapUtilities::GetGCHeap()->GetTotalAllocatedBytes() - unused_bytes;
-
-    // highest reported allocated_bytes. We do not want to report a value less than that even if unused_bytes has increased.
-    static uint64_t high_watermark;
-
-    uint64_t current_high = high_watermark;
-    while (allocated_bytes > current_high)
-    {
-        uint64_t orig = InterlockedCompareExchange64((LONG64*)& high_watermark, allocated_bytes, current_high);
-        if (orig == current_high)
-            return allocated_bytes;
-
-        current_high = orig;
-    }
-
-    return current_high;
 }
 FCIMPLEND;
 
@@ -940,11 +942,7 @@ extern "C" INT64 QCALLTYPE GCInterface_GetTotalAllocatedBytesPrecise(QCallExcept
 
     GCX_COOP();
 
-    if (g_heap_type == GC_HEAP_CUSTOM)
-    {
-        allocated = GCHeapUtilities::GetGCHeap()->GetTotalAllocatedBytesPrecise();
-    }
-    else
+    if (g_heap_type != GC_HEAP_CUSTOM)
     {
         // We need to suspend/restart the EE to get each thread's
         // non-allocated memory from their allocation contexts
@@ -963,6 +961,10 @@ extern "C" INT64 QCALLTYPE GCInterface_GetTotalAllocatedBytesPrecise(QCallExcept
         }
 
         ThreadSuspend::RestartEE(true /* SuspendSucceeded */);
+    }
+    else
+    {
+        allocated = GCHeapUtilities::GetGCHeap()->GetTotalAllocatedBytesPrecise();
     }
     END_QCALL;
 
