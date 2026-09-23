@@ -900,6 +900,11 @@ FCIMPL0(INT64, GCInterface::GetTotalAllocatedBytesApproximate)
 {
     FCALL_CONTRACT;
 
+    if (g_heap_type == GC_HEAP_CUSTOM)
+    {
+        return GCHeapUtilities::GetGCHeap()->GetTotalAllocatedBytes();
+    }
+
 #ifdef TARGET_64BIT
     uint64_t unused_bytes = Thread::dead_threads_non_alloc_bytes;
 #else
@@ -935,24 +940,30 @@ extern "C" INT64 QCALLTYPE GCInterface_GetTotalAllocatedBytesPrecise(QCallExcept
 
     GCX_COOP();
 
-    // We need to suspend/restart the EE to get each thread's
-    // non-allocated memory from their allocation contexts
-
-    ThreadSuspend::SuspendEE(ThreadSuspend::SUSPEND_OTHER);
-
-    allocated = GCHeapUtilities::GetGCHeap()->GetTotalAllocatedBytes() - Thread::dead_threads_non_alloc_bytes;
-
-    for (Thread *pThread = ThreadStore::GetThreadList(NULL); pThread; pThread = ThreadStore::GetThreadList(pThread))
+    if (g_heap_type == GC_HEAP_CUSTOM)
     {
-        gc_alloc_context* ac = pThread->GetAllocContext();
-        if (ac != nullptr)
-        {
-            allocated -= ac->alloc_limit - ac->alloc_ptr;
-        }
+        allocated = GCHeapUtilities::GetGCHeap()->GetTotalAllocatedBytesPrecise();
     }
+    else
+    {
+        // We need to suspend/restart the EE to get each thread's
+        // non-allocated memory from their allocation contexts
 
-    ThreadSuspend::RestartEE(true /* SuspendSucceeded */);
+        ThreadSuspend::SuspendEE(ThreadSuspend::SUSPEND_OTHER);
 
+        allocated = GCHeapUtilities::GetGCHeap()->GetTotalAllocatedBytes() - Thread::dead_threads_non_alloc_bytes;
+
+        for (Thread *pThread = ThreadStore::GetThreadList(NULL); pThread; pThread = ThreadStore::GetThreadList(pThread))
+        {
+            gc_alloc_context* ac = pThread->GetAllocContext();
+            if (ac != nullptr)
+            {
+                allocated -= ac->alloc_limit - ac->alloc_ptr;
+            }
+        }
+
+        ThreadSuspend::RestartEE(true /* SuspendSucceeded */);
+    }
     END_QCALL;
 
     return allocated;
@@ -1700,6 +1711,11 @@ FCIMPL2(LPVOID,COMInterlocked::ExchangeObject, LPVOID*location, LPVOID value)
 {
     FCALL_CONTRACT;
 
+    if (GCHeapUtilities::GetFastGCFunctions().check_escape != nullptr)
+    {
+        GCHeapUtilities::GetFastGCFunctions().check_escape((Object**)location, (Object*)value);
+    }
+
     LPVOID ret = InterlockedExchangeT(location, value);
 #ifdef _DEBUG
     Thread::ObjectRefAssign((OBJECTREF *)location);
@@ -1712,6 +1728,12 @@ FCIMPLEND
 FCIMPL3(LPVOID,COMInterlocked::CompareExchangeObject, LPVOID *location, LPVOID value, LPVOID comparand)
 {
     FCALL_CONTRACT;
+
+     
+    if (GCHeapUtilities::GetFastGCFunctions().check_escape != nullptr)
+    {
+        GCHeapUtilities::GetFastGCFunctions().check_escape((Object**)location, (Object*)value);
+    }
 
     // <TODO>@todo: only set ref if is updated</TODO>
     LPVOID ret = InterlockedCompareExchangeT(location, value, comparand);

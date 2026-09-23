@@ -327,6 +327,8 @@ public:
 
     size_t GetLastGCGenerationSize(int gen);
 
+    void GetFastGCFunctions(FastGCFunctions* functions);
+
     virtual void Shutdown();
 
     static void ReportGenerationBounds();
@@ -334,6 +336,12 @@ public:
     virtual int RefreshMemoryLimit();
 
     virtual void NullBridgeObjectsWeakRefs(size_t length, void* unreachableObjectHandles);
+
+    GCHeapType GetGCHeapType();
+
+    uint64_t GetTotalAllocatedBytesPrecise();
+
+    void GetAssignRefFunctions(void** assignRef, void** assignRefChecked, uintptr_t** avLocationsList);
 };
 
 #endif  // GCIMPL_H_

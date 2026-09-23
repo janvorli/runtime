@@ -32,6 +32,30 @@ Object* FrozenObjectHeapManager::TryAllocateObject(PTR_MethodTable type, size_t 
 
 
     Object* obj = nullptr;
+//     if (g_heap_type == GC_HEAP_CUSTOM)
+//     {
+//     	// TODO: Satori does not have any size limitations here.
+//     	if (objectSize > FOH_COMMIT_SIZE)
+//     	{
+//       		// The current design doesn't allow objects larger than FOH_COMMIT_SIZE and
+//       		// since FrozenObjectHeap is just an optimization, let's not fill it with huge objects.
+//       		return nullptr;
+//     	}
+
+// #if defined(_DEBUG) && defined(FEATURE_SATORI_EXTERNAL_OBJECTS)
+//     	// in debug use external objects once in a while - for coverage
+//     	if (objectSize % 16 != 0)
+// #endif
+//     	{
+//       		obj = AllocateImmortalObject(type, objectSize);
+//       		if (initFunc != nullptr)
+//       		{
+//         		initFunc(obj, pParam);
+//       		}
+
+//       		return obj;
+//     	}
+//     }
     FrozenObjectSegment* curSeg = nullptr;
     uint8_t* curSegmentCurrent = nullptr;
     size_t curSegSizeCommitted = 0;

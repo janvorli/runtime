@@ -4777,12 +4777,22 @@ do                                                                      \
                         GCHeapMemoryBarrier();
                         while (pCopyEntry->countBytes != 0)
                         {
-                            InlinedForwardGCSafeCopyHelper(pContinuationData, LOCAL_VAR_ADDR(pCopyEntry->startOffset, uint8_t), pCopyEntry->countBytes);
+                            if (g_heap_type == GC_HEAP_CUSTOM)
+                            {
+                                GCHeapUtilities::GetFastGCFunctions().bulk_move_with_write_barrier(pContinuationData, LOCAL_VAR_ADDR(pCopyEntry->startOffset, uint8_t), pCopyEntry->countBytes);
+                            }
+							else
+							{
+                            	InlinedForwardGCSafeCopyHelper(pContinuationData, LOCAL_VAR_ADDR(pCopyEntry->startOffset, uint8_t), pCopyEntry->countBytes);
+                        	}
                             bytesTotal += pCopyEntry->countBytes;
                             pContinuationData += pCopyEntry->countBytes;
                             pCopyEntry++;
+                       	}
+ 						if (g_heap_type != GC_HEAP_CUSTOM)
+ 						{
+                        	InlinedSetCardsAfterBulkCopyHelper((Object**)pContinuationDataStart, bytesTotal);
                         }
-                        InlinedSetCardsAfterBulkCopyHelper((Object**)pContinuationDataStart, bytesTotal);
                     }
 
                     int32_t returnValueSize = pAsyncSuspendData->asyncMethodReturnTypePrimitiveSize;

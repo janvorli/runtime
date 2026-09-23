@@ -78,6 +78,7 @@ HRESULT GCHeapUtilities::InitializeDefaultGC()
     if (initResult == S_OK)
     {
         g_pGCHeap = heap;
+        g_heap_type = heap->GetGCHeapType();
         g_pGCHandleManager = manager;
         g_gcDacGlobals = &g_gc_dac_vars;
         LOG((LF_GC, LL_INFO100, "GC load successful\n"));
