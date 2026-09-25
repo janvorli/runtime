@@ -328,7 +328,7 @@ FORCEINLINE void InlinedMemmoveGCRefsHelper(void *dest, const void *src, size_t 
     {
         if (GCHeapUtilities::GetFastGCFunctions().is_in_gc_heap(GCHeapUtilities::GetGCHeap(), (Object**)dest))
         {
-            GCHeapUtilities::GetFastGCFunctions().bulk_move_with_write_barrier(dest, src, len);
+            GCHeapUtilities::GetFastGCFunctions().bulk_move_with_write_barrier(GCHeapUtilities::GetFastGCFunctions().context, (void*)dest, src, len);
             return;
         }
 

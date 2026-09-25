@@ -136,6 +136,7 @@ static void ScanStackRoots(Thread * pThread, promote_func* fn, ScanContext* sc)
 
     _ASSERTE(dbgOnly_IsSpecialEEThread() ||
                 GetThreadNULLOk() == NULL ||
+                GetThreadNULLOk() == sc->thread_under_crawl || // TODO: generalize this
                 // this is for background GC threads which always call this when EE is suspended.
                 IsGCSpecialThread() ||
                 (GetThread() == ThreadSuspend::GetSuspensionThread() && ThreadStore::HoldingThreadStore()));

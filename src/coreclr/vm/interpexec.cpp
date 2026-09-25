@@ -4783,7 +4783,7 @@ do                                                                      \
                             }
 							else
 							{
-                                GCHeapUtilities::GetFastGCFunctions().bulk_move_with_write_barrier(pContinuationData, LOCAL_VAR_ADDR(pCopyEntry->startOffset, uint8_t), pCopyEntry->countBytes);
+                                GCHeapUtilities::GetFastGCFunctions().bulk_move_with_write_barrier(GCHeapUtilities::GetFastGCFunctions().context, pContinuationData, LOCAL_VAR_ADDR(pCopyEntry->startOffset, uint8_t), pCopyEntry->countBytes);
                         	}
                             bytesTotal += pCopyEntry->countBytes;
                             pContinuationData += pCopyEntry->countBytes;

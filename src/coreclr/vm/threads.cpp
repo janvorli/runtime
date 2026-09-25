@@ -1271,14 +1271,14 @@ void InitThreadManager()
             JIT_WriteBarrier_Table_Loc = NULL;
 #endif // TARGET_ARM64 || TARGET_LOONGARCH64 || TARGET_RISCV64
         }
-        else
-        {
-            void* assignRef = nullptr;
-            void* assignRefChecked = nullptr;
-            g_pGCHeap->GetAssignRefFunctions(&assignRef, &assignRefChecked, &g_customWriteBarrierAVLocations);
-            SetJitHelperFunction(CORINFO_HELP_ASSIGN_REF, assignRef);
-            SetJitHelperFunction(CORINFO_HELP_CHECKED_ASSIGN_REF, assignRefChecked);
-        }
+        // else
+        // {
+        //     void* assignRef = nullptr;
+        //     void* assignRefChecked = nullptr;
+        //     g_pGCHeap->GetAssignRefFunctions(&assignRef, &assignRefChecked, &g_customWriteBarrierAVLocations);
+        //     SetJitHelperFunction(CORINFO_HELP_ASSIGN_REF, assignRef);
+        //     SetJitHelperFunction(CORINFO_HELP_CHECKED_ASSIGN_REF, assignRefChecked);
+        // }
     }
 #endif // !FEATURE_PORTABLE_HELPERS
 

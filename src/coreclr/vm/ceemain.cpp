@@ -458,7 +458,8 @@ void InitializeStartupFlags()
 
 
         // Initialize a provisional heap type. The GC reports the actual type when it is loaded.
-    g_heap_type = ((flags & STARTUP_SERVER_GC) && GetCurrentProcessCpuCount() > 1) ? GC_HEAP_SVR : GC_HEAP_WKS;
+    //g_heap_type = ((flags & STARTUP_SERVER_GC) && GetCurrentProcessCpuCount() > 1) ? GC_HEAP_SVR : GC_HEAP_WKS;
+    g_heap_type = GC_HEAP_CUSTOM;
     g_IGCHoardVM = (flags & STARTUP_HOARD_GC_VM) == 0 ? 0 : 1;
 }
 

@@ -1194,4 +1194,14 @@ void InitJITWriteBarrierHelpers()
     STANDARD_VM_CONTRACT;
 
     g_WriteBarrierManager.Initialize();
+
+    // TODO: it is weird that other WB stuff is initialized in the InitThreadManager, should be moved here
+    if (g_heap_type == GC_HEAP_CUSTOM)
+    {
+        void* assignRef = nullptr;
+        void* assignRefChecked = nullptr;
+        g_pGCHeap->GetAssignRefFunctions(&assignRef, &assignRefChecked, &g_customWriteBarrierAVLocations);
+        SetJitHelperFunction(CORINFO_HELP_ASSIGN_REF, assignRef);
+        SetJitHelperFunction(CORINFO_HELP_CHECKED_ASSIGN_REF, assignRefChecked);
+    }
 }

@@ -230,8 +230,6 @@ void GCHeap::GetFastGCFunctions(FastGCFunctions* functions)
     functions->is_in_gc_heap = nullptr;
     functions->check_escape = nullptr;
     functions->bulk_move_with_write_barrier = nullptr;
-    functions->assign_ref = nullptr;
-    functions->checked_assign_ref = nullptr;
 }
 
 GCHeapType GCHeap::GetGCHeapType()
