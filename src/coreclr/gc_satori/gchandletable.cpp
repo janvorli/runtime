@@ -78,7 +78,7 @@ HHANDLETABLE GCHandleStore::GetTable()
 
 OBJECTHANDLE GCHandleStore::CreateHandleOfType(Object* object, HandleType type)
 {
-    HHANDLETABLE handletable = GetTable();
+    HHANDLETABLE handletable = _underlyingBucket.pTable[GetCurrentThreadHomeHeapNumber()];
     return ::HndCreateHandle(handletable, type, ObjectToOBJECTREF(object));
 }
 
