@@ -389,6 +389,8 @@ void SatoriGC::GetFastGCFunctions(FastGCFunctions* functions)
 
 extern "C" void RhpAssignRef(Object **dst, Object *ref);
 extern "C" void RhpCheckedAssignRef(Object **dst, Object *ref);
+extern "C" uint8_t RhpAssignRef_End;
+extern "C" uint8_t RhpCheckedAssignRef_End;
 extern "C" uint8_t RhpCheckedAssignRefAVLocation;
 extern "C" uint8_t RhpAssignRefAVLocation;
 extern "C" uint8_t RhpAssignRefAVLocationNotHeap;
@@ -401,11 +403,12 @@ static uintptr_t avLocations[] =
     0
 };
 
-// Gets custom assign-reference helpers and their access violation locations.
-void SatoriGC::GetAssignRefFunctions(void** assignRef, void** assignRefChecked, uintptr_t** avLocationsList)
+void SatoriGC::GetAssignRefFunctions(void** assignRef, size_t* assignRefSize, void** assignRefChecked, size_t* assignRefCheckedSize, uintptr_t** avLocationsList)
 {
     *assignRef = &RhpAssignRef;
+    *assignRefSize = (uintptr_t)&RhpAssignRef_End - (uintptr_t)&RhpAssignRef;
     *assignRefChecked = &RhpCheckedAssignRef;
+    *assignRefCheckedSize = (uintptr_t)&RhpCheckedAssignRef_End - (uintptr_t)&RhpCheckedAssignRef;
     *avLocationsList = avLocations;
 }
 

@@ -5432,11 +5432,7 @@ inline BOOL IsWriteBarrierCopyEnabled()
 #ifdef DACCESS_COMPILE
     return FALSE;
 #else // DACCESS_COMPILE
-	if (g_heap_type != GC_HEAP_CUSTOM)
-	{
-        return g_pConfig->IsWriteBarrierCopyEnabled();
-	}
-    return FALSE;
+    return g_pConfig->IsWriteBarrierCopyEnabled();
 #endif // DACCESS_COMPILE
 }
 

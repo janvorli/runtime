@@ -6,12 +6,12 @@
 
 // The major version of the IGCHeap interface. Breaking changes to this interface
 // require bumps in the major version number.
-#define GC_INTERFACE_MAJOR_VERSION 5
+#define GC_INTERFACE_MAJOR_VERSION 6
 
 // The minor version of the IGCHeap interface. Non-breaking changes are required
 // to bump the minor version number. GCs and EEs with minor version number
 // mismatches can still interoperate correctly, with some care.
-#define GC_INTERFACE_MINOR_VERSION 10
+#define GC_INTERFACE_MINOR_VERSION 0
 
 // The major version of the IGCToCLR interface. Breaking changes to this interface
 // require bumps in the major version number.
@@ -1126,8 +1126,10 @@ public:
     // Gets the precise total number of allocated bytes.
     virtual uint64_t GetTotalAllocatedBytesPrecise() PURE_VIRTUAL
 
-    // Gets custom assign-reference helpers and their access violation locations.
-    virtual void GetAssignRefFunctions(void** assignRef, void** assignRefChecked, uintptr_t** avLocationsList) PURE_VIRTUAL
+    // Gets custom assign-reference helpers, their byte lengths, and original access violation locations.
+    // The helpers and any intervening bytes must form a relocatable block: internal relative references
+    // must stay within the block, and external references must remain valid when the block is copied.
+    virtual void GetAssignRefFunctions(void** assignRef, size_t* assignRefSize, void** assignRefChecked, size_t* assignRefCheckedSize, uintptr_t** avLocationsList) PURE_VIRTUAL
 };
 
 #ifdef WRITE_BARRIER_CHECK

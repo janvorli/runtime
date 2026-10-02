@@ -182,7 +182,7 @@ public:
     virtual uint64_t GetTotalAllocatedBytesPrecise() override;
 
     // Gets custom assign-reference helpers and their access violation locations.
-    virtual void GetAssignRefFunctions(void** assignRef, void** assignRefChecked, uintptr_t** avLocationsList) override;
+    virtual void GetAssignRefFunctions(void** assignRef, size_t* assignRefSize, void** assignRefChecked, size_t* assignRefCheckedSize, uintptr_t** avLocationsList) override;
 };
 
 #endif

@@ -183,12 +183,16 @@ extern "C" void STDCALL JIT_CheckedWriteBarrier_End();
 #endif // TARGET_X86
 
 static void* s_barrierCopy = NULL;
+static BYTE* s_barrierOriginal = (BYTE*)JIT_PatchedCodeStart;
+static size_t s_barrierCopySize;
+static size_t s_customAssignRefSize;
+static size_t s_customCheckedAssignRefSize;
 
 BYTE* GetWriteBarrierCodeLocation(VOID* barrier)
 {
     if (IsWriteBarrierCopyEnabled())
     {
-        return (BYTE*)PINSTRToPCODE((TADDR)s_barrierCopy + ((TADDR)barrier - (TADDR)JIT_PatchedCodeStart));
+        return (BYTE*)PINSTRToPCODE((TADDR)s_barrierCopy + ((TADDR)barrier - (TADDR)s_barrierOriginal));
     }
     else
     {
@@ -200,7 +204,8 @@ BOOL IsIPInWriteBarrierCodeCopy(PCODE controlPc)
 {
     if (IsWriteBarrierCopyEnabled())
     {
-        return (s_barrierCopy <= (void*)controlPc && (void*)controlPc < ((BYTE*)s_barrierCopy + ((BYTE*)JIT_PatchedCodeLast - (BYTE*)JIT_PatchedCodeStart)));
+        return s_barrierCopy != nullptr &&
+            controlPc >= (PCODE)s_barrierCopy && controlPc - (PCODE)s_barrierCopy < s_barrierCopySize;
     }
     else
     {
@@ -213,7 +218,7 @@ PCODE AdjustWriteBarrierIP(PCODE controlPc)
     _ASSERTE(IsIPInWriteBarrierCodeCopy(controlPc));
 
     // Pretend we were executing the barrier function at its original location so that the unwinder can unwind the frame
-    return (PCODE)JIT_PatchedCodeStart + (controlPc - (PCODE)s_barrierCopy);
+    return (PCODE)s_barrierOriginal + (controlPc - (PCODE)s_barrierCopy);
 }
 
 #ifdef TARGET_X86
@@ -263,6 +268,17 @@ static void EnumerateCopiedWriteBarriers(TAction action)
 
     if (IsWriteBarrierCopyEnabled())
     {
+        if (g_heap_type == GC_HEAP_CUSTOM)
+        {
+            ReportCopiedWriteBarrier(action,
+                VolatileLoad(&hlpDynamicFuncTable[DYNAMIC_CORINFO_HELP_ASSIGN_REF].pfnHelper),
+                s_customAssignRefSize, "WriteBarrier", W("WriteBarrier"));
+            ReportCopiedWriteBarrier(action,
+                VolatileLoad(&hlpDynamicFuncTable[DYNAMIC_CORINFO_HELP_CHECKED_ASSIGN_REF].pfnHelper),
+                s_customCheckedAssignRefSize, "CheckedWriteBarrier", W("CheckedWriteBarrier"));
+            return;
+        }
+
 #ifdef TARGET_X86
         struct WriteBarrierEntry
         {
@@ -1339,7 +1355,7 @@ int StompWriteBarrierEphemeral(bool isRuntimeSuspended)
 {
     WRAPPER_NO_CONTRACT;
 
-    if (IsWriteBarrierCopyEnabled())
+    if (IsWriteBarrierCopyEnabled() && g_heap_type != GC_HEAP_CUSTOM)
         return g_WriteBarrierManager.UpdateEphemeralBounds(isRuntimeSuspended);
     else
         return SWB_PASS;
@@ -1352,7 +1368,7 @@ int StompWriteBarrierResize(bool isRuntimeSuspended, bool bReqUpperBoundsCheck)
 {
     WRAPPER_NO_CONTRACT;
 
-    if (IsWriteBarrierCopyEnabled())
+    if (IsWriteBarrierCopyEnabled() && g_heap_type != GC_HEAP_CUSTOM)
         return g_WriteBarrierManager.UpdateWriteWatchAndCardTableLocations(isRuntimeSuspended, bReqUpperBoundsCheck);
     else
         return SWB_PASS;
@@ -1360,7 +1376,7 @@ int StompWriteBarrierResize(bool isRuntimeSuspended, bool bReqUpperBoundsCheck)
 
 void FlushWriteBarrierInstructionCache()
 {
-    if (IsWriteBarrierCopyEnabled())
+    if (IsWriteBarrierCopyEnabled() && g_heap_type != GC_HEAP_CUSTOM)
         FlushInstructionCache(GetCurrentProcess(), GetWriteBarrierCodeLocation((PVOID)JIT_WriteBarrier), g_WriteBarrierManager.GetCurrentWriteBarrierSize());
 }
 
@@ -1370,7 +1386,7 @@ int SwitchToWriteWatchBarrier(bool isRuntimeSuspended)
 {
     WRAPPER_NO_CONTRACT;
 
-    if (IsWriteBarrierCopyEnabled())
+    if (IsWriteBarrierCopyEnabled() && g_heap_type != GC_HEAP_CUSTOM)
         return g_WriteBarrierManager.SwitchToWriteWatchBarrier(isRuntimeSuspended);
     else
         return SWB_PASS;
@@ -1380,7 +1396,7 @@ int SwitchToNonWriteWatchBarrier(bool isRuntimeSuspended)
 {
     WRAPPER_NO_CONTRACT;
 
-    if (IsWriteBarrierCopyEnabled())
+    if (IsWriteBarrierCopyEnabled() && g_heap_type != GC_HEAP_CUSTOM)
         return g_WriteBarrierManager.SwitchToNonWriteWatchBarrier(isRuntimeSuspended);
     else
         return SWB_PASS;
@@ -1391,18 +1407,15 @@ void InitJITWriteBarrierHelpers()
 {
     STANDARD_VM_CONTRACT;
 
-    g_WriteBarrierManager.Initialize();
-
-    // TODO: it is weird that other WB stuff is initialized in the InitThreadManager, should be moved here
-    // if (g_heap_type == GC_HEAP_CUSTOM)
-    // {
-    //     void* assignRef = nullptr;
-    //     void* assignRefChecked = nullptr;
-    //     g_pGCHeap->GetAssignRefFunctions(&assignRef, &assignRefChecked, &g_customWriteBarrierAVLocations);
-    //     SetJitHelperFunction(CORINFO_HELP_ASSIGN_REF, assignRef);
-    //     SetJitHelperFunction(CORINFO_HELP_CHECKED_ASSIGN_REF, assignRefChecked);
-    // }
 #ifndef FEATURE_PORTABLE_HELPERS
+    void* assignRef = nullptr;
+    void* assignRefChecked = nullptr;
+    if (g_heap_type == GC_HEAP_CUSTOM)
+    {
+        g_pGCHeap->GetAssignRefFunctions(&assignRef, &s_customAssignRefSize,
+            &assignRefChecked, &s_customCheckedAssignRefSize, &g_customWriteBarrierAVLocations);
+    }
+
     // All patched helpers should fit into one page.
     // If you hit this assert on retail build, there is most likely problem with BBT script.
     _ASSERTE_ALL_BUILDS((BYTE*)JIT_PatchedCodeLast - (BYTE*)JIT_PatchedCodeStart > (ptrdiff_t)0);
@@ -1410,21 +1423,64 @@ void InitJITWriteBarrierHelpers()
 
     if (IsWriteBarrierCopyEnabled())
     {
-        _ASSERTE(g_heap_type != GC_HEAP_CUSTOM);
+        s_barrierCopySize = (BYTE*)JIT_PatchedCodeLast - (BYTE*)JIT_PatchedCodeStart;
+        if (g_heap_type == GC_HEAP_CUSTOM)
+        {
+            // Preserve the relative placement of both entries, including branches between them.
+            size_t allocationSize = g_SystemInfo.dwAllocationGranularity;
+            uintptr_t start = min((uintptr_t)assignRef, (uintptr_t)assignRefChecked);
+            size_t assignRefOffset = (uintptr_t)assignRef - start;
+            size_t checkedOffset = (uintptr_t)assignRefChecked - start;
+            if (assignRef == nullptr || assignRefChecked == nullptr ||
+                s_customAssignRefSize == 0 || s_customCheckedAssignRefSize == 0 ||
+                assignRefOffset >= allocationSize || checkedOffset >= allocationSize ||
+                s_customAssignRefSize > allocationSize - assignRefOffset ||
+                s_customCheckedAssignRefSize > allocationSize - checkedOffset)
+            {
+                COMPlusThrow(kInvalidOperationException);
+            }
+
+            s_barrierOriginal = (BYTE*)start;
+            s_barrierCopySize = max(assignRefOffset + s_customAssignRefSize,
+                checkedOffset + s_customCheckedAssignRefSize);
+        }
 
         s_barrierCopy = ExecutableAllocator::Instance()->Reserve(g_SystemInfo.dwAllocationGranularity);
-        ExecutableAllocator::Instance()->Commit(s_barrierCopy, g_SystemInfo.dwAllocationGranularity, true);
-        if (s_barrierCopy == NULL)
+        if (s_barrierCopy == nullptr)
         {
-            _ASSERTE(!"Allocation of GC barrier code page failed");
-            COMPlusThrowWin32();
+            COMPlusThrowOM();
+        }
+        if (!ExecutableAllocator::Instance()->Commit(s_barrierCopy, g_SystemInfo.dwAllocationGranularity, true))
+        {
+            COMPlusThrowOM();
         }
 
         {
-            size_t writeBarrierSize = (BYTE*)JIT_PatchedCodeLast - (BYTE*)JIT_PatchedCodeStart;
-            ExecutableWriterHolder<void> barrierWriterHolder(s_barrierCopy, writeBarrierSize);
-            memcpy(barrierWriterHolder.GetRW(), (BYTE*)JIT_PatchedCodeStart, writeBarrierSize);
+            ExecutableWriterHolder<void> barrierWriterHolder(s_barrierCopy, s_barrierCopySize);
+            memcpy(barrierWriterHolder.GetRW(), s_barrierOriginal, s_barrierCopySize);
         }
+        FlushInstructionCache(GetCurrentProcess(), s_barrierCopy, s_barrierCopySize);
+    }
+
+    if (g_heap_type == GC_HEAP_CUSTOM)
+    {
+        assignRef = GetWriteBarrierCodeLocation(assignRef);
+        assignRefChecked = GetWriteBarrierCodeLocation(assignRefChecked);
+#ifndef TARGET_X86
+        JIT_WriteBarrier_Loc = assignRef;
+#endif
+        SetJitHelperFunction(CORINFO_HELP_ASSIGN_REF, assignRef);
+        SetJitHelperFunction(CORINFO_HELP_CHECKED_ASSIGN_REF, assignRefChecked);
+        SetAuxiliarySymbol(assignRef, "JIT_WriteBarrier");
+        SetAuxiliarySymbol(assignRefChecked, "JIT_CheckedWriteBarrier");
+        return;
+    }
+
+    // Architectures with an inline data table cache addresses within the allocated copy.
+    g_WriteBarrierManager.Initialize();
+
+    if (IsWriteBarrierCopyEnabled())
+    {
         // Store the JIT_WriteBarrier copy location to a global variable so that helpers
         // can jump to it.
 #ifdef TARGET_X86
@@ -1463,27 +1519,18 @@ void InitJITWriteBarrierHelpers()
     }
     else
     {
-        if (g_heap_type != GC_HEAP_CUSTOM)
-        {
 #ifdef TARGET_X86
-            JIT_WriteBarrierEAX_Loc = (void*)RhpAssignRefEAX;
+        JIT_WriteBarrierEAX_Loc = (void*)RhpAssignRefEAX;
 #else
-            JIT_WriteBarrier_Loc = (void*)RhpAssignRef;
+        JIT_WriteBarrier_Loc = (void*)RhpAssignRef;
 #endif
 #if defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
-            // Store the JIT_WriteBarrier_Table copy location to a global variable so that it can be updated.
-            JIT_WriteBarrier_Table_Loc = NULL;
+        // Store the JIT_WriteBarrier_Table copy location to a global variable so that it can be updated.
+        JIT_WriteBarrier_Table_Loc = NULL;
 #endif // TARGET_ARM64 || TARGET_LOONGARCH64 || TARGET_RISCV64
-        }
-        else
-        {
-            void* assignRef = nullptr;
-            void* assignRefChecked = nullptr;
-            g_pGCHeap->GetAssignRefFunctions(&assignRef, &assignRefChecked, &g_customWriteBarrierAVLocations);
-            SetJitHelperFunction(CORINFO_HELP_ASSIGN_REF, assignRef);
-            SetJitHelperFunction(CORINFO_HELP_CHECKED_ASSIGN_REF, assignRefChecked);
-        }
     }
+#else
+    g_WriteBarrierManager.Initialize();
 #endif // !FEATURE_PORTABLE_HELPERS
 
 }

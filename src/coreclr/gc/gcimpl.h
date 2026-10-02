@@ -341,7 +341,7 @@ public:
 
     uint64_t GetTotalAllocatedBytesPrecise();
 
-    void GetAssignRefFunctions(void** assignRef, void** assignRefChecked, uintptr_t** avLocationsList);
+    void GetAssignRefFunctions(void** assignRef, size_t* assignRefSize, void** assignRefChecked, size_t* assignRefCheckedSize, uintptr_t** avLocationsList);
 };
 
 #endif  // GCIMPL_H_
