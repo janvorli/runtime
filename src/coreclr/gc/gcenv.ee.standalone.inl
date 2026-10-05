@@ -363,4 +363,10 @@ inline uint64_t GCToEEInterface::GetThreadOSThreadId(Thread* thread)
     }
 }
 
+inline void GCToEEInterface::GcPoll()
+{
+    assert(g_theGCToCLR != nullptr);
+    g_theGCToCLR->GcPoll();
+}
+
 #endif // __GCTOENV_EE_STANDALONE_INL__

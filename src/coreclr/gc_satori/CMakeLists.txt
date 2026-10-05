@@ -6,20 +6,23 @@ if(FEATURE_STANDALONE_GC)
   remove_definitions(-DWRITE_BARRIER_CHECK)
 endif(FEATURE_STANDALONE_GC)
 
+add_definitions(-DFEATURE_SVR_GC)
+add_definitions(-DFEATURE_SATORI_GC)
+add_definitions(-DFEATURE_SATORI_EXTERNAL_OBJECTS)
+
 set(GC_SOURCES
-  gceventstatus.cpp
-  gcconfig.cpp
-  gccommon.cpp
-  gcscan.cpp
-  handletable.cpp
-  handletablecore.cpp
-  handletablescan.cpp
-  objecthandle.cpp
-  # softwarewritewatch.cpp
-  gchandletable.cpp
-  gcload.cpp
-  gcbridge.cpp
-  handletablecache.cpp
+  ../gc/gceventstatus.cpp
+  ../gc/gcconfig.cpp
+  ../gc/gccommon.cpp
+  ../gc/gcscan.cpp
+  ../gc/handletable.cpp
+  ../gc/handletablecore.cpp
+  ../gc/handletablescan.cpp
+  ../gc/objecthandle.cpp
+  ../gc/gchandletable.cpp
+  ../gc/gcload.cpp
+  ../gc/gcbridge.cpp
+  ../gc/handletablecache.cpp
   SatoriGC.cpp
   SatoriHandlePartitioner.cpp
   SatoriHeap.cpp
@@ -42,60 +45,46 @@ set(GC_WRITE_BARRIER_SOURCES
   amd64/writebarrier.asm
 )
 
-if(CLR_CMAKE_TARGET_ARCH_WASM)
-  add_subdirectory(wasm)
-elseif(CLR_CMAKE_HOST_UNIX)
-  add_subdirectory(unix)
-  include(unix/configure.cmake)
-else()
-  add_subdirectory(windows)
-  set (GC_SOURCES
-    ${GC_SOURCES}
-    windows/Native.rc) # TODO: have a copy
-endif()
-
-if (CLR_CMAKE_TARGET_ARCH_ARM64 OR CLR_CMAKE_TARGET_ARCH_AMD64)
-#  add_subdirectory(vxsort  ${CMAKE_CURRENT_BINARY_DIR}/vxsort)
-endif (CLR_CMAKE_TARGET_ARCH_ARM64 OR CLR_CMAKE_TARGET_ARCH_AMD64)
+include_directories(../gc)
 
 if (CLR_CMAKE_TARGET_WIN32)
   set(GC_HEADERS
-    env/common.h
-    env/etmdummy.h
-    env/gcenv.base.h
-    env/gcenv.ee.h
-    env/gcenv.h
-    env/gcenv.interlocked.h
-    env/gcenv.interlocked.inl
-    env/gcenv.object.h
-    env/gcenv.os.h
-    env/gcenv.structs.h
-    env/gcenv.sync.h
-    env/gcenv.windows.inl
-    env/volatile.h
-    # gc.h
-    # gcinternal.h
-    # gcconfig.h
-    # gcbridge.h
-    # gcdesc.h
-    # gcenv.ee.standalone.inl
-    # gcenv.inl
-    # gcevent_serializers.h
-    # gcevents.h
-    # gceventstatus.h
-    # gchandletableimpl.h
-    # gcimpl.h
-    # gcinterface.dac.h
-    # gcinterface.ee.h
-    # gcinterface.h
-    # gcpriv.h
-    # gcrecord.h
-    # gcscan.h
-    # handletable.h
-    # handletable.inl
-    # handletablepriv.h
-    # objecthandle.h
-    # softwarewritewatch.h
+    ../gc/env/common.h
+    ../gc/env/etmdummy.h
+    ../gc/env/gcenv.base.h
+    ../gc/env/gcenv.ee.h
+    ../gc/env/gcenv.h
+    ../gc/env/gcenv.interlocked.h
+    ../gc/env/gcenv.interlocked.inl
+    ../gc/env/gcenv.object.h
+    ../gc/env/gcenv.os.h
+    ../gc/env/gcenv.structs.h
+    ../gc/env/gcenv.sync.h
+    ../gc/env/gcenv.windows.inl
+    ../gc/env/volatile.h
+    ../gc/gc.h
+    ../gc/gcinternal.h
+    ../gc/gcconfig.h
+    ../gc/gcbridge.h
+    ../gc/gcdesc.h
+    ../gc/gcenv.ee.standalone.inl
+    ../gc/gcenv.inl
+    ../gc/gcevent_serializers.h
+    ../gc/gcevents.h
+    ../gc/gceventstatus.h
+    ../gc/gchandletableimpl.h
+    ../gc/gcimpl.h
+    ../gc/gcinterface.dac.h
+    ../gc/gcinterface.ee.h
+    ../gc/gcinterface.h
+    ../gc/gcpriv.h
+    ../gc/gcrecord.h
+    ../gc/gcscan.h
+    ../gc/handletable.h
+    ../gc/handletable.inl
+    ../gc/handletablepriv.h
+    ../gc/objecthandle.h
+    ../gc/softwarewritewatch.h
     SatoriGC.h
     SatoriHandlePartitioner.h
     SatoriHeap.h
@@ -131,15 +120,8 @@ endif(CLR_CMAKE_HOST_WIN32)
 
 set (GC_LINK_LIBRARIES
     ${GC_LINK_LIBRARIES}
-    gc_pal_satori
+    gc_pal
     minipal)
-
-# if(CLR_CMAKE_TARGET_ARCH_ARM64 OR CLR_CMAKE_TARGET_ARCH_AMD64)
-#     list(APPEND GC_LINK_LIBRARIES
-#         gc_vxsort
-#     )
-# endif(CLR_CMAKE_TARGET_ARCH_ARM64 OR CLR_CMAKE_TARGET_ARCH_AMD64)
-
 
 list(APPEND GC_SOURCES ${GC_HEADERS})
 
@@ -148,7 +130,6 @@ convert_to_absolute_path(GC_SOURCES ${GC_SOURCES})
 add_library_clr(satori_writebarrier OBJECT ${GC_WRITE_BARRIER_SOURCES})
 target_include_directories(satori_writebarrier PRIVATE
   ${ARCH_SOURCES_DIR}
-#  ../pal/inc
   ../vm/${ARCH_SOURCES_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}/../vm/wks)
 
@@ -174,8 +155,7 @@ if(FEATURE_STANDALONE_GC)
     add_definitions(-D_DARWIN_C_SOURCE)
   endif(CLR_CMAKE_HOST_APPLE)
 
-  include_directories(${COMMON_GC})
-  include_directories(env)
+  include_directories(../gc/env)
 
   # add_definitions(-DGC_DESCRIPTOR)
   # add_subdirectory(datadescriptor)
