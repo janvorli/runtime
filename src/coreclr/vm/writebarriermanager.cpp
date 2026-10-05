@@ -231,7 +231,6 @@ void *JIT_WriteBarrier_Loc = 0;
 #endif
 
 #if defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
-extern "C" void (*JIT_WriteBarrier_Table)();
 extern "C" void *JIT_WriteBarrier_Table_Loc;
 void *JIT_WriteBarrier_Table_Loc = 0;
 #endif // TARGET_ARM64 || TARGET_LOONGARCH64 || TARGET_RISCV64
@@ -1410,10 +1409,11 @@ void InitJITWriteBarrierHelpers()
 #ifndef FEATURE_PORTABLE_HELPERS
     void* assignRef = nullptr;
     void* assignRefChecked = nullptr;
+    GCWriteBarrierReloc* assignRefRelocs = nullptr;
     if (g_heap_type == GC_HEAP_CUSTOM)
     {
         g_pGCHeap->GetAssignRefFunctions(&assignRef, &s_customAssignRefSize,
-            &assignRefChecked, &s_customCheckedAssignRefSize, &g_customWriteBarrierAVLocations);
+            &assignRefChecked, &s_customCheckedAssignRefSize, &g_customWriteBarrierAVLocations, &assignRefRelocs);
     }
 
     // All patched helpers should fit into one page.
@@ -1458,6 +1458,43 @@ void InitJITWriteBarrierHelpers()
         {
             ExecutableWriterHolder<void> barrierWriterHolder(s_barrierCopy, s_barrierCopySize);
             memcpy(barrierWriterHolder.GetRW(), s_barrierOriginal, s_barrierCopySize);
+
+            // The custom GC's write barrier may reference globals (e.g. the card table) via
+            // PC-relative instructions. Now that the code lives at a new address, those
+            // instructions must be patched to still reference the same globals.
+            if (g_heap_type == GC_HEAP_CUSTOM && assignRefRelocs != nullptr)
+            {
+                BYTE* copyRW = (BYTE*)barrierWriterHolder.GetRW();
+                for (GCWriteBarrierReloc* reloc = assignRefRelocs; reloc->Location != nullptr; reloc++)
+                {
+                    size_t offset = (BYTE*)reloc->Location - s_barrierOriginal;
+
+                    // The instruction(s) being patched compute their PC-relative displacement
+                    // using the address they will actually execute from (the final, read-execute
+                    // copy), even though the bytes are patched through the writable alias.
+                    BYTE* executeAddr = (BYTE*)s_barrierCopy + offset;
+                    BYTE* writeAddr = copyRW + offset;
+                    UINT_PTR target = (UINT_PTR)reloc->Target;
+
+#if defined(TARGET_AMD64)
+                    // "mov reg, qword ptr [rip+disp32]" is 7 bytes total; disp32 is the last 4.
+                    UINT_PTR nextInstr = (UINT_PTR)(executeAddr + 7);
+                    *(INT32*)(writeAddr + 3) = (INT32)((INT64)target - (INT64)nextInstr);
+#elif defined(TARGET_ARM64)
+                    // "adrp reg, page" followed by "ldr reg, [reg, #imm12]".
+                    UINT32* adrp = (UINT32*)writeAddr;
+                    UINT32* ldr = adrp + 1;
+                    INT64 pageDelta = (INT64)((target & ~(UINT_PTR)0xFFF) - ((UINT_PTR)executeAddr & ~(UINT_PTR)0xFFF)) >> 12;
+                    UINT32 immlo = (UINT32)pageDelta & 0x3;
+                    UINT32 immhi = (UINT32)(pageDelta >> 2) & 0x7FFFF;
+                    *adrp = (*adrp & 0x9000001Fu) | (immlo << 29) | (immhi << 5);
+                    UINT32 imm12 = (UINT32)((target & 0xFFF) >> 3);
+                    *ldr = (*ldr & 0xFFC003FFu) | (imm12 << 10);
+#else
+                    _ASSERTE(!"Relocation patching for custom write barrier globals is not implemented for this architecture");
+#endif
+                }
+            }
         }
         FlushInstructionCache(GetCurrentProcess(), s_barrierCopy, s_barrierCopySize);
     }

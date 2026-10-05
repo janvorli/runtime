@@ -15,8 +15,8 @@ EXTERN g_write_barrier_state  : QWORD
 LEAF_ENTRY RhpCheckedAssignRef, _TEXT
 
     ; See if dst is in GCHeap
-        mov     rax, OFFSET g_gc_card_bundle_table
-        mov     rax, [rax]               ; fetch the page byte map
+ALTERNATE_ENTRY RelocSite_CheckedAssignRef_CardBundleTable
+        mov     rax, qword ptr [g_gc_card_bundle_table] ; fetch the page byte map (patched post-copy; see GetAssignRefFunctions)
         mov     r8,  rcx
         shr     r8,  30                    ; dst page index
         cmp     byte ptr [rax + r8], 0
@@ -36,8 +36,8 @@ LEAF_ENTRY RhpAssignRef, _TEXT
 
 ifdef FEATURE_SATORI_EXTERNAL_OBJECTS
     ; check if src is in heap
-        mov     rax, OFFSET g_gc_card_bundle_table
-        mov     rax, [rax]               ; fetch the page byte map
+ALTERNATE_ENTRY RelocSite_AssignRef_CardBundleTable
+        mov     rax, qword ptr [g_gc_card_bundle_table] ; fetch the page byte map (patched post-copy; see GetAssignRefFunctions)
     ALTERNATE_ENTRY RhpCheckedEntry
         mov     r8,  rdx
         shr     r8,  30                    ; dst page index
@@ -84,8 +84,8 @@ ALTERNATE_ENTRY RhpAssignRefAVLocation
 
     ; TUNING: barriers in different modes could be separate pieces of code, but barrier switch 
     ;         needs to suspend EE, not sure if skipping mode check would worth that much.
-        mov     r11, OFFSET g_write_barrier_state
-        mov     r11, qword ptr [r11]
+ALTERNATE_ENTRY RelocSite_AssignAndMarkCards_WriteBarrierState
+        mov     r11, qword ptr [g_write_barrier_state] ; patched post-copy; see GetAssignRefFunctions
 
     ; check the barrier state. this must be done after the assignment (in program order)
     ; if state == 2 we do not set or dirty cards.
@@ -110,8 +110,8 @@ ALTERNATE_ENTRY RhpAssignRefAVLocation
 
     MarkCards:
     ; fetch card location for rcx
-        mov     r9, OFFSET g_gc_card_table
-        mov     r9, [r9]                 ; fetch the page map
+ALTERNATE_ENTRY RelocSite_MarkCards_CardTable
+        mov     r9, qword ptr [g_gc_card_table] ; fetch the page map (patched post-copy; see GetAssignRefFunctions)
         mov     r8,  rcx
         shr     rcx, 30
         mov     rax, qword ptr [r9 + rcx * 8] ; page
@@ -141,8 +141,9 @@ ALTERNATE_ENTRY RhpAssignRefAVLocation
 
      CardSet:
     ; check if concurrent marking is still not in progress
-        mov     r9, OFFSET g_write_barrier_state
-        cmp     qword ptr [r9], 0h
+ALTERNATE_ENTRY RelocSite_CardSet_WriteBarrierState
+        mov     r9, qword ptr [g_write_barrier_state] ; patched post-copy; see GetAssignRefFunctions
+        cmp     r9, 0h
         jne     DirtyCard
         ret
 

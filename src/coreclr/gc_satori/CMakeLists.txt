@@ -42,7 +42,7 @@ set(GC_SOURCES
 )
 
 set(GC_WRITE_BARRIER_SOURCES
-  amd64/writebarrier.asm
+  ${ARCH_SOURCES_DIR}/writebarrier.asm
 )
 
 include_directories(../gc)
@@ -126,6 +126,19 @@ set (GC_LINK_LIBRARIES
 list(APPEND GC_SOURCES ${GC_HEADERS})
 
 convert_to_absolute_path(GC_SOURCES ${GC_SOURCES})
+
+if (CLR_CMAKE_TARGET_WIN32)
+  if (CLR_CMAKE_HOST_ARCH_ARM64)
+    # The Microsoft ARM64 assembler does not have a built-in C preprocessor,
+    # unlike ml64, so the asm sources need to be preprocessed first.
+    include_directories(
+      ${ARCH_SOURCES_DIR}
+      ../vm/${ARCH_SOURCES_DIR}
+      ${CMAKE_CURRENT_BINARY_DIR}/../vm/wks)
+    convert_to_absolute_path(GC_WRITE_BARRIER_SOURCES ${GC_WRITE_BARRIER_SOURCES})
+    preprocess_files(GC_WRITE_BARRIER_SOURCES ${GC_WRITE_BARRIER_SOURCES})
+  endif()
+endif (CLR_CMAKE_TARGET_WIN32)
 
 add_library_clr(satori_writebarrier OBJECT ${GC_WRITE_BARRIER_SOURCES})
 target_include_directories(satori_writebarrier PRIVATE

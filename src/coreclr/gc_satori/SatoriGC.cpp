@@ -403,13 +403,50 @@ static uintptr_t avLocations[] =
     0
 };
 
-void SatoriGC::GetAssignRefFunctions(void** assignRef, size_t* assignRefSize, void** assignRefChecked, size_t* assignRefCheckedSize, uintptr_t** avLocationsList)
+// The assembly write barriers reference these globals via PC-relative instructions (a single
+// RIP-relative load on amd64, an adrp/ldr pair on arm64) so that dereferencing them costs no more
+// than today. Since the barrier code is copied to a dynamically allocated buffer when the write
+// barrier copy feature is enabled, those PC-relative references must be patched to target the
+// globals correctly from the new location; the labels below mark where to patch (see
+// GCWriteBarrierReloc in gcinterface.h and its use in WriteBarrierManager).
+#if defined(TARGET_AMD64) || defined(TARGET_ARM64)
+extern "C" uint8_t RelocSite_CheckedAssignRef_CardBundleTable;
+#if FEATURE_SATORI_EXTERNAL_OBJECTS
+extern "C" uint8_t RelocSite_AssignRef_CardBundleTable;
+#endif
+extern "C" uint8_t RelocSite_AssignAndMarkCards_WriteBarrierState;
+extern "C" uint8_t RelocSite_MarkCards_CardTable;
+extern "C" uint8_t RelocSite_CardSet_WriteBarrierState;
+
+extern "C" uint32_t* g_gc_card_table;
+extern "C" uint32_t* g_gc_card_bundle_table;
+extern "C" uint8_t* g_write_barrier_state;
+
+static GCWriteBarrierReloc assignRefRelocs[] =
+{
+    { &RelocSite_CheckedAssignRef_CardBundleTable, &g_gc_card_bundle_table },
+#if FEATURE_SATORI_EXTERNAL_OBJECTS
+    { &RelocSite_AssignRef_CardBundleTable, &g_gc_card_bundle_table },
+#endif
+    { &RelocSite_AssignAndMarkCards_WriteBarrierState, &g_write_barrier_state },
+    { &RelocSite_MarkCards_CardTable, &g_gc_card_table },
+    { &RelocSite_CardSet_WriteBarrierState, &g_write_barrier_state },
+    { nullptr, nullptr }
+};
+#endif // defined(TARGET_AMD64) || defined(TARGET_ARM64)
+
+void SatoriGC::GetAssignRefFunctions(void** assignRef, size_t* assignRefSize, void** assignRefChecked, size_t* assignRefCheckedSize, uintptr_t** avLocationsList, GCWriteBarrierReloc** relocations)
 {
     *assignRef = &RhpAssignRef;
     *assignRefSize = (uintptr_t)&RhpAssignRef_End - (uintptr_t)&RhpAssignRef;
     *assignRefChecked = &RhpCheckedAssignRef;
     *assignRefCheckedSize = (uintptr_t)&RhpCheckedAssignRef_End - (uintptr_t)&RhpCheckedAssignRef;
     *avLocationsList = avLocations;
+#if defined(TARGET_AMD64) || defined(TARGET_ARM64)
+    *relocations = assignRefRelocs;
+#else
+    *relocations = nullptr;
+#endif
 }
 
 GCHeapType SatoriGC::GetGCHeapType()

@@ -155,6 +155,19 @@ struct FastGCFunctions
     BulkMoveWithWriteBarrierFunction bulk_move_with_write_barrier;
 };
 
+// Describes a reference, embedded as a PC-relative instruction operand, to a global variable
+// within a custom assign-reference helper (see GetAssignRefFunctions). The EE uses these to patch
+// the reference after the helper's code is copied to a new location, since a PC-relative reference
+// is only valid at the address the code was originally linked at.
+struct GCWriteBarrierReloc
+{
+    // Address, within the original (uncopied) helper code, of the first byte of the PC-relative
+    // instruction(s) that reference Target. A Location of nullptr terminates the array.
+    void* Location;
+    // Address of the global variable referenced from Location.
+    void* Target;
+};
+
 struct FinalizerWorkItem
 {
     FinalizerWorkItem* next;
@@ -1126,10 +1139,12 @@ public:
     // Gets the precise total number of allocated bytes.
     virtual uint64_t GetTotalAllocatedBytesPrecise() PURE_VIRTUAL
 
-    // Gets custom assign-reference helpers, their byte lengths, and original access violation locations.
-    // The helpers and any intervening bytes must form a relocatable block: internal relative references
-    // must stay within the block, and external references must remain valid when the block is copied.
-    virtual void GetAssignRefFunctions(void** assignRef, size_t* assignRefSize, void** assignRefChecked, size_t* assignRefCheckedSize, uintptr_t** avLocationsList) PURE_VIRTUAL
+    // Gets custom assign-reference helpers, their byte lengths, original access violation locations,
+    // and the PC-relative relocations (see GCWriteBarrierReloc) that must be patched after the code
+    // is copied. The helpers and any intervening bytes must form a relocatable block: internal
+    // relative references must stay within the block, and any other PC-relative reference to a
+    // global variable must be listed in relocations so the EE can fix it up post-copy.
+    virtual void GetAssignRefFunctions(void** assignRef, size_t* assignRefSize, void** assignRefChecked, size_t* assignRefCheckedSize, uintptr_t** avLocationsList, GCWriteBarrierReloc** relocations) PURE_VIRTUAL
 };
 
 #ifdef WRITE_BARRIER_CHECK
