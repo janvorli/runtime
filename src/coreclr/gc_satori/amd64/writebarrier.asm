@@ -4,10 +4,6 @@
 include AsmConstants.inc
 include AsmMacros.inc
 
-EXTERN g_gc_card_table         : QWORD
-EXTERN g_gc_card_bundle_table  : QWORD
-EXTERN g_write_barrier_state  : QWORD
-
 ;
 ;   rcx - dest address 
 ;   rdx - object
@@ -15,8 +11,22 @@ EXTERN g_write_barrier_state  : QWORD
 LEAF_ENTRY RhpCheckedAssignRef, _TEXT
 
     ; See if dst is in GCHeap
+    ; The card bundle table value below is patched directly as an embedded 8-byte immediate (not
+    ; referenced by address), so that it remains correct no matter where this code is copied to;
+    ; see GetAssignRefFunctions. "mov rax, imm64" is emitted manually (REX.W + B8 + 8-byte
+    ; immediate) so RelocSite_CheckedAssignRef_CardBundleTable labels the immediate itself, which
+    ; is kept 8-byte aligned so the EE can patch it atomically while this code may be running
+    ; concurrently on other threads.
+        align 8
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        db      048h, 0B8h              ; mov rax, imm64 (REX.W B8+rax)
 ALTERNATE_ENTRY RelocSite_CheckedAssignRef_CardBundleTable
-        mov     rax, qword ptr [g_gc_card_bundle_table] ; fetch the page byte map (patched post-copy; see GetAssignRefFunctions)
+        dq      0F0F0F0F0F0F0F0F0h      ; fetch the page byte map value (patched; see GetAssignRefFunctions)
         mov     r8,  rcx
         shr     r8,  30                    ; dst page index
         cmp     byte ptr [rax + r8], 0
@@ -36,8 +46,16 @@ LEAF_ENTRY RhpAssignRef, _TEXT
 
 ifdef FEATURE_SATORI_EXTERNAL_OBJECTS
     ; check if src is in heap
+        align 8
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        db      048h, 0B8h              ; mov rax, imm64 (REX.W B8+rax)
 ALTERNATE_ENTRY RelocSite_AssignRef_CardBundleTable
-        mov     rax, qword ptr [g_gc_card_bundle_table] ; fetch the page byte map (patched post-copy; see GetAssignRefFunctions)
+        dq      0F0F0F0F0F0F0F0F0h      ; fetch the page byte map value (patched; see GetAssignRefFunctions)
     ALTERNATE_ENTRY RhpCheckedEntry
         mov     r8,  rdx
         shr     r8,  30                    ; dst page index
@@ -84,8 +102,16 @@ ALTERNATE_ENTRY RhpAssignRefAVLocation
 
     ; TUNING: barriers in different modes could be separate pieces of code, but barrier switch 
     ;         needs to suspend EE, not sure if skipping mode check would worth that much.
+        align 8
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        db      049h, 0BBh              ; mov r11, imm64 (REX.WB B8+(r11&7))
 ALTERNATE_ENTRY RelocSite_AssignAndMarkCards_WriteBarrierState
-        mov     r11, qword ptr [g_write_barrier_state] ; patched post-copy; see GetAssignRefFunctions
+        dq      0F0F0F0F0F0F0F0F0h      ; fetch the barrier state value (patched; see GetAssignRefFunctions)
 
     ; check the barrier state. this must be done after the assignment (in program order)
     ; if state == 2 we do not set or dirty cards.
@@ -110,8 +136,16 @@ ALTERNATE_ENTRY RelocSite_AssignAndMarkCards_WriteBarrierState
 
     MarkCards:
     ; fetch card location for rcx
+        align 8
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        db      049h, 0B9h              ; mov r9, imm64 (REX.WB B8+(r9&7))
 ALTERNATE_ENTRY RelocSite_MarkCards_CardTable
-        mov     r9, qword ptr [g_gc_card_table] ; fetch the page map (patched post-copy; see GetAssignRefFunctions)
+        dq      0F0F0F0F0F0F0F0F0h      ; fetch the page map value (patched; see GetAssignRefFunctions)
         mov     r8,  rcx
         shr     rcx, 30
         mov     rax, qword ptr [r9 + rcx * 8] ; page
@@ -141,8 +175,16 @@ ALTERNATE_ENTRY RelocSite_MarkCards_CardTable
 
      CardSet:
     ; check if concurrent marking is still not in progress
+        align 8
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        db      049h, 0B9h              ; mov r9, imm64 (REX.WB B8+(r9&7))
 ALTERNATE_ENTRY RelocSite_CardSet_WriteBarrierState
-        mov     r9, qword ptr [g_write_barrier_state] ; patched post-copy; see GetAssignRefFunctions
+        dq      0F0F0F0F0F0F0F0F0h      ; fetch the barrier state value (patched; see GetAssignRefFunctions)
         cmp     r9, 0h
         jne     DirtyCard
         ret

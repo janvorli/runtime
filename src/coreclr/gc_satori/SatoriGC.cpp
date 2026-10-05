@@ -403,12 +403,15 @@ static uintptr_t avLocations[] =
     0
 };
 
-// The assembly write barriers reference these globals via PC-relative instructions (a single
-// RIP-relative load on amd64, an adrp/ldr pair on arm64) so that dereferencing them costs no more
-// than today. Since the barrier code is copied to a dynamically allocated buffer when the write
-// barrier copy feature is enabled, those PC-relative references must be patched to target the
-// globals correctly from the new location; the labels below mark where to patch (see
-// GCWriteBarrierReloc in gcinterface.h and its use in WriteBarrierManager).
+// The assembly write barriers cache the values of these globals (card table, card bundle table,
+// write barrier state) directly in patchable slots embedded in their own code, instead of
+// referencing the globals by address -- on amd64 this is the immediate operand of a MOV
+// instruction, on arm64 it is a co-located literal-pool entry -- so the cached values remain
+// correct no matter where the barrier code is copied to (a PC-relative reference to the actual
+// global could otherwise end up out of range once the code is copied to a dynamically allocated
+// buffer). The labels below mark those slots; see GCWriteBarrierReloc in gcinterface.h and
+// UpdateCustomWriteBarrierGlobals in writebarriermanager.cpp, which keeps them in sync with the
+// globals' current values.
 #if defined(TARGET_AMD64) || defined(TARGET_ARM64)
 extern "C" uint8_t RelocSite_CheckedAssignRef_CardBundleTable;
 #if FEATURE_SATORI_EXTERNAL_OBJECTS

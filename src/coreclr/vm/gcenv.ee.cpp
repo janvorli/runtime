@@ -1030,6 +1030,15 @@ void GCToEEInterface::StompWriteBarrier(WriteBarrierParameters* args)
     int stompWBCompleteActions = SWB_PASS;
     bool is_runtime_suspended = args->is_runtime_suspended;
 
+    // The custom GC's write barrier helpers never read their globals (e.g. card table, write
+    // barrier state) directly; they read patched values cached in the helper code itself (see
+    // GCWriteBarrierReloc). Any global change -- whatever WriteBarrierOp it arrives as -- must be
+    // reflected there.
+    if (g_heap_type == GC_HEAP_CUSTOM)
+    {
+        UpdateCustomWriteBarrierGlobals();
+    }
+
     switch (args->operation)
     {
     case WriteBarrierOp::StompResize:

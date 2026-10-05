@@ -155,16 +155,21 @@ struct FastGCFunctions
     BulkMoveWithWriteBarrierFunction bulk_move_with_write_barrier;
 };
 
-// Describes a reference, embedded as a PC-relative instruction operand, to a global variable
-// within a custom assign-reference helper (see GetAssignRefFunctions). The EE uses these to patch
-// the reference after the helper's code is copied to a new location, since a PC-relative reference
-// is only valid at the address the code was originally linked at.
+// Describes a patchable, pointer-sized data slot embedded directly in a custom assign-reference
+// helper (see GetAssignRefFunctions), used in place of a direct reference to a global variable.
+// A helper cannot take a PC-relative reference to an arbitrary (possibly far away) global and
+// remain correct once copied to a new location, since the displacement may no longer fit the
+// instruction encoding (e.g. amd64's 32-bit RIP-relative displacement has only a +/-2GB range).
+// Instead, the helper embeds the slot directly in its own code -- on arm64 this is a literal-pool
+// entry co-located with the code, and on amd64 it is the immediate operand of a MOV instruction --
+// and the EE copies the current value of the referenced global into the slot, both right after the
+// helper is copied to a new location and whenever the global's value changes thereafter.
 struct GCWriteBarrierReloc
 {
-    // Address, within the original (uncopied) helper code, of the first byte of the PC-relative
-    // instruction(s) that reference Target. A Location of nullptr terminates the array.
+    // Address, within the original (uncopied) helper code, of an 8-byte, 8-byte-aligned slot that
+    // caches the value of *Target. A Location of nullptr terminates the array.
     void* Location;
-    // Address of the global variable referenced from Location.
+    // Address of the global variable whose value is cached at Location.
     void* Target;
 };
 
@@ -1140,10 +1145,11 @@ public:
     virtual uint64_t GetTotalAllocatedBytesPrecise() PURE_VIRTUAL
 
     // Gets custom assign-reference helpers, their byte lengths, original access violation locations,
-    // and the PC-relative relocations (see GCWriteBarrierReloc) that must be patched after the code
-    // is copied. The helpers and any intervening bytes must form a relocatable block: internal
-    // relative references must stay within the block, and any other PC-relative reference to a
-    // global variable must be listed in relocations so the EE can fix it up post-copy.
+    // and the patchable global-value slots (see GCWriteBarrierReloc) embedded in them. The helpers
+    // and any intervening bytes must form a relocatable block: internal relative references must
+    // stay within the block, and any reference to an external global variable must instead be
+    // listed in relocations (and read from the patched slot) so the helper remains correct no
+    // matter where the EE copies it to.
     virtual void GetAssignRefFunctions(void** assignRef, size_t* assignRefSize, void** assignRefChecked, size_t* assignRefCheckedSize, uintptr_t** avLocationsList, GCWriteBarrierReloc** relocations) PURE_VIRTUAL
 };
 

@@ -187,6 +187,10 @@ static BYTE* s_barrierOriginal = (BYTE*)JIT_PatchedCodeStart;
 static size_t s_barrierCopySize;
 static size_t s_customAssignRefSize;
 static size_t s_customCheckedAssignRefSize;
+// Patchable global-value slots embedded in the custom GC's assign-reference helpers (see
+// GCWriteBarrierReloc and GetAssignRefFunctions). Null until InitJITWriteBarrierHelpers has run
+// for a GC_HEAP_CUSTOM heap.
+static GCWriteBarrierReloc* s_customAssignRefRelocs = nullptr;
 
 BYTE* GetWriteBarrierCodeLocation(VOID* barrier)
 {
@@ -219,6 +223,34 @@ PCODE AdjustWriteBarrierIP(PCODE controlPc)
 
     // Pretend we were executing the barrier function at its original location so that the unwinder can unwind the frame
     return (PCODE)s_barrierOriginal + (controlPc - (PCODE)s_barrierCopy);
+}
+
+// Refreshes the patchable global-value slots embedded in the custom GC's assign-reference helpers
+// (see GCWriteBarrierReloc) so that they reflect the current values of the globals they cache. This
+// must be called after the helpers are first copied (if write barrier copying is enabled) and again
+// whenever any of the referenced globals' values change, since the helpers never read the globals
+// directly. A no-op until InitJITWriteBarrierHelpers has populated s_customAssignRefRelocs.
+void UpdateCustomWriteBarrierGlobals()
+{
+    CONTRACTL
+    {
+        MODE_ANY;
+        GC_NOTRIGGER;
+        NOTHROW;
+    }
+    CONTRACTL_END;
+
+    for (GCWriteBarrierReloc* reloc = s_customAssignRefRelocs; reloc != nullptr && reloc->Location != nullptr; reloc++)
+    {
+        UINT_PTR* slot = (UINT_PTR*)GetWriteBarrierCodeLocation(reloc->Location);
+        UINT_PTR value = *(UINT_PTR*)reloc->Target;
+        if (*slot != value)
+        {
+            ExecutableWriterHolder<UINT_PTR> slotWriterHolder(slot, sizeof(UINT_PTR));
+            *slotWriterHolder.GetRW() = value;
+            FlushInstructionCache(GetCurrentProcess(), slot, sizeof(UINT_PTR));
+        }
+    }
 }
 
 #ifdef TARGET_X86
@@ -1458,49 +1490,19 @@ void InitJITWriteBarrierHelpers()
         {
             ExecutableWriterHolder<void> barrierWriterHolder(s_barrierCopy, s_barrierCopySize);
             memcpy(barrierWriterHolder.GetRW(), s_barrierOriginal, s_barrierCopySize);
-
-            // The custom GC's write barrier may reference globals (e.g. the card table) via
-            // PC-relative instructions. Now that the code lives at a new address, those
-            // instructions must be patched to still reference the same globals.
-            if (g_heap_type == GC_HEAP_CUSTOM && assignRefRelocs != nullptr)
-            {
-                BYTE* copyRW = (BYTE*)barrierWriterHolder.GetRW();
-                for (GCWriteBarrierReloc* reloc = assignRefRelocs; reloc->Location != nullptr; reloc++)
-                {
-                    size_t offset = (BYTE*)reloc->Location - s_barrierOriginal;
-
-                    // The instruction(s) being patched compute their PC-relative displacement
-                    // using the address they will actually execute from (the final, read-execute
-                    // copy), even though the bytes are patched through the writable alias.
-                    BYTE* executeAddr = (BYTE*)s_barrierCopy + offset;
-                    BYTE* writeAddr = copyRW + offset;
-                    UINT_PTR target = (UINT_PTR)reloc->Target;
-
-#if defined(TARGET_AMD64)
-                    // "mov reg, qword ptr [rip+disp32]" is 7 bytes total; disp32 is the last 4.
-                    UINT_PTR nextInstr = (UINT_PTR)(executeAddr + 7);
-                    *(INT32*)(writeAddr + 3) = (INT32)((INT64)target - (INT64)nextInstr);
-#elif defined(TARGET_ARM64)
-                    // "adrp reg, page" followed by "ldr reg, [reg, #imm12]".
-                    UINT32* adrp = (UINT32*)writeAddr;
-                    UINT32* ldr = adrp + 1;
-                    INT64 pageDelta = (INT64)((target & ~(UINT_PTR)0xFFF) - ((UINT_PTR)executeAddr & ~(UINT_PTR)0xFFF)) >> 12;
-                    UINT32 immlo = (UINT32)pageDelta & 0x3;
-                    UINT32 immhi = (UINT32)(pageDelta >> 2) & 0x7FFFF;
-                    *adrp = (*adrp & 0x9000001Fu) | (immlo << 29) | (immhi << 5);
-                    UINT32 imm12 = (UINT32)((target & 0xFFF) >> 3);
-                    *ldr = (*ldr & 0xFFC003FFu) | (imm12 << 10);
-#else
-                    _ASSERTE(!"Relocation patching for custom write barrier globals is not implemented for this architecture");
-#endif
-                }
-            }
         }
         FlushInstructionCache(GetCurrentProcess(), s_barrierCopy, s_barrierCopySize);
     }
 
     if (g_heap_type == GC_HEAP_CUSTOM)
     {
+        // Populate the patchable global-value slots embedded in the helpers (see
+        // GCWriteBarrierReloc) with the globals' current values. GetWriteBarrierCodeLocation
+        // resolves slot addresses correctly whether or not write barrier copying is enabled, so
+        // this works for both the original and the copied code.
+        s_customAssignRefRelocs = assignRefRelocs;
+        UpdateCustomWriteBarrierGlobals();
+
         assignRef = GetWriteBarrierCodeLocation(assignRef);
         assignRefChecked = GetWriteBarrierCodeLocation(assignRefChecked);
 #ifndef TARGET_X86
