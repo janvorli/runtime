@@ -409,36 +409,36 @@ static uintptr_t avLocations[] =
 // instruction, on arm64 it is a co-located literal-pool entry -- so the cached values remain
 // correct no matter where the barrier code is copied to (a PC-relative reference to the actual
 // global could otherwise end up out of range once the code is copied to a dynamically allocated
-// buffer). The labels below mark those slots; see GCWriteBarrierReloc in gcinterface.h and
-// UpdateCustomWriteBarrierGlobals in writebarriermanager.cpp, which keeps them in sync with the
-// globals' current values.
+// buffer). The labels below mark those slots; see GCWriteBarrierPatchableValue in gcinterface.h
+// and UpdateCustomWriteBarrierGlobals in writebarriermanager.cpp, which keeps them in sync with
+// the globals' current values.
 #if defined(TARGET_AMD64) || defined(TARGET_ARM64)
-extern "C" uint8_t RelocSite_CheckedAssignRef_CardBundleTable;
+extern "C" uint8_t PatchableValue_CheckedAssignRef_CardBundleTable;
 #if FEATURE_SATORI_EXTERNAL_OBJECTS
-extern "C" uint8_t RelocSite_AssignRef_CardBundleTable;
+extern "C" uint8_t PatchableValue_AssignRef_CardBundleTable;
 #endif
-extern "C" uint8_t RelocSite_AssignAndMarkCards_WriteBarrierState;
-extern "C" uint8_t RelocSite_MarkCards_CardTable;
-extern "C" uint8_t RelocSite_CardSet_WriteBarrierState;
+extern "C" uint8_t PatchableValue_AssignAndMarkCards_WriteBarrierState;
+extern "C" uint8_t PatchableValue_MarkCards_CardTable;
+extern "C" uint8_t PatchableValue_CardSet_WriteBarrierState;
 
 extern "C" uint32_t* g_gc_card_table;
 extern "C" uint32_t* g_gc_card_bundle_table;
 extern "C" uint8_t* g_write_barrier_state;
 
-static GCWriteBarrierReloc assignRefRelocs[] =
+static GCWriteBarrierPatchableValue assignRefPatchableValues[] =
 {
-    { &RelocSite_CheckedAssignRef_CardBundleTable, &g_gc_card_bundle_table },
+    { &PatchableValue_CheckedAssignRef_CardBundleTable, &g_gc_card_bundle_table },
 #if FEATURE_SATORI_EXTERNAL_OBJECTS
-    { &RelocSite_AssignRef_CardBundleTable, &g_gc_card_bundle_table },
+    { &PatchableValue_AssignRef_CardBundleTable, &g_gc_card_bundle_table },
 #endif
-    { &RelocSite_AssignAndMarkCards_WriteBarrierState, &g_write_barrier_state },
-    { &RelocSite_MarkCards_CardTable, &g_gc_card_table },
-    { &RelocSite_CardSet_WriteBarrierState, &g_write_barrier_state },
+    { &PatchableValue_AssignAndMarkCards_WriteBarrierState, &g_write_barrier_state },
+    { &PatchableValue_MarkCards_CardTable, &g_gc_card_table },
+    { &PatchableValue_CardSet_WriteBarrierState, &g_write_barrier_state },
     { nullptr, nullptr }
 };
 #endif // defined(TARGET_AMD64) || defined(TARGET_ARM64)
 
-void SatoriGC::GetAssignRefFunctions(void** assignRef, size_t* assignRefSize, void** assignRefChecked, size_t* assignRefCheckedSize, uintptr_t** avLocationsList, GCWriteBarrierReloc** relocations)
+void SatoriGC::GetAssignRefFunctions(void** assignRef, size_t* assignRefSize, void** assignRefChecked, size_t* assignRefCheckedSize, uintptr_t** avLocationsList, GCWriteBarrierPatchableValue** patchableValues)
 {
     *assignRef = &RhpAssignRef;
     *assignRefSize = (uintptr_t)&RhpAssignRef_End - (uintptr_t)&RhpAssignRef;
@@ -446,9 +446,9 @@ void SatoriGC::GetAssignRefFunctions(void** assignRef, size_t* assignRefSize, vo
     *assignRefCheckedSize = (uintptr_t)&RhpCheckedAssignRef_End - (uintptr_t)&RhpCheckedAssignRef;
     *avLocationsList = avLocations;
 #if defined(TARGET_AMD64) || defined(TARGET_ARM64)
-    *relocations = assignRefRelocs;
+    *patchableValues = assignRefPatchableValues;
 #else
-    *relocations = nullptr;
+    *patchableValues = nullptr;
 #endif
 }
 

@@ -237,14 +237,14 @@ GCHeapType GCHeap::GetGCHeapType()
     return g_gc_heap_type;
 }
 
-void GCHeap::GetAssignRefFunctions(void** assignRef, size_t* assignRefSize, void** assignRefChecked, size_t* assignRefCheckedSize, uintptr_t** avLocationsList, GCWriteBarrierReloc** relocations)
+void GCHeap::GetAssignRefFunctions(void** assignRef, size_t* assignRefSize, void** assignRefChecked, size_t* assignRefCheckedSize, uintptr_t** avLocationsList, GCWriteBarrierPatchableValue** patchableValues)
 {
     *assignRef = nullptr;
     *assignRefSize = 0;
     *assignRefChecked = nullptr;
     *assignRefCheckedSize = 0;
     *avLocationsList = nullptr;
-    *relocations = nullptr;
+    *patchableValues = nullptr;
 }
 
 size_t GCHeap::GetCurrentObjSize()

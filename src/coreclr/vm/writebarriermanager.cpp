@@ -188,9 +188,9 @@ static size_t s_barrierCopySize;
 static size_t s_customAssignRefSize;
 static size_t s_customCheckedAssignRefSize;
 // Patchable global-value slots embedded in the custom GC's assign-reference helpers (see
-// GCWriteBarrierReloc and GetAssignRefFunctions). Null until InitJITWriteBarrierHelpers has run
-// for a GC_HEAP_CUSTOM heap.
-static GCWriteBarrierReloc* s_customAssignRefRelocs = nullptr;
+// GCWriteBarrierPatchableValue and GetAssignRefFunctions). Null until InitJITWriteBarrierHelpers
+// has run for a GC_HEAP_CUSTOM heap.
+static GCWriteBarrierPatchableValue* s_customAssignRefPatchableValues = nullptr;
 
 BYTE* GetWriteBarrierCodeLocation(VOID* barrier)
 {
@@ -226,10 +226,11 @@ PCODE AdjustWriteBarrierIP(PCODE controlPc)
 }
 
 // Refreshes the patchable global-value slots embedded in the custom GC's assign-reference helpers
-// (see GCWriteBarrierReloc) so that they reflect the current values of the globals they cache. This
-// must be called after the helpers are first copied (if write barrier copying is enabled) and again
-// whenever any of the referenced globals' values change, since the helpers never read the globals
-// directly. A no-op until InitJITWriteBarrierHelpers has populated s_customAssignRefRelocs.
+// (see GCWriteBarrierPatchableValue) so that they reflect the current values of the globals they
+// cache. This must be called after the helpers are first copied (if write barrier copying is
+// enabled) and again whenever any of the referenced globals' values change, since the helpers
+// never read the globals directly. A no-op until InitJITWriteBarrierHelpers has populated
+// s_customAssignRefPatchableValues.
 void UpdateCustomWriteBarrierGlobals()
 {
     CONTRACTL
@@ -240,15 +241,15 @@ void UpdateCustomWriteBarrierGlobals()
     }
     CONTRACTL_END;
 
-    for (GCWriteBarrierReloc* reloc = s_customAssignRefRelocs; reloc != nullptr && reloc->Location != nullptr; reloc++)
+    for (GCWriteBarrierPatchableValue* patchableValue = s_customAssignRefPatchableValues; patchableValue != nullptr && patchableValue->Slot != nullptr; patchableValue++)
     {
-        UINT_PTR* slot = (UINT_PTR*)GetWriteBarrierCodeLocation(reloc->Location);
+        UINT_PTR* slot = (UINT_PTR*)GetWriteBarrierCodeLocation(patchableValue->Slot);
 
         // The slot must be 8-byte aligned so that patching it is a single atomic store (the
         // amd64 helpers hand-tune their NOP padding to guarantee this; see writebarrier.asm).
         _ASSERTE(((UINT_PTR)slot % sizeof(UINT_PTR)) == 0);
 
-        UINT_PTR value = *(UINT_PTR*)reloc->Target;
+        UINT_PTR value = *(UINT_PTR*)patchableValue->Source;
         if (*slot != value)
         {
             ExecutableWriterHolder<UINT_PTR> slotWriterHolder(slot, sizeof(UINT_PTR));
@@ -1446,11 +1447,11 @@ void InitJITWriteBarrierHelpers()
 #ifndef FEATURE_PORTABLE_HELPERS
     void* assignRef = nullptr;
     void* assignRefChecked = nullptr;
-    GCWriteBarrierReloc* assignRefRelocs = nullptr;
+    GCWriteBarrierPatchableValue* assignRefPatchableValues = nullptr;
     if (g_heap_type == GC_HEAP_CUSTOM)
     {
         g_pGCHeap->GetAssignRefFunctions(&assignRef, &s_customAssignRefSize,
-            &assignRefChecked, &s_customCheckedAssignRefSize, &g_customWriteBarrierAVLocations, &assignRefRelocs);
+            &assignRefChecked, &s_customCheckedAssignRefSize, &g_customWriteBarrierAVLocations, &assignRefPatchableValues);
     }
 
     // All patched helpers should fit into one page.
@@ -1502,10 +1503,10 @@ void InitJITWriteBarrierHelpers()
     if (g_heap_type == GC_HEAP_CUSTOM)
     {
         // Populate the patchable global-value slots embedded in the helpers (see
-        // GCWriteBarrierReloc) with the globals' current values. GetWriteBarrierCodeLocation
+        // GCWriteBarrierPatchableValue) with the globals' current values. GetWriteBarrierCodeLocation
         // resolves slot addresses correctly whether or not write barrier copying is enabled, so
         // this works for both the original and the copied code.
-        s_customAssignRefRelocs = assignRefRelocs;
+        s_customAssignRefPatchableValues = assignRefPatchableValues;
         UpdateCustomWriteBarrierGlobals();
 
         assignRef = GetWriteBarrierCodeLocation(assignRef);

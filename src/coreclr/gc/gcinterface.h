@@ -164,13 +164,13 @@ struct FastGCFunctions
 // entry co-located with the code, and on amd64 it is the immediate operand of a MOV instruction --
 // and the EE copies the current value of the referenced global into the slot, both right after the
 // helper is copied to a new location and whenever the global's value changes thereafter.
-struct GCWriteBarrierReloc
+struct GCWriteBarrierPatchableValue
 {
     // Address, within the original (uncopied) helper code, of an 8-byte, 8-byte-aligned slot that
-    // caches the value of *Target. A Location of nullptr terminates the array.
-    void* Location;
-    // Address of the global variable whose value is cached at Location.
-    void* Target;
+    // caches the value of *Source. A Slot of nullptr terminates the array.
+    void* Slot;
+    // Address of the global variable whose value is cached at Slot.
+    void* Source;
 };
 
 struct FinalizerWorkItem
@@ -1145,12 +1145,12 @@ public:
     virtual uint64_t GetTotalAllocatedBytesPrecise() PURE_VIRTUAL
 
     // Gets custom assign-reference helpers, their byte lengths, original access violation locations,
-    // and the patchable global-value slots (see GCWriteBarrierReloc) embedded in them. The helpers
-    // and any intervening bytes must form a relocatable block: internal relative references must
-    // stay within the block, and any reference to an external global variable must instead be
-    // listed in relocations (and read from the patched slot) so the helper remains correct no
+    // and the patchable global-value slots (see GCWriteBarrierPatchableValue) embedded in them. The
+    // helpers and any intervening bytes must form a relocatable block: internal relative references
+    // must stay within the block, and any reference to an external global variable must instead be
+    // listed in patchableValues (and read from the patched slot) so the helper remains correct no
     // matter where the EE copies it to.
-    virtual void GetAssignRefFunctions(void** assignRef, size_t* assignRefSize, void** assignRefChecked, size_t* assignRefCheckedSize, uintptr_t** avLocationsList, GCWriteBarrierReloc** relocations) PURE_VIRTUAL
+    virtual void GetAssignRefFunctions(void** assignRef, size_t* assignRefSize, void** assignRefChecked, size_t* assignRefCheckedSize, uintptr_t** avLocationsList, GCWriteBarrierPatchableValue** patchableValues) PURE_VIRTUAL
 };
 
 #ifdef WRITE_BARRIER_CHECK

@@ -1032,8 +1032,8 @@ void GCToEEInterface::StompWriteBarrier(WriteBarrierParameters* args)
 
     // The custom GC's write barrier helpers never read their globals (e.g. card table, write
     // barrier state) directly; they read patched values cached in the helper code itself (see
-    // GCWriteBarrierReloc). Any global change -- whatever WriteBarrierOp it arrives as -- must be
-    // reflected there.
+    // GCWriteBarrierPatchableValue). Any global change -- whatever WriteBarrierOp it arrives as --
+    // must be reflected there.
     if (g_heap_type == GC_HEAP_CUSTOM)
     {
         UpdateCustomWriteBarrierGlobals();

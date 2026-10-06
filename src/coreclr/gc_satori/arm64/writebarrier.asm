@@ -28,7 +28,7 @@
     ;; Card bundle table value is a literal load from a patchable slot co-located with this code
     ;; (see RhpAssignRef below), rather than a PC-relative reference to an external global, so it
     ;; stays correct no matter where this code is copied to; see GetAssignRefFunctions.
-        ldr     x16, RelocSite_CheckedAssignRef_CardBundleTable
+        ldr     x16, PatchableValue_CheckedAssignRef_CardBundleTable
         lsr     x17, x14, #30                       ;; dst page index
         ldrb    w12, [x16, x17]
         cbnz    x12, RhpCheckedEntry
@@ -58,7 +58,7 @@ NotInHeap
     ;; check for escaping assignment
     ;; 1) check if we own the source region
 #ifdef FEATURE_SATORI_EXTERNAL_OBJECTS
-        ldr     x16, RelocSite_AssignRef_CardBundleTable
+        ldr     x16, PatchableValue_AssignRef_CardBundleTable
     ALTERNATE_ENTRY RhpCheckedEntry
         lsr     x17, x15, #30                   ;; source page index
         ldrb    w12, [x16, x17]
@@ -97,7 +97,7 @@ AssignAndMarkCards
 
     ; TUNING: barriers in different modes could be separate pieces of code, but barrier switch 
     ;         needs to suspend EE, not sure if skipping mode check would worth that much.
-        ldr     x17, RelocSite_AssignAndMarkCards_WriteBarrierState
+        ldr     x17, PatchableValue_AssignAndMarkCards_WriteBarrierState
     ; check the barrier state. this must be done after the assignment (in program order
     ; if state == 2 we do not set or dirty cards.
         tbz     x17, #1, DoCards
@@ -124,7 +124,7 @@ MarkCards
         stp     x2,  x3,  [sp, -16]!
 
     ; fetch card location for x14
-        ldr     x12, RelocSite_MarkCards_CardTable  ; fetch the page map value (patched; see GetAssignRefFunctions)
+        ldr     x12, PatchableValue_MarkCards_CardTable  ; fetch the page map value (patched; see GetAssignRefFunctions)
         lsr     x16, x14, #30
         ldr     x16, [x12, x16, lsl #3]              ; page
         sub     x2,  x14, x16   ; offset in page
@@ -153,7 +153,7 @@ SetPage
 
 CardSet
     ; check if concurrent marking is still not in progress
-        ldr     x12, RelocSite_CardSet_WriteBarrierState  ; fetch the barrier state value (patched; see GetAssignRefFunctions)
+        ldr     x12, PatchableValue_CardSet_WriteBarrierState  ; fetch the barrier state value (patched; see GetAssignRefFunctions)
         cbnz    x12, DirtyCard
 
 Exit
@@ -227,15 +227,15 @@ RecordEscape
     ;; refreshes these slots after copying and whenever the globals' values change; see
     ;; GetAssignRefFunctions.
         ALIGN 8
-    PATCH_LABEL RelocSite_CheckedAssignRef_CardBundleTable
+    PATCH_LABEL PatchableValue_CheckedAssignRef_CardBundleTable
         DCQ 0
-    PATCH_LABEL RelocSite_AssignRef_CardBundleTable
+    PATCH_LABEL PatchableValue_AssignRef_CardBundleTable
         DCQ 0
-    PATCH_LABEL RelocSite_AssignAndMarkCards_WriteBarrierState
+    PATCH_LABEL PatchableValue_AssignAndMarkCards_WriteBarrierState
         DCQ 0
-    PATCH_LABEL RelocSite_MarkCards_CardTable
+    PATCH_LABEL PatchableValue_MarkCards_CardTable
         DCQ 0
-    PATCH_LABEL RelocSite_CardSet_WriteBarrierState
+    PATCH_LABEL PatchableValue_CardSet_WriteBarrierState
         DCQ 0
     LEAF_END_MARKED RhpAssignRef
 
