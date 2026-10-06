@@ -15,15 +15,14 @@ LEAF_ENTRY RhpCheckedAssignRef, _TEXT
     ; referenced by address), so that it remains correct no matter where this code is copied to;
     ; see GetAssignRefFunctions. "mov rax, imm64" is emitted manually (REX.W + B8 + 8-byte
     ; immediate) so RelocSite_CheckedAssignRef_CardBundleTable labels the immediate itself, which
-    ; is kept 8-byte aligned so the EE can patch it atomically while this code may be running
-    ; concurrently on other threads.
-        align 8
-        nop
-        nop
-        nop
-        nop
-        nop
-        nop
+    ; must be 8-byte aligned so the EE can patch it atomically while this code may be running
+    ; concurrently on other threads. RhpCheckedAssignRef starts 16-byte aligned (see LEAF_ENTRY),
+    ; so exactly 6 bytes of padding are needed before the 2-byte opcode for the immediate to land
+    ; on an 8-byte boundary; as elsewhere below, this is hand-tuned to the surrounding code, the
+    ; same way the default GC's write barriers are (see vm\amd64\patchedcode.asm) -- if the code
+    ; preceding a RelocSite_* changes, the padding before it must be recomputed.
+        NOP_3_BYTE
+        NOP_3_BYTE
         db      048h, 0B8h              ; mov rax, imm64 (REX.W B8+rax)
 ALTERNATE_ENTRY RelocSite_CheckedAssignRef_CardBundleTable
         dq      0F0F0F0F0F0F0F0F0h      ; fetch the page byte map value (patched; see GetAssignRefFunctions)
@@ -46,13 +45,9 @@ LEAF_ENTRY RhpAssignRef, _TEXT
 
 ifdef FEATURE_SATORI_EXTERNAL_OBJECTS
     ; check if src is in heap
-        align 8
-        nop
-        nop
-        nop
-        nop
-        nop
-        nop
+    ; RhpAssignRef also starts 16-byte aligned; 6 bytes of padding (as above) are needed here too.
+        NOP_3_BYTE
+        NOP_3_BYTE
         db      048h, 0B8h              ; mov rax, imm64 (REX.W B8+rax)
 ALTERNATE_ENTRY RelocSite_AssignRef_CardBundleTable
         dq      0F0F0F0F0F0F0F0F0h      ; fetch the page byte map value (patched; see GetAssignRefFunctions)
@@ -102,13 +97,8 @@ ALTERNATE_ENTRY RhpAssignRefAVLocation
 
     ; TUNING: barriers in different modes could be separate pieces of code, but barrier switch 
     ;         needs to suspend EE, not sure if skipping mode check would worth that much.
-        align 8
-        nop
-        nop
-        nop
-        nop
-        nop
-        nop
+    ; No padding needed here: the preceding code already leaves the opcode start 8-byte-aligned
+    ; (mod 8) at the required offset; see note above RelocSite_CheckedAssignRef_CardBundleTable.
         db      049h, 0BBh              ; mov r11, imm64 (REX.WB B8+(r11&7))
 ALTERNATE_ENTRY RelocSite_AssignAndMarkCards_WriteBarrierState
         dq      0F0F0F0F0F0F0F0F0h      ; fetch the barrier state value (patched; see GetAssignRefFunctions)
@@ -136,12 +126,7 @@ ALTERNATE_ENTRY RelocSite_AssignAndMarkCards_WriteBarrierState
 
     MarkCards:
     ; fetch card location for rcx
-        align 8
-        nop
-        nop
-        nop
-        nop
-        nop
+    ; 1 byte of padding needed here; see note above RelocSite_CheckedAssignRef_CardBundleTable.
         nop
         db      049h, 0B9h              ; mov r9, imm64 (REX.WB B8+(r9&7))
 ALTERNATE_ENTRY RelocSite_MarkCards_CardTable
@@ -175,13 +160,8 @@ ALTERNATE_ENTRY RelocSite_MarkCards_CardTable
 
      CardSet:
     ; check if concurrent marking is still not in progress
-        align 8
-        nop
-        nop
-        nop
-        nop
-        nop
-        nop
+    ; 3 bytes of padding needed here; see note above RelocSite_CheckedAssignRef_CardBundleTable.
+        NOP_3_BYTE
         db      049h, 0B9h              ; mov r9, imm64 (REX.WB B8+(r9&7))
 ALTERNATE_ENTRY RelocSite_CardSet_WriteBarrierState
         dq      0F0F0F0F0F0F0F0F0h      ; fetch the barrier state value (patched; see GetAssignRefFunctions)

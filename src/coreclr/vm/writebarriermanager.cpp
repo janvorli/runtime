@@ -243,6 +243,11 @@ void UpdateCustomWriteBarrierGlobals()
     for (GCWriteBarrierReloc* reloc = s_customAssignRefRelocs; reloc != nullptr && reloc->Location != nullptr; reloc++)
     {
         UINT_PTR* slot = (UINT_PTR*)GetWriteBarrierCodeLocation(reloc->Location);
+
+        // The slot must be 8-byte aligned so that patching it is a single atomic store (the
+        // amd64 helpers hand-tune their NOP padding to guarantee this; see writebarrier.asm).
+        _ASSERTE(((UINT_PTR)slot % sizeof(UINT_PTR)) == 0);
+
         UINT_PTR value = *(UINT_PTR*)reloc->Target;
         if (*slot != value)
         {
