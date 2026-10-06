@@ -21,8 +21,7 @@ LEAF_ENTRY RhpCheckedAssignRef, _TEXT
     ; on an 8-byte boundary; as elsewhere below, this is hand-tuned to the surrounding code, the
     ; same way the default GC's write barriers are (see vm\amd64\patchedcode.asm) -- if the code
     ; preceding a RelocSite_* changes, the padding before it must be recomputed.
-        NOP_3_BYTE
-        NOP_3_BYTE
+        NOP_6_BYTE
         db      048h, 0B8h              ; mov rax, imm64 (REX.W B8+rax)
 ALTERNATE_ENTRY RelocSite_CheckedAssignRef_CardBundleTable
         dq      0F0F0F0F0F0F0F0F0h      ; fetch the page byte map value (patched; see GetAssignRefFunctions)
@@ -46,8 +45,7 @@ LEAF_ENTRY RhpAssignRef, _TEXT
 ifdef FEATURE_SATORI_EXTERNAL_OBJECTS
     ; check if src is in heap
     ; RhpAssignRef also starts 16-byte aligned; 6 bytes of padding (as above) are needed here too.
-        NOP_3_BYTE
-        NOP_3_BYTE
+        NOP_6_BYTE
         db      048h, 0B8h              ; mov rax, imm64 (REX.W B8+rax)
 ALTERNATE_ENTRY RelocSite_AssignRef_CardBundleTable
         dq      0F0F0F0F0F0F0F0F0h      ; fetch the page byte map value (patched; see GetAssignRefFunctions)
