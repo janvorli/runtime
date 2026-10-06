@@ -440,9 +440,9 @@ static GCWriteBarrierPatchableValue assignRefPatchableValues[] =
 
 void SatoriGC::GetAssignRefFunctions(void** assignRef, size_t* assignRefSize, void** assignRefChecked, size_t* assignRefCheckedSize, uintptr_t** avLocationsList, GCWriteBarrierPatchableValue** patchableValues)
 {
-    *assignRef = &RhpAssignRef;
+    *assignRef = (void*)&RhpAssignRef;
     *assignRefSize = (uintptr_t)&RhpAssignRef_End - (uintptr_t)&RhpAssignRef;
-    *assignRefChecked = &RhpCheckedAssignRef;
+    *assignRefChecked = (void*)&RhpCheckedAssignRef;
     *assignRefCheckedSize = (uintptr_t)&RhpCheckedAssignRef_End - (uintptr_t)&RhpCheckedAssignRef;
     *avLocationsList = avLocations;
 #if defined(TARGET_AMD64) || defined(TARGET_ARM64)

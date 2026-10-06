@@ -41,13 +41,14 @@ set(GC_SOURCES
   SatoriGate.cpp
 )
 
-set(GC_WRITE_BARRIER_SOURCES
-  ${ARCH_SOURCES_DIR}/writebarrier.asm
-)
-
 include_directories(../gc)
+include_directories(../pal/inc)
 
 if (CLR_CMAKE_TARGET_WIN32)
+  set(GC_WRITE_BARRIER_SOURCES
+    ${ARCH_SOURCES_DIR}/writebarrier.asm
+  )
+
   set(GC_HEADERS
     ../gc/env/common.h
     ../gc/env/etmdummy.h
@@ -105,6 +106,10 @@ if (CLR_CMAKE_TARGET_WIN32)
     SatoriUtil.h
     SatoriLock.h
     SatoriGate.h
+  )
+else()
+  set(GC_WRITE_BARRIER_SOURCES
+    ${ARCH_SOURCES_DIR}/writebarrier.S
   )
 endif(CLR_CMAKE_TARGET_WIN32)
 
