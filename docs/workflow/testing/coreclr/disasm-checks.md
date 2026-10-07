@@ -84,6 +84,12 @@ Functionality that has been added or moved to SuperFileCheck:
 - `<check-prefix>-FULL-LINE:` - same as using FileCheck's `<check-prefix>:`, but checks that the line matches exactly; leading and trailing whitespace is ignored.
 - `<check-prefix>-FULL-LINE-NEXT:` - same as using FileCheck's `<check-prefix>-NEXT:`, but checks that the line matches exactly; leading and trailing whitespace is ignored.
 # Test Run Limitations
+SuperFileCheck runs on the SDK runtime, not the runtime under test. As with Crossgen2 and
+R2RDump, the generated wrappers suppress `DOTNET_GCName`, `DOTNET_GCStress`,
+`DOTNET_HeapVerify`, `DOTNET_ReadyToRun`, `DOTNET_GCHeapAffinitizeRanges`,
+`DOTNET_TC_OnStackReplacement`, and `DOTNET_TC_PartialCompilation` while running the helper.
+The test itself retains these settings. The GCStress skip described below still applies.
+
 1. Disasm checks will not work if these environment variables are set. The infrastructure need to be updated to skip disasm checks when these environment variables are present.
 - `DOTNET_JitStress`
 - `DOTNET_JitStressRegs`

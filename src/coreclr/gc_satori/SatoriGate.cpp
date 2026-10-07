@@ -91,6 +91,7 @@ void SatoriGate::WakeAll()
 #include <errno.h>
 #include <assert.h>
 #include "SatoriGate.h"
+#include <new>
 
 #if defined(TARGET_LINUX)
 
@@ -148,10 +149,23 @@ void SatoriGate::WakeOne()
     syscall(SYS_futex, &m_state, FUTEX_WAKE_PRIVATE, 1);
 }
 #else
+
+// TODO: This is a hack, we need to use real compile time detection
+#define HAVE_CLOCK_GETTIME_NSEC_NP 1
+// Convert nanoseconds to the timespec structure
+// Parameters:
+//  nanoseconds - time in nanoseconds to convert
+//  t           - the target timespec structure
+void NanosecondsToTimeSpec(uint64_t nanoseconds, timespec* t)
+{
+    t->tv_sec = nanoseconds / tccSecondsToNanoSeconds;
+    t->tv_nsec = nanoseconds % tccSecondsToNanoSeconds;
+}
+
 SatoriGate::SatoriGate()
 {
-    m_cs = new (nothrow) pthread_mutex_t();
-    m_cv = new (nothrow) pthread_cond_t();
+    m_cs = new (std::nothrow) pthread_mutex_t();
+    m_cv = new (std::nothrow) pthread_cond_t();
 
     pthread_mutex_init(m_cs, NULL);
     pthread_condattr_t attrs;
